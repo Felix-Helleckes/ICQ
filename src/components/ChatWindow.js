@@ -211,14 +211,14 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
       {/* Input area */}
       <div className="input-area" style={{ height: inputHeight, flexShrink: 0 }}>
         <div className="input-toolbar" style={{ position: 'relative' }}>
+          <button className="toolbar-btn font-btn" title="Schrift größer" onClick={larger}>A+</button>
+          <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
           <button
             className={`toolbar-btn${showEmoji ? ' active' : ''}`}
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
           >😊</button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
-          <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
-          <button className="toolbar-btn font-btn" title="Schrift größer" onClick={larger}>A+</button>
 
           {showEmoji && (
             <div className="emoji-picker" ref={emojiRef}>
