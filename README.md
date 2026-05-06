@@ -10,9 +10,11 @@
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React" />
   <img src="https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white" alt="Windows" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
+  <img src="https://img.shields.io/github/v/release/Felix-Helleckes/ICQ?label=latest&color=teal" alt="Latest Release" />
 
   <br/><br/>
 
+  [![Download](https://img.shields.io/badge/⬇_Download-Releases-teal?style=flat-square)](https://github.com/Felix-Helleckes/ICQ/releases/latest)
   [![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=flat-square&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
   [![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=flat-square&logo=github)](https://felix-helleckes.github.io/)
 </div>

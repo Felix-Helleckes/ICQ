@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # Puppeteer soll Chrome nicht beim Install herunterladen (nur zur Buildzeit nötig)
+          PUPPETEER_SKIP_DOWNLOAD: true
+
+      - name: Build React app
+        run: npm run build
+        env:
+          # Verhindert, dass Warnings den Build als Fehler abbrechen
+          CI: false
+
+      - name: Build Electron distributable (NSIS + Portable)
+        run: npx electron-builder --win nsis portable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ICQ Messenger ${{ github.ref_name }}
+          body: |
+            ## ICQ Messenger ${{ github.ref_name }}
+
+            Retro ICQ 5-style multi-messenger for WhatsApp + Telegram.
+
+            ### Downloads
+            | File | Description |
+            |------|-------------|
+            | `ICQ-Messenger-Setup-*.exe` | Windows Installer (empfohlen) |
+            | `ICQ-Messenger-*.exe` | Portable — kein Setup, direkt starten |
+
+            ### Erste Schritte
+            1. Installer oder Portable starten
+            2. WhatsApp-Tab: QR-Code scannen
+            3. Telegram-Tab: QR-Code oder Telefonnummer
+
+            > **SmartScreen-Warnung?** → "Weitere Informationen" → "Trotzdem ausführen"
+          draft: false
+          prerelease: false
+          generate_release_notes: false
+          files: |
+            dist/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

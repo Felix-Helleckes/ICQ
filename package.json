@@ -2,9 +2,13 @@
   "name": "icq-messenger",
   "version": "1.0.0",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
-  "author": "Your Name",
+  "author": "Felix Helleckes",
   "license": "MIT",
   "homepage": ".",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Felix-Helleckes/ICQ.git"
+  },
   "main": "electron/main.js",
   "scripts": {
     "start": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && electron .\"",
