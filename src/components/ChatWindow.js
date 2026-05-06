@@ -12,12 +12,34 @@ const EMOJIS = [
   '😤','😡','🤯','😱','🤗','😏','🙄','😒','😩','😫',
 ];
 
-export default function ChatWindow({ chat, messages, onSend }) {
+// ack: -1=error, 0=pending, 1=sent, 2=delivered, 3=read
+function AckIcon({ ack }) {
+  if (ack === 0)  return <span className="ack ack-pending" title="Ausstehend">🕐</span>;
+  if (ack === -1) return <span className="ack ack-error"   title="Fehler">!</span>;
+  if (ack === 3)  return <span className="ack ack-read"    title="Gelesen">✓✓</span>;
+  if (ack === 2)  return <span className="ack ack-delivered" title="Zugestellt">✓✓</span>;
+  return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
+}
+
+export default function ChatWindow({ chat, messages, onSend, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
+  const [lightbox, setLightbox] = useState(null); // src string or null
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
   const emojiRef  = useRef(null);
+
+  // Font-size (shared via localStorage with sidebar)
+  const [fontSize, setFontSize] = useState(() => {
+    const saved = localStorage.getItem('icq-font-size');
+    return saved ? parseInt(saved, 10) : 13;
+  });
+  useEffect(() => {
+    document.documentElement.style.fontSize = fontSize + 'px';
+    localStorage.setItem('icq-font-size', fontSize);
+  }, [fontSize]);
+  const smaller = () => setFontSize(f => Math.max(10, f - 1));
+  const larger  = () => setFontSize(f => Math.min(20, f + 1));
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -60,7 +82,7 @@ export default function ChatWindow({ chat, messages, onSend }) {
     return (
       <div className="chat-empty">
         <div className="chat-empty-inner">
-          <div className="icq-big-flower">✿</div>
+          <img src="/icq-logo.png" className="icq-big-logo" alt="ICQ" />
           <p>Select a conversation to start chatting</p>
         </div>
       </div>
@@ -71,8 +93,17 @@ export default function ChatWindow({ chat, messages, onSend }) {
     <div className="chat-window">
       {/* Chat header */}
       <div className="chat-header">
-        <div className="chat-header-avatar">{(chat.name || '?')[0].toUpperCase()}</div>
-        <div className="chat-header-name">{chat.name || chat.id}</div>
+        <div className="chat-header-avatar">
+          {chat.avatar
+            ? <img src={chat.avatar} alt="" className="chat-header-avatar-img" />
+            : (chat.name || '?')[0].toUpperCase()}
+        </div>
+        <div className="chat-header-info">
+          <div className="chat-header-name-row">
+            <span className="chat-header-name">{chat.name || chat.id}</span>
+            {isTyping && <span className="chat-typing-indicator">tippt…</span>}
+          </div>
+        </div>
       </div>
 
       {/* Message area */}
@@ -81,11 +112,28 @@ export default function ChatWindow({ chat, messages, onSend }) {
           <div key={msg.id || i} className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
             <div className="message-bubble">
               {msg.mediaData
-                ? <img src={msg.mediaData} alt={msg.type || 'media'}
-                    className={msg.type === 'sticker' ? 'msg-sticker' : 'msg-image'} />
+                ? (msg.type === 'video' || msg.isGif)
+                  ? <video
+                      src={msg.mediaData}
+                      className="msg-video"
+                      autoPlay={msg.isGif}
+                      loop={msg.isGif}
+                      controls={!msg.isGif}
+                      muted={msg.isGif}
+                      playsInline
+                      onClick={!msg.isGif ? () => setLightbox({ src: msg.mediaData, isVideo: true }) : undefined}
+                      style={!msg.isGif ? { cursor: 'zoom-in' } : undefined}
+                    />
+                  : <img src={msg.mediaData} alt={msg.type || 'media'}
+                      className={msg.type === 'sticker' ? 'msg-sticker' : 'msg-image'}
+                      onClick={msg.type !== 'sticker' ? () => setLightbox({ src: msg.mediaData, isVideo: false }) : undefined}
+                      style={msg.type !== 'sticker' ? { cursor: 'zoom-in' } : undefined} />
                 : <span className="message-text">{msg.body || (msg.type ? `[${msg.type}]` : '')}</span>
               }
-              <span className="message-time">{formatTime(msg.timestamp)}</span>
+              <span className="message-time">
+                {formatTime(msg.timestamp)}
+                {msg.fromMe && msg.ack !== undefined && <AckIcon ack={msg.ack} />}
+              </span>
             </div>
           </div>
         ))}
@@ -102,6 +150,9 @@ export default function ChatWindow({ chat, messages, onSend }) {
           >😊</button>
           <button className="toolbar-btn" title="Bold" style={{ fontWeight: 'bold' }}>B</button>
           <button className="toolbar-btn" title="Italic" style={{ fontStyle: 'italic' }}>I</button>
+          <span className="toolbar-sep" />
+          <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
+          <button className="toolbar-btn font-btn" title="Schrift größer" onClick={larger}>A+</button>
 
           {showEmoji && (
             <div className="emoji-picker" ref={emojiRef}>
@@ -124,6 +175,18 @@ export default function ChatWindow({ chat, messages, onSend }) {
           <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="lightbox-overlay" onClick={() => setLightbox(null)}>
+          {lightbox.isVideo
+            ? <video src={lightbox.src} className="lightbox-img" controls autoPlay
+                onClick={e => e.stopPropagation()} />
+            : <img src={lightbox.src} className="lightbox-img" alt="Vollbild"
+                onClick={e => e.stopPropagation()} />}
+          <button className="lightbox-close" onClick={() => setLightbox(null)}>✕</button>
+        </div>
+      )}
     </div>
   );
 }

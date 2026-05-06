@@ -8,12 +8,30 @@ contextBridge.exposeInMainWorld('api', {
     getMessages: (chatId)        => ipcRenderer.invoke('wa:get-messages', chatId),
     sendMessage: (chatId, text)  => ipcRenderer.invoke('wa:send-message', chatId, text),
     getStatus:   ()              => ipcRenderer.invoke('wa:status'),
+    getMyProfile:()              => ipcRenderer.invoke('wa:get-my-profile'),
+    getAvatar:   (id)            => ipcRenderer.invoke('wa:get-avatar', id),
+    logout:      ()              => ipcRenderer.invoke('wa:logout'),
     onQR:        (cb)            => ipcRenderer.on('wa:qr', (_, data) => cb(data)),
     onReady:     (cb)            => ipcRenderer.on('wa:ready', (_, data) => cb(data)),
     onMessage:   (cb)            => {
       const handler = (_, data) => cb(data);
       ipcRenderer.on('wa:message', handler);
       return () => ipcRenderer.removeListener('wa:message', handler);
+    },
+    onAvatar:    (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:avatar', handler);
+      return () => ipcRenderer.removeListener('wa:avatar', handler);
+    },
+    onAck:       (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:ack', handler);
+      return () => ipcRenderer.removeListener('wa:ack', handler);
+    },
+    onTyping:    (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:typing', handler);
+      return () => ipcRenderer.removeListener('wa:typing', handler);
     },
   },
   // Telegram
@@ -26,10 +44,19 @@ contextBridge.exposeInMainWorld('api', {
     getMessages:  (chatId)           => ipcRenderer.invoke('tg:get-messages', chatId),
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     getStatus:    ()                 => ipcRenderer.invoke('tg:status'),
+    getMe:        ()                 => ipcRenderer.invoke('tg:get-me'),
+    getAvatar:    (id)               => ipcRenderer.invoke('tg:get-avatar', id),
+    logout:       ()                 => ipcRenderer.invoke('tg:logout'),
+    setCredentials: (id, hash)       => ipcRenderer.invoke('tg:set-credentials', id, hash),
     onMessage:    (cb)               => {
       const handler = (_, d) => cb(d);
       ipcRenderer.on('tg:message', handler);
       return () => ipcRenderer.removeListener('tg:message', handler);
+    },
+    onAvatar:     (cb)               => {
+      const handler = (_, d) => cb(d);
+      ipcRenderer.on('tg:avatar', handler);
+      return () => ipcRenderer.removeListener('tg:avatar', handler);
     },
     onQR:         (cb)               => ipcRenderer.on('tg:qr',       (_, d) => cb(d)),
     onReady:      (cb)               => ipcRenderer.on('tg:ready',    (_, d) => cb(d)),
@@ -37,9 +64,17 @@ contextBridge.exposeInMainWorld('api', {
   },
   // Chat windows
   openChat: (params) => ipcRenderer.invoke('open-chat', params),
+  getStoredAvatar: (id) => ipcRenderer.invoke('get-stored-avatar', id),
+  notifySent: (msg) => ipcRenderer.send('chat:sent', msg),
+  onSent: (cb) => {
+    const handler = (_, d) => cb(d);
+    ipcRenderer.on('chat:sent-broadcast', handler);
+    return () => ipcRenderer.removeListener('chat:sent-broadcast', handler);
+  },
   // Window controls
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
+    maximize: () => ipcRenderer.send('window:maximize'),
     close:    () => ipcRenderer.send('window:close'),
   }
 });

@@ -16,11 +16,11 @@
   align-items: center;
 }
 
-.icq-flower {
-  color: var(--icq-yellow);
-  font-size: 1.6rem;
-  line-height: 1;
-  filter: drop-shadow(0 0 4px #F5C40099);
+.icq-logo {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
 }
 
 .titlebar-title {
@@ -57,3 +57,4 @@
 .tb-btn:hover  { background: rgba(255,255,255,0.25); }
 .tb-btn:active { background: rgba(0,0,0,0.3); }
 .tb-close:hover { background: #CC2222 !important; }
+.tb-max { font-size: 0.7rem; }

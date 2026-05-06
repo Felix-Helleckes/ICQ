@@ -65,18 +65,24 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
         },
         {
           "target": "portable",
-          "arch": [
-            "x64"
-          ]
+          "arch": ["x64"]
+        },
+        {
+          "target": "appx",
+          "arch": ["x64"]
         }
       ],
       "icon": "public/icon.ico"
+    },
+    "appx": {
+      "identityName": "ICQMessenger",
+      "publisher": "CN=YourName",
+      "publisherDisplayName": "YourName",
+      "applicationId": "ICQMessenger"
     },
     "nsis": {
       "oneClick": false,

@@ -3,29 +3,50 @@
  * Runs in the Electron main process.
  * Supports both phone+code login AND QR code login (with optional 2FA).
  */
-const { TelegramClient } = require('telegram');
+const { TelegramClient, utils: tgUtils } = require('telegram');
 const { StringSession } = require('telegram/sessions');
 const { NewMessage } = require('telegram/events');
 const { BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-const API_ID   = parseInt(process.env.TG_API_ID   || '0', 10);
-const API_HASH =          process.env.TG_API_HASH  || '';
+const SESSION_FILE     = path.join(__dirname, '../data/telegram.session');
+const CREDENTIALS_FILE = path.join(__dirname, '../data/telegram-credentials.json');
 
-const SESSION_FILE = path.join(__dirname, '../data/telegram.session');
+// Fallback: Telegram Desktop open-source credentials (publicly available on GitHub)
+// Users can override via env vars or the credentials file.
+const DEFAULT_API_ID   = 2040;
+const DEFAULT_API_HASH = 'b18441a1ff607e10a989891a5462e627';
+
+let API_ID   = parseInt(process.env.TG_API_ID   || '0', 10) || DEFAULT_API_ID;
+let API_HASH =          process.env.TG_API_HASH  || DEFAULT_API_HASH;
+
+function loadCredentials() {
+  try {
+    const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
+    const { apiId, apiHash } = JSON.parse(raw);
+    if (apiId && apiHash) { API_ID = parseInt(apiId, 10); API_HASH = apiHash; }
+  } catch {}
+}
+
+function saveCredentials(apiId, apiHash) {
+  fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
+  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({ apiId, apiHash }), 'utf8');
+}
 
 let tgClient = null;
-let mainWin  = null;  // kept for compat but not used for sends
+let mainWin  = null;
 let status   = 'disconnected';
 let phoneHash = null;
 let pending2FAResolve = null;
 let pending2FAReject  = null;
+let onAvatarCb = null;
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed()) w.webContents.send(channel, data);
   });
+  if (channel === 'tg:avatar' && onAvatarCb) onAvatarCb(data.id, data.avatar);
 }
 
 function loadSession() {
@@ -36,14 +57,15 @@ function saveSession(str) {
   fs.writeFileSync(SESSION_FILE, str, 'utf8');
 }
 
-async function init(win) {
+async function init(win, avatarCallback) {
+  if (avatarCallback) onAvatarCb = avatarCallback;
+  if (avatarCallback) onAvatarCb = avatarCallback;
   mainWin = win;
-  if (!API_ID || !API_HASH) {
-    console.warn('[Telegram] No API credentials set. Set TG_API_ID and TG_API_HASH env vars.');
-    status = 'no-credentials';
-    return;
-  }
+  loadCredentials(); // load from file, overrides defaults if present
+  await connect();
+}
 
+async function connect() {
   const session = new StringSession(loadSession());
   tgClient = new TelegramClient(session, API_ID, API_HASH, {
     connectionRetries: 5,
@@ -53,10 +75,22 @@ async function init(win) {
   if (await tgClient.isUserAuthorized()) {
     status = 'ready';
     saveSession(tgClient.session.save());
+    const me = await getMe();
+    broadcast('tg:ready', me || {});
     listenForMessages();
   } else {
     status = 'needs-auth';
+    broadcast('tg:status', 'needs-auth');
   }
+}
+
+async function setCredentials(apiId, apiHash) {
+  API_ID   = parseInt(apiId, 10);
+  API_HASH = apiHash;
+  saveCredentials(API_ID, API_HASH);
+  tgClient = null;
+  status = 'disconnected';
+  await connect();
 }
 
 // ── Phone + code login ────────────────────────────────────────
@@ -107,7 +141,8 @@ async function startQRLogin() {
 
     saveSession(tgClient.session.save());
     status = 'ready';
-    broadcast('tg:ready', {});
+    const me = await getMe();
+    broadcast('tg:ready', me || {});
     listenForMessages();
   } catch (err) {
     status = 'needs-auth';
@@ -127,8 +162,13 @@ function submit2FA(password) {
 function listenForMessages() {
   tgClient.addEventHandler(async (event) => {
     const msg = event.message;
+    // getPeerId gibt dieselbe kanonische ID wie d.id in getDialogs() zurück
+    // (für Kanäle z.B. -1001234567890, für User positive Zahl)
+    let chatId;
+    try { chatId = tgUtils.getPeerId(msg.peerId)?.toString(); } catch (e) {}
+    if (!chatId) chatId = msg.chatId?.toString();
     broadcast('tg:message', {
-      chatId: msg.peerId?.channelId?.toString() || msg.peerId?.userId?.toString() || msg.chatId?.toString(),
+      chatId,
       body: msg.message,
       fromMe: msg.out,
       timestamp: msg.date,
@@ -142,45 +182,106 @@ function getStatus() { return status; }
 async function getDialogs() {
   if (status !== 'ready') return [];
   const dialogs = await tgClient.getDialogs({ limit: 50 });
-  const result = await Promise.all(dialogs.map(async d => {
-    let avatar = null;
-    try {
-      const photos = await tgClient.getProfilePhotos(d.entity, { limit: 1 });
-      if (photos && photos.length > 0) {
+  // Sofort ohne Avatare zurückgeben
+  const result = dialogs.map(d => ({
+    id: d.id?.toString(),
+    name: d.name || d.title,
+    lastMessage: d.message?.message || '',
+    timestamp: d.message?.date || 0,
+    unreadCount: d.unreadCount,
+    isGroup: d.isGroup || d.isChannel,
+    avatar: null,
+  }));
+  // Avatare im Hintergrund nachladen
+  (async () => {
+    for (const d of dialogs) {
+      try {
         const buf = await tgClient.downloadProfilePhoto(d.entity, { isBig: false });
         if (buf && buf.length > 0) {
-          avatar = 'data:image/jpeg;base64,' + buf.toString('base64');
+          const avatar = 'data:image/jpeg;base64,' + buf.toString('base64');
+          broadcast('tg:avatar', { id: d.id?.toString(), avatar });
         }
-      }
-    } catch (e) { /* no pic */ }
-    return {
-      id: d.id?.toString(),
-      name: d.name || d.title,
-      lastMessage: d.message?.message || '',
-      timestamp: d.message?.date || 0,
-      unreadCount: d.unreadCount,
-      isGroup: d.isGroup || d.isChannel,
-      avatar,
-    };
-  }));
+      } catch (e) { /* no pic */ }
+    }
+  })();
   return result;
+}
+
+// GramJS braucht BigInt (nicht String) als Peer-ID
+function toPeer(id) {
+  try { return BigInt(id); } catch (e) { return id; }
+}
+
+async function getContactAvatar(id) {
+  if (status !== 'ready') return null;
+  try {
+    const buf = await tgClient.downloadProfilePhoto(toPeer(id), { isBig: false });
+    if (buf && buf.length > 0) return 'data:image/jpeg;base64,' + buf.toString('base64');
+  } catch (e) {}
+  return null;
 }
 
 async function getMessages(chatId) {
   if (status !== 'ready') return [];
-  const messages = await tgClient.getMessages(chatId, { limit: 50 });
-  return messages.map(m => ({
-    id: m.id?.toString(),
-    body: m.message,
-    fromMe: m.out,
-    timestamp: m.date,
-    author: m.fromId?.userId?.toString() || '',
+  const messages = await tgClient.getMessages(toPeer(chatId), { limit: 50 });
+  return await Promise.all(messages.map(async m => {
+    let mediaData = null;
+    let mediaType = null;
+    let isGif = false;
+    try {
+      if (m.photo) {
+        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
+        if (buf && buf.length) mediaData = 'data:image/jpeg;base64,' + buf.toString('base64');
+        mediaType = 'image';
+      } else if (m.document) {
+        const mime = m.document.mimeType || '';
+        const attrs = m.document.attributes || [];
+        const isVideoAttr = attrs.some(a => a.className === 'DocumentAttributeVideo');
+        const isAnimated  = attrs.some(a => a.className === 'DocumentAttributeAnimated');
+        isGif = isAnimated || mime === 'image/gif';
+        if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
+          mediaType = 'video';
+          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
+          if (buf && buf.length) mediaData = `data:${mime};base64,` + buf.toString('base64');
+        }
+      }
+    } catch (e) { /* skip media errors */ }
+    return {
+      id: m.id?.toString(),
+      body: m.message || '',
+      fromMe: m.out,
+      timestamp: m.date,
+      author: m.fromId?.userId?.toString() || '',
+      type: mediaType || 'text',
+      isGif,
+      mediaData,
+    };
   }));
 }
 
 async function sendMessage(chatId, text) {
   if (status !== 'ready') throw new Error('Telegram not ready');
-  await tgClient.sendMessage(chatId, { message: text });
+  await tgClient.sendMessage(toPeer(chatId), { message: text });
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage };
+async function getMe() {
+  if (!tgClient) return null;
+  try {
+    const me = await tgClient.getMe();
+    let avatar = null;
+    try {
+      const buf = await tgClient.downloadProfilePhoto(me, { isBig: false });
+      if (buf && buf.length > 0) avatar = 'data:image/jpeg;base64,' + buf.toString('base64');
+    } catch (e) {}
+    return { name: (me.firstName || '') + (me.lastName ? ' ' + me.lastName : ''), avatar };
+  } catch (e) { return null; }
+}
+
+async function logout() {
+  try { await tgClient.invoke(new (require('telegram/tl').functions.auth.LogOutRequest)()); } catch (e) {}
+  try { fs.unlinkSync(SESSION_FILE); } catch (e) {}
+  status = 'needs-auth';
+  tgClient = null;
+}
+
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, getMe, logout, setCredentials, getContactAvatar };

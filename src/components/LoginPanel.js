@@ -53,7 +53,15 @@ function TwoFAPanel({ hint, onSubmit }) {
 function WhatsAppPanel({ waStatus, waQR }) {
   return (
     <>
-      {waStatus === 'disconnected' && <p className="login-hint">Connecting to WhatsApp…</p>}
+      {(waStatus === 'disconnected' || waStatus === 'loading') && (
+        <div className="wa-loading">
+          <div className="wa-spinner" />
+          <p className="login-hint">
+            {waStatus === 'loading' ? 'WhatsApp startet…' : 'Verbinde…'}
+          </p>
+          <p className="login-hint small">Chrome/Puppeteer wird gestartet,<br/>das dauert kurz beim ersten Mal.</p>
+        </div>
+      )}
       {waStatus === 'qr' && !waQR    && <p className="login-hint">Waiting for QR code…</p>}
       {waStatus === 'qr' && waQR && (
         <>
@@ -69,8 +77,53 @@ function WhatsAppPanel({ waStatus, waQR }) {
   );
 }
 
+// ── Telegram API credentials form ────────────────────────────
+function TelegramCredentialsForm({ onSave }) {
+  const [apiId,   setApiId]   = useState('');
+  const [apiHash, setApiHash] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+
+  const submit = async () => {
+    if (!apiId || !apiHash) { setError('Both fields are required.'); return; }
+    if (isNaN(parseInt(apiId))) { setError('API ID must be a number.'); return; }
+    setLoading(true); setError('');
+    try { await onSave(apiId, apiHash); }
+    catch (e) { setError(e.message); setLoading(false); }
+  };
+
+  return (
+    <div className="credentials-form">
+      <div className="login-icon" style={{ fontSize: 26 }}>✈️</div>
+      <p className="login-hint"><b>Telegram API Credentials</b></p>
+      <p className="login-hint small">
+        Get them free at{' '}
+        <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer">my.telegram.org/apps</a>
+      </p>
+      <input
+        className="win98-input"
+        type="text"
+        placeholder="App api_id  (e.g. 12345678)"
+        value={apiId}
+        onChange={e => setApiId(e.target.value.trim())}
+      />
+      <input
+        className="win98-input"
+        type="text"
+        placeholder="App api_hash  (32 hex chars)"
+        value={apiHash}
+        onChange={e => setApiHash(e.target.value.trim())}
+      />
+      {error && <p className="login-hint error">{error}</p>}
+      <button className="win98-btn" onClick={submit} disabled={loading}>
+        {loading ? 'Connecting…' : 'Save & Connect'}
+      </button>
+    </div>
+  );
+}
+
 // ── Telegram panel ────────────────────────────────────────────
-function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASubmit }) {
+function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASubmit, onTgSetCredentials }) {
   const [loginMethod, setLoginMethod] = useState('qr'); // 'qr' | 'phone'
   const [phone,       setPhone]       = useState('');
   const [code,        setCode]        = useState('');
@@ -105,13 +158,7 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
   };
 
   if (tgStatus === 'no-credentials') {
-    return (
-      <p className="login-hint error">
-        Set <b>TG_API_ID</b> and <b>TG_API_HASH</b> environment variables.<br />
-        Get them free at{' '}
-        <a href="https://my.telegram.org" target="_blank" rel="noreferrer">my.telegram.org</a>
-      </p>
-    );
+    return <TelegramCredentialsForm onSave={onTgSetCredentials} />;
   }
 
   if (tgStatus === 'ready') {
@@ -208,7 +255,7 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
 }
 
 // ── Main LoginPanel ───────────────────────────────────────────
-export default function LoginPanel({ service, waStatus, tgStatus, waQR, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASubmit }) {
+export default function LoginPanel({ service, waStatus, tgStatus, waQR, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASubmit, onTgSetCredentials }) {
   const isWA = service === 'whatsapp';
 
   return (
@@ -228,10 +275,11 @@ export default function LoginPanel({ service, waStatus, tgStatus, waQR, tgQR, tg
                 onTgAuth={onTgAuth}
                 onTgQRLogin={onTgQRLogin}
                 onTg2FASubmit={onTg2FASubmit}
+                onTgSetCredentials={onTgSetCredentials}
               />
           }
         </div>
       </div>
     </div>
   );
-}
+}

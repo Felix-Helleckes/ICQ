@@ -4,6 +4,7 @@ const isDev = require('electron-is-dev');
 
 let mainWindow;
 const chatWindows = new Map(); // chatId → BrowserWindow
+const avatarStore  = new Map(); // chatId → avatar data URL
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
 let whatsappBridge, telegramBridge;
@@ -33,6 +34,7 @@ function createWindow() {
     maxWidth: 360,
     frame: false,
     resizable: true,
+    icon: path.join(__dirname, '../public/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -53,8 +55,9 @@ function createWindow() {
 
 app.on('ready', async () => {
   createWindow();
-  try { await whatsappBridge.init(); } catch (e) { console.error('[WA init]', e.message); }
-  try { await telegramBridge.init(); } catch (e) { console.error('[TG init]', e.message); }
+  const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
+  try { await whatsappBridge.init(cacheAvatar); } catch (e) { console.error('[WA init]', e.message); }
+  try { await telegramBridge.init(null, cacheAvatar); } catch (e) { console.error('[TG init]', e.message); }
 });
 
 app.on('window-all-closed', () => {
@@ -66,7 +69,8 @@ app.on('activate', () => {
 });
 
 // ── IPC: Open separate chat window (ICQ 5 style) ─────────────
-ipcMain.handle('open-chat', async (e, { chatId, chatName, service }) => {
+ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => {
+  if (avatar) avatarStore.set(chatId, avatar);
   // Focus existing window if already open
   if (chatWindows.has(chatId)) {
     const existing = chatWindows.get(chatId);
@@ -80,6 +84,7 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service }) => {
     minHeight: 300,
     frame: false,
     resizable: true,
+    icon: path.join(__dirname, '../public/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -95,11 +100,18 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service }) => {
 });
 
 // ── IPC: WhatsApp ─────────────────────────────────────────────
+ipcMain.handle('get-stored-avatar', async (e, id) => {
+  if (!id) return null;
+  return avatarStore.get(String(id)) || null;
+});
 ipcMain.handle('wa:get-qr',       async ()             => whatsappBridge.getQR());
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
 ipcMain.handle('wa:get-messages', async (e, chatId)    => whatsappBridge.getMessages(chatId));
 ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMessage(id, text));
 ipcMain.handle('wa:status',       async ()             => whatsappBridge.getStatus());
+ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyProfile());
+ipcMain.handle('wa:get-avatar',   async (e, id)        => whatsappBridge.getContactAvatar(id));
+ipcMain.handle('wa:logout',       async ()             => whatsappBridge.logout());
 
 // ── IPC: Telegram ─────────────────────────────────────────────
 ipcMain.handle('tg:request-code',   async (e, phone)            => telegramBridge.requestCode(phone));
@@ -110,8 +122,24 @@ ipcMain.handle('tg:get-dialogs',    async ()                    => telegramBridg
 ipcMain.handle('tg:get-messages',   async (e, chatId)           => telegramBridge.getMessages(chatId));
 ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
 ipcMain.handle('tg:status',         async ()                    => telegramBridge.getStatus());
+ipcMain.handle('tg:get-me',         async ()                    => telegramBridge.getMe());
+ipcMain.handle('tg:get-avatar',     async (e, id)               => telegramBridge.getContactAvatar(id));
+ipcMain.handle('tg:logout',         async ()                    => telegramBridge.logout());
+ipcMain.handle('tg:set-credentials',async (e, apiId, apiHash)   => telegramBridge.setCredentials(apiId, apiHash));
 
 // ── IPC: Window controls ──────────────────────────────────────
 ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize());
+ipcMain.on('window:maximize', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win?.isMaximized()) win.unmaximize(); else win?.maximize();
+});
 ipcMain.on('window:close',    (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+
+// Broadcast a sent message to all other windows (so sidebar updates immediately)
+ipcMain.on('chat:sent', (e, msg) => {
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed() && w.webContents !== e.sender)
+      w.webContents.send('chat:sent-broadcast', msg);
+  });
+});
 

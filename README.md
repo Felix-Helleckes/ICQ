@@ -1,100 +1,103 @@
-[![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=for-the-badge&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
-[![Trading Bot](https://img.shields.io/badge/Trading_Bot-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/felix-helleckes/TradingBot)
-[![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=for-the-badge&logo=github)](https://felix-helleckes.github.io/)
+<div align="center">
+  <img src="public/icq-logo.png" width="88" alt="ICQ Logo" />
+  <h1>ICQ Messenger</h1>
+  <p>
+    Retro <strong>ICQ 5</strong>-style multi-messenger — built with <strong>Electron + React</strong>.<br/>
+    Manage <strong>WhatsApp</strong> and <strong>Telegram</strong> from one classic dark-teal desktop app.
+  </p>
 
-# ICQ Messenger
+  <img src="https://img.shields.io/badge/Electron-29-47848F?logo=electron&logoColor=white" alt="Electron" />
+  <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
 
-A retro **ICQ 5**-style multi-messenger desktop app built with **Electron + React**.  
-Supports **WhatsApp** (via whatsapp-web.js) and **Telegram** (via GramJS).  
-Dark teal skin, separate floating chat windows per contact — just like ICQ 5.
+  <br/><br/>
 
-![ICQ Dark Teal Skin](public/icon.png)
+  [![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=flat-square&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
+  [![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=flat-square&logo=github)](https://felix-helleckes.github.io/)
+</div>
+
+---
+
+## Screenshots
+
+| WhatsApp | Telegram |
+|----------|----------|
+| ![WhatsApp Login](public/screenshot-wa.png) | ![Telegram Login](public/screenshot-tg.png) |
+
+> *Login screens — no personal data shown. Once connected, the sidebar fills with your contacts sorted by recency.*
 
 ---
 
 ## Features
 
-- **ICQ 5 dark teal skin** — faithful recreation with CSS variables (`--icq-bg`, `--icq-teal`, `--icq-yellow`)
-- **Separate chat windows** per contact (true ICQ 5 behavior, each in its own `BrowserWindow`)
-- **💬 WhatsApp** — QR login, persistent session, stickers & images, profile pictures
-- **✈️ Telegram** — MTProto via GramJS, QR + phone login, 2FA support, profile pictures
-- **Emoji picker** — 40 emojis, click-outside-to-close, inserted at cursor position
-- **Font size controls** — A− / A+ buttons, persisted in localStorage, range 10–20px (all sizes in `rem`)
-- **Live contact list** — real-time unread badges, last message preview, auto-reset on open
-- **Frameless window** with custom ICQ-style title bar (minimize / close)
-- **Contact profile pictures** — loaded from WhatsApp CDN / Telegram, with letter fallback
-- **Sticker & image display** — inline in chat, downloaded as base64 data URLs
-- **Windows installer** — NSIS `.exe` and portable build via electron-builder
+| | Feature | Details |
+|--|---------|---------|
+| 🎨 | **ICQ 5 dark teal skin** | CSS variables, `rem`-based sizing, A−/A+ font controls |
+| 💬 | **WhatsApp** | QR login · persistent session · images · videos · GIFs · stickers · read receipts |
+| ✈️ | **Telegram** | QR or phone number login · 2FA · photos · videos · GIFs · animated stickers |
+| 🪟 | **Separate chat windows** | Each contact gets its own floating window — true ICQ 5 style |
+| 🗂️ | **Collapsible groups** | Groups folded away at top · per-service group sound toggle |
+| 🖼️ | **Profile pictures** | Background-loaded for contacts + your own profile in the header |
+| 🔔 | **Classic ICQ sound** | Global 🔔/🔕 toggle + separate group sound control per service |
+| ✓✓ | **Read receipts** | WhatsApp ack states: pending · sent · delivered · read (blue ✓✓) |
+| ⌨️ | **Typing indicator** | Animated *tippt…* shown live in the chat header |
+| 🔍 | **Media lightbox** | Click any image or video to view fullscreen |
+| 🔄 | **Live contact list** | Unread badges · last message preview · auto-sort by recency |
+| 📦 | **Portable build** | Single `.exe` — no installation required |
 
 ---
 
-## Requirements
+## Quick Start
 
-- **Node.js** 18+ (LTS recommended)
+### Requirements
+
+- **Node.js** 18+ (LTS)
 - **npm** 9+
-- A Chromium-compatible system (for Puppeteer / WhatsApp headless)
+- Windows (Puppeteer requires a Chromium-compatible system)
 
----
-
-## Setup
-
-### 1. Install dependencies
+### Install & run
 
 ```bash
+git clone https://github.com/felix-helleckes/ICQ.git
+cd ICQ
 npm install
-```
-
-### 2. Telegram API credentials *(optional — only needed for Telegram)*
-
-1. Go to [https://my.telegram.org](https://my.telegram.org)
-2. Log in with your phone number
-3. Click **API development tools**
-4. Create an app → note your **App api_id** and **App api_hash**
-
-Set them as environment variables before starting:
-
-**Windows (PowerShell):**
-```powershell
-$env:TG_API_ID   = "12345678"
-$env:TG_API_HASH = "your_api_hash_here"
-```
-
-**Linux / macOS:**
-```bash
-export TG_API_ID=12345678
-export TG_API_HASH=your_api_hash_here
-```
-
-Or create a `.env` file in the project root:
-
-```
-TG_API_ID=12345678
-TG_API_HASH=your_api_hash_here
-```
-
----
-
-## Running in Development
-
-```bash
 npm start
 ```
 
-Starts the React dev server and Electron simultaneously. No browser tab opens.
+`npm start` launches the React dev server and Electron simultaneously.
 
 ---
 
-## Building a distributable (.exe)
+## Login
+
+### WhatsApp
+1. Switch to the **WhatsApp** tab
+2. Wait a moment — Puppeteer/Chrome starts in the background
+3. Scan the QR code with your phone → **WhatsApp → Linked Devices → Link a Device**
+4. Done — session is saved and survives restarts
+
+### Telegram
+1. Switch to the **Telegram** tab
+2. Choose **QR code** (scan with Telegram mobile) **or** enter your **phone number**
+3. Enter the code sent to your phone (+ 2FA password if enabled)
+4. Done — session stored in `data/telegram.session`
+
+> No API keys or developer accounts needed for either service.
+
+---
+
+## Build
 
 ```bash
+# Portable .exe (no installation needed)
+npm run dist:portable
+
 # NSIS installer
 npm run dist:win
-
-# Portable .exe (no install needed)
-npm run dist:portable
 ```
 
-Output is in the `dist/` folder.
+Output goes to the `dist/` folder.
 
 ---
 
@@ -102,24 +105,26 @@ Output is in the `dist/` folder.
 
 ```
 ├── electron/
-│   ├── main.js              # Main process, IPC handlers, multi-window management
-│   ├── preload.js           # contextBridge — exposes window.api with cleanup
-│   ├── whatsapp-bridge.js   # WhatsApp (whatsapp-web.js + Puppeteer)
-│   └── telegram-bridge.js   # Telegram MTProto (GramJS)
+│   ├── main.js              # Main process · IPC handlers · multi-window management
+│   ├── preload.js           # contextBridge — exposes window.api to React
+│   ├── whatsapp-bridge.js   # WhatsApp via whatsapp-web.js + Puppeteer
+│   └── telegram-bridge.js   # Telegram MTProto via GramJS
 ├── src/
-│   ├── App.js               # Main contact-list window (polls status, live updates)
-│   ├── ChatApp.js           # Per-contact chat window entry point
-│   ├── index.css            # Global ICQ 5 dark teal styles, CSS vars, rem units
+│   ├── App.js               # Sidebar / contact list window
+│   ├── ChatApp.js           # Per-contact chat window
+│   ├── index.css            # Global ICQ 5 styles + CSS variables
 │   └── components/
-│       ├── TitleBar.js      # Frameless title bar with minimize/close
-│       ├── Sidebar.js       # Service tabs, contact list, A−/A+ font controls
-│       ├── ChatWindow.js    # Messages, emoji picker, sticker/image display
-│       └── LoginPanel.js    # QR code / phone login for both services
-├── scripts/
-│   └── make-icon.js         # Generates icon.ico + icon.png via Jimp
+│       ├── TitleBar.js      # Frameless title bar (minimize / maximize / close)
+│       ├── Sidebar.js       # Service tabs · contact list · groups · sound controls
+│       ├── ChatWindow.js    # Messages · emoji picker · media · lightbox · read receipts
+│       └── LoginPanel.js    # QR + phone login for both services
 ├── public/
-│   ├── icon.ico             # App icon (electron-builder)
-│   └── icon.png
+│   ├── icq-logo.png         # ICQ logo (app icon source)
+│   ├── whatsapp-logo.svg    # WhatsApp logo (service tab)
+│   ├── telegram-logo.svg    # Telegram logo (service tab)
+│   ├── icon.ico             # Generated Windows app icon
+│   └── sounds/
+│       └── icq-message.mp3  # Classic ICQ notification sound
 └── package.json
 ```
 
@@ -127,36 +132,19 @@ Output is in the `dist/` folder.
 
 ## Architecture Notes
 
-- **Multi-window**: each chat opens a separate `BrowserWindow` via `open-chat` IPC. Windows are tracked in a `Map` and reused on re-open.
-- **Broadcast pattern**: `BrowserWindow.getAllWindows().forEach(w => w.webContents.send(...))` keeps all windows in sync.
-- **IPC cleanup**: `onMessage` returns a cleanup function (`ipcRenderer.removeListener`) used in `useEffect` — no listener leaks.
-- **Font scaling**: `html { font-size }` set at runtime, all component sizes in `rem`.
+- **Multi-window** — each chat is a separate `BrowserWindow`, tracked in a `Map` and reused on re-open
+- **Broadcast pattern** — `BrowserWindow.getAllWindows().forEach(w => w.webContents.send(...))` keeps sidebar + chat windows in sync instantly
+- **Avatar cache** — avatars cached in main process (`Map`), pushed via `wa:avatar` / `tg:avatar` events, no re-fetching
+- **Non-blocking contact list** — `getChats()` / `getDialogs()` return immediately; avatars load in background loops
+- **IPC cleanup** — every listener returns a removal function used in `useEffect` — no memory leaks
+- **Font scaling** — `html { font-size }` set at runtime, all UI sizes in `rem`
+- **BigInt peer IDs** — Telegram IDs converted to `BigInt` before every GramJS API call to prevent silent lookup failures
 
 ---
 
-## Windows SmartScreen Warning
+## Windows SmartScreen
 
-When running the `.exe` for the first time, Windows SmartScreen may show a warning ("Windows protected your PC").  
-This is expected — the app is not code-signed. It is **not malware**.
+On first run, SmartScreen may show *"Windows protected your PC"*. This is expected for unsigned apps — it is **not malware**.
 
-To run it anyway:
-1. Click **"More info"**
-2. Click **"Run anyway"**
+→ Click **"More info"** → **"Run anyway"**
 
-Alternatively: right-click the `.exe` → **Properties** → check **"Unblock"** → OK.
-
----
-
-## Notes
-
-- WhatsApp session is persisted in `data/whatsapp/` (gitignored)
-- Telegram session is stored in `data/telegram.session` (gitignored)
-- Never commit your session files or `.env`
-
----
-
-## Legal
-
-This project uses the **unofficial** WhatsApp Web API via whatsapp-web.js.  
-Use at your own risk. WhatsApp may block accounts that violate their Terms of Service.  
-Telegram usage is via the **official** MTProto protocol with your own developer credentials.
