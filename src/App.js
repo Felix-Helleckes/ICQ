@@ -16,6 +16,33 @@ export default function App() {
   const [chats, setChats]       = useState([]);
   const [chatsLoading, setChatsLoading] = useState(false);
   const [myProfile, setMyProfile] = useState({ name: null, avatar: null });
+
+  // Per-service chat cache — so switching services is instant (no reload)
+  const waCacheRef = React.useRef(null);   // null = not loaded yet
+  const tgCacheRef = React.useRef(null);
+  const waProfileRef = React.useRef(null);
+  const tgProfileRef = React.useRef(null);
+  const activeServiceRef = React.useRef(activeService);
+  useEffect(() => { activeServiceRef.current = activeService; }, [activeService]);
+
+  // Helper: write into the right cache and update visible list if active
+  const setCacheAndChats = (service, list) => {
+    const sorted = list.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (service === 'whatsapp') waCacheRef.current = sorted;
+    else tgCacheRef.current = sorted;
+    if (activeServiceRef.current === service) setChats(sorted);
+  };
+
+  // Update a single chat entry in the cache (live updates from messages)
+  const patchChat = (service, id, patch) => {
+    const cache = service === 'whatsapp' ? waCacheRef.current : tgCacheRef.current;
+    if (!cache) return;
+    const updated = cache.map(c => c.id === id ? { ...c, ...patch } : c)
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (service === 'whatsapp') waCacheRef.current = updated;
+    else tgCacheRef.current = updated;
+    if (activeServiceRef.current === service) setChats(updated);
+  };
   const [soundEnabled, setSoundEnabled] = useState(() => {
     return localStorage.getItem('icq-sound') !== 'off';
   });
@@ -66,14 +93,18 @@ export default function App() {
       setWaStatus('ready');
       setWaQR(null);
       const profile = await api.wa.getMyProfile().catch(() => null);
-      if (profile) setMyProfile(profile);
-      else if (data?.name) setMyProfile(p => ({ ...p, name: data.name }));
+      if (profile) { waProfileRef.current = profile; if (activeServiceRef.current === 'whatsapp') setMyProfile(profile); }
+      else if (data?.name) { waProfileRef.current = p => ({ ...p, name: data.name }); if (activeServiceRef.current === 'whatsapp') setMyProfile(p => ({ ...p, name: data.name })); }
+      // Force reload WA cache on reconnect
+      waCacheRef.current = null;
     });
     api.tg.onQR(qr  => setTgQR(qr));
     api.tg.onReady(async (data) => {
       setTgStatus('ready');
       setTgQR(null);
-      if (data?.name) setMyProfile({ name: data.name, avatar: data.avatar || null });
+      if (data?.name) { tgProfileRef.current = { name: data.name, avatar: data.avatar || null }; if (activeServiceRef.current === 'telegram') setMyProfile(tgProfileRef.current); }
+      // Force reload TG cache on reconnect
+      tgCacheRef.current = null;
     });
     api.tg.on2FANeeded(data => setTg2FA(data));
 
@@ -81,15 +112,15 @@ export default function App() {
     // Debounced reload for unknown chats
     let reloadTimer = null;
     const scheduleReload = (service) => {
-      if (reloadTimer) return; // already scheduled
+      if (reloadTimer) return;
       reloadTimer = setTimeout(async () => {
         reloadTimer = null;
         if (service === 'whatsapp') {
           const result = await api.wa.getChats().catch(() => null);
-          if (result) setChats(result.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+          if (result) setCacheAndChats('whatsapp', result);
         } else {
           const result = await api.tg.getDialogs().catch(() => null);
-          if (result) setChats(result.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+          if (result) setCacheAndChats('telegram', result);
         }
       }, 800);
     };
@@ -97,94 +128,72 @@ export default function App() {
     const removeWaMsg = api.wa.onMessage(msg => {
       const now = msg.timestamp || Math.floor(Date.now() / 1000);
       if (msg.fromMe) {
-        // Eigene Nachricht → Badge leeren, lastMessage + timestamp aktualisieren + nach oben sortieren
-        setChats(prev => {
-          const updated = prev.map(c =>
-            (c.id === msg.to || c.id === msg.from)
-              ? { ...c, lastMessage: msg.body, timestamp: now, unreadCount: 0 }
-              : c
-          );
-          return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        });
+        patchChat('whatsapp', msg.to || msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: 0 });
         return;
       }
       playMessageSound(msg.from, 'whatsapp');
-      const knownChat = chatsRef.current.some(c => c.id === msg.from);
-      if (!knownChat) {
-        // Chat nicht in der Liste → neu laden
-        scheduleReload('whatsapp');
-        return;
-      }
-      setChats(prev => {
-        const updated = prev.map(c =>
-          c.id === msg.from
-            ? { ...c, lastMessage: msg.body, timestamp: now, unreadCount: (c.unreadCount || 0) + 1 }
-            : c
-        );
-        return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      });
+      const cache = waCacheRef.current;
+      const knownChat = cache?.some(c => c.id === msg.from);
+      if (!knownChat) { scheduleReload('whatsapp'); return; }
+      patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: (cache.find(c=>c.id===msg.from)?.unreadCount || 0) + 1 });
     });
     // Avatare nachträglich einspielen (werden im Hintergrund geladen)
     const removeWaAvatar = api.wa.onAvatar(({ id, avatar }) => {
-      setChats(prev => prev.map(c => c.id === id ? { ...c, avatar } : c));
+      patchChat('whatsapp', id, { avatar });
     });
     const removeTgAvatar = api.tg.onAvatar(({ id, avatar }) => {
-      setChats(prev => prev.map(c => c.id === id ? { ...c, avatar } : c));
+      patchChat('telegram', id, { avatar });
     });
     const removeTgMsg = api.tg.onMessage(msg => {
       const chatId = String(msg.chatId);
-      const knownChat = chatsRef.current.some(c => c.id === chatId);
+      const cache = tgCacheRef.current;
+      const knownChat = cache?.some(c => c.id === chatId);
       if (!knownChat) {
-        if (!msg.fromMe) { playMessageSound(chatId, 'telegram'); }
+        if (!msg.fromMe) playMessageSound(chatId, 'telegram');
         scheduleReload('telegram');
         return;
       }
-      setChats(prev => {
-        const updated = prev.map(c => {
-          if (c.id !== chatId) return c;
-          if (msg.fromMe) return { ...c, lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 };
-          playMessageSound(chatId, 'telegram');
-          return { ...c, lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: (c.unreadCount || 0) + 1 };
-        });
-        return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      });
+      if (msg.fromMe) { patchChat('telegram', chatId, { lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 }); return; }
+      playMessageSound(chatId, 'telegram');
+      patchChat('telegram', chatId, { lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: (cache.find(c=>c.id===chatId)?.unreadCount || 0) + 1 });
     });
     // Direkt gesendete Nachrichten aus Chat-Fenstern (sofortiges Sidebar-Update)
     const removeSent = api.onSent?.((msg) => {
-      setChats(prev => {
-        const updated = prev.map(c =>
-          c.id === msg.chatId
-            ? { ...c, lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 }
-            : c
-        );
-        return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      });
+      const service = msg.service || activeServiceRef.current;
+      patchChat(service, msg.chatId, { lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 });
     });
     return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); if (reloadTimer) clearTimeout(reloadTimer); };
   }, []);
 
-  // Load chats when service / status changes
+  // Load chats when service / status changes — use cache if available
   useEffect(() => {
     if (!api) return;
     async function load() {
       if (activeService === 'whatsapp' && waStatus === 'ready') {
+        // Restore cached profile
+        if (waProfileRef.current) setMyProfile(waProfileRef.current);
+        // Show cache immediately if available
+        if (waCacheRef.current) { setChats(waCacheRef.current); return; }
         setChatsLoading(true);
-        // Profile und Chats parallel laden
         const [chatsResult, profile] = await Promise.all([
           api.wa.getChats().catch(() => []),
           api.wa.getMyProfile().catch(() => null),
         ]);
-        if (profile) setMyProfile(profile);
-        setChats(chatsResult || []);
+        if (profile) { waProfileRef.current = profile; setMyProfile(profile); }
+        waCacheRef.current = (chatsResult || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        setChats(waCacheRef.current);
         setChatsLoading(false);
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
+        if (tgProfileRef.current) setMyProfile(tgProfileRef.current);
+        if (tgCacheRef.current) { setChats(tgCacheRef.current); return; }
         setChatsLoading(true);
         const [dialogs, me] = await Promise.all([
           api.tg.getDialogs().catch(() => []),
           api.tg.getMe().catch(() => null),
         ]);
-        if (me) setMyProfile(me);
-        setChats((dialogs || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        if (me) { tgProfileRef.current = me; setMyProfile(me); }
+        tgCacheRef.current = (dialogs || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        setChats(tgCacheRef.current);
         setChatsLoading(false);
       } else {
         setChats([]);
@@ -196,8 +205,7 @@ export default function App() {
 
   // Open a separate chat window (ICQ 5 style) + clear unread badge
   const openChat = (chat) => {
-    setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unreadCount: 0 } : c));
-    // Serverseitig als gelesen markieren
+    patchChat(activeService, chat.id, { unreadCount: 0 });
     if (activeService === 'whatsapp') api?.wa.markRead?.(chat.id).catch(() => {});
     else api?.tg.markRead?.(chat.id).catch(() => {});
     api?.openChat({ chatId: chat.id, chatName: chat.name || chat.id, service: activeService, avatar: chat.avatar || null });
@@ -210,9 +218,8 @@ export default function App() {
 
   const markGroupsRead = () => {
     const groups = chats.filter(c => c.isGroup && (c.unreadCount || 0) > 0);
-    setChats(prev => prev.map(c => c.isGroup ? { ...c, unreadCount: 0 } : c));
-    // Auf den Servern als gelesen markieren
     groups.forEach(c => {
+      patchChat(activeService, c.id, { unreadCount: 0 });
       if (activeService === 'whatsapp') api?.wa.markRead?.(c.id).catch(() => {});
       else api?.tg.markRead?.(c.id).catch(() => {});
     });
@@ -222,9 +229,13 @@ export default function App() {
     if (activeService === 'whatsapp') {
       await api?.wa.logout().catch(() => {});
       setWaStatus('disconnected');
+      waCacheRef.current = null;
+      waProfileRef.current = null;
     } else {
       await api?.tg.logout().catch(() => {});
       setTgStatus('needs-auth');
+      tgCacheRef.current = null;
+      tgProfileRef.current = null;
     }
     setChats([]);
     setMyProfile({ name: null, avatar: null });
@@ -265,7 +276,7 @@ export default function App() {
       <TitleBar />
       <Sidebar
         activeService={activeService}
-        setActiveService={s => { setActiveService(s); setChats([]); }}
+        setActiveService={s => { setActiveService(s); }}
         waStatus={waStatus}
         tgStatus={tgStatus}
         chats={chats}
