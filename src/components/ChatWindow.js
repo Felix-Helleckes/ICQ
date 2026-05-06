@@ -238,7 +238,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
             onKeyDown={handleKey}
             placeholder="Nachricht eingeben..."
             rows={2}
-            style={{ fontSize: fontSize + 'px' }}
+            style={{ fontSize: (fontSize - 1) + 'px' }}
           />
           <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
         </div>
