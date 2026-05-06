@@ -104,7 +104,10 @@ export default function Sidebar({
                 onClick={() => onSelectChat(chat)}
               >
                 <div className="contact-avatar">
-                  {(chat.name || '?')[0].toUpperCase()}
+                  {chat.avatar
+                    ? <img src={chat.avatar} alt={chat.name} className="contact-avatar-img" />
+                    : (chat.name || '?')[0].toUpperCase()
+                  }
                   <StatusFlower status="ready" />
                 </div>
                 <div className="contact-info">

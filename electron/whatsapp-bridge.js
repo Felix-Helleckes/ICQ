@@ -66,14 +66,24 @@ function getStatus() { return status; }
 async function getChats() {
   if (status !== 'ready') return [];
   const chats = await client.getChats();
-  return chats.slice(0, 50).map(c => ({
-    id: c.id._serialized,
-    name: c.name,
-    lastMessage: c.lastMessage?.body || '',
-    timestamp: c.lastMessage?.timestamp || 0,
-    unreadCount: c.unreadCount,
-    isGroup: c.isGroup,
+  const result = await Promise.all(chats.slice(0, 50).map(async c => {
+    let avatar = null;
+    try {
+      const contact = await c.getContact();
+      const pic = await contact.getProfilePicUrl();
+      if (pic) avatar = pic;
+    } catch (e) { /* no pic */ }
+    return {
+      id: c.id._serialized,
+      name: c.name,
+      lastMessage: c.lastMessage?.body || '',
+      timestamp: c.lastMessage?.timestamp || 0,
+      unreadCount: c.unreadCount,
+      isGroup: c.isGroup,
+      avatar,
+    };
   }));
+  return result;
 }
 
 async function getMessages(chatId) {

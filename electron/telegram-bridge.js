@@ -142,14 +142,28 @@ function getStatus() { return status; }
 async function getDialogs() {
   if (status !== 'ready') return [];
   const dialogs = await tgClient.getDialogs({ limit: 50 });
-  return dialogs.map(d => ({
-    id: d.id?.toString(),
-    name: d.name || d.title,
-    lastMessage: d.message?.message || '',
-    timestamp: d.message?.date || 0,
-    unreadCount: d.unreadCount,
-    isGroup: d.isGroup || d.isChannel,
+  const result = await Promise.all(dialogs.map(async d => {
+    let avatar = null;
+    try {
+      const photos = await tgClient.getProfilePhotos(d.entity, { limit: 1 });
+      if (photos && photos.length > 0) {
+        const buf = await tgClient.downloadProfilePhoto(d.entity, { isBig: false });
+        if (buf && buf.length > 0) {
+          avatar = 'data:image/jpeg;base64,' + buf.toString('base64');
+        }
+      }
+    } catch (e) { /* no pic */ }
+    return {
+      id: d.id?.toString(),
+      name: d.name || d.title,
+      lastMessage: d.message?.message || '',
+      timestamp: d.message?.date || 0,
+      unreadCount: d.unreadCount,
+      isGroup: d.isGroup || d.isChannel,
+      avatar,
+    };
   }));
+  return result;
 }
 
 async function getMessages(chatId) {

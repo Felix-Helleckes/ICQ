@@ -167,6 +167,17 @@
   filter: drop-shadow(0 0 2px #000);
 }
 
+.contact-avatar-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+  line-height: 1;
+  filter: drop-shadow(0 0 2px #000);
+}
+
 .contact-info {
   flex: 1;
   overflow: hidden;
