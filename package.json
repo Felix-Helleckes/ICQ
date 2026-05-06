@@ -15,10 +15,10 @@
     "react-start": "react-scripts start",
     "build": "react-scripts build",
     "electron": "electron .",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:portable": "npm run build && electron-builder --win portable",
-    "dist:store": "npm run build && electron-builder --win appx",
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:portable": "npm run build && electron-builder --win portable --publish never",
+    "dist:store": "npm run build && electron-builder --win appx --publish never",
     "make-icon": "node scripts/make-icon.js"
   },
   "dependencies": {
@@ -66,7 +66,6 @@
       "!node_modules/whatsapp-web.js/node_modules/puppeteer/.local-chromium/**/*"
     ],
     "extraResources": [],
-    "publish": "never",
     "win": {
       "target": [
         { "target": "nsis",     "arch": ["x64"] },
