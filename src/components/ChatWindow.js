@@ -6,6 +6,22 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatDateSep(ts) {
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today - 86400000);
+  const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (msgDay.getTime() === today.getTime()) return 'Heute';
+  if (msgDay.getTime() === yesterday.getTime()) return 'Gestern';
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
+function dayKey(ts) {
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
 const EMOJIS = [
   '😀','😂','😍','😎','😭','😅','🥺','😊','😇','🤔','😴','😜','🥳','😬','🤩',
   '👍','👎','👋','🙏','💪','🤝','👀','❤️','💔','🔥','✨','🎉','💯','🌹','🎶',
@@ -169,8 +185,18 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
 
       {/* Message area */}
       <div className="message-area win98-sunken">
-        {messages.map((msg, i) => (
-          <div key={msg.id || i} className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
+        {messages.map((msg, i) => {
+          const showDate = msg.timestamp && (
+            i === 0 || dayKey(msg.timestamp) !== dayKey(messages[i - 1].timestamp)
+          );
+          return (
+          <React.Fragment key={msg.id || i}>
+            {showDate && (
+              <div className="date-separator">
+                <span>{formatDateSep(msg.timestamp)}</span>
+              </div>
+            )}
+          <div className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
             <div className="message-bubble">
               {msg.mediaData
                 ? (msg.type === 'video' || msg.isGif)
@@ -197,7 +223,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
               </span>
             </div>
           </div>
-        ))}
+          </React.Fragment>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 

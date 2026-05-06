@@ -119,6 +119,26 @@
   gap: 6px;
 }
 
+/* Date separator */
+.date-separator {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 8px 12px 4px;
+  color: var(--icq-text-dim);
+  font-size: 10px;
+}
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--icq-border);
+}
+.date-separator span {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
 .message-row { display: flex; }
 .message-row.me   { justify-content: flex-end; }
 .message-row.them { justify-content: flex-start; }
