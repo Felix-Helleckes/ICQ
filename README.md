@@ -1,6 +1,6 @@
 <div align="center">
   <img src="public/icq-logo.png" width="88" alt="ICQ Logo" />
-  <h1>ICQ Messenger</h1>
+  <h1>Retrogram - Multi Messenger</h1>
   <p>
     Retro <strong>ICQ 5</strong>-style multi-messenger — built with <strong>Electron + React</strong>.<br/>
     Manage <strong>WhatsApp</strong> and <strong>Telegram</strong> from one classic dark-teal desktop app.
