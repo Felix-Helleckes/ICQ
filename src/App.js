@@ -33,6 +33,13 @@ export default function App() {
   const chatsRef = React.useRef(chats);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
 
+  // IDs die manuell als gelesen markiert wurden — überlebt Service-Wechsel und Reloads
+  const manuallyReadRef = React.useRef(new Set());
+
+  // Hilfsfunktion: unreadCount beim Laden mit manuell-gelesen-Override kombinieren
+  const applyManualRead = (list) =>
+    list.map(c => manuallyReadRef.current.has(c.id) ? { ...c, unreadCount: 0 } : c);
+
   const playMessageSound = (chatId, service) => {
     if (!soundEnabledRef.current) return;
     // Gruppen-Sound-Check
@@ -86,10 +93,10 @@ export default function App() {
         reloadTimer = null;
         if (service === 'whatsapp') {
           const result = await api.wa.getChats().catch(() => null);
-          if (result) setChats(result.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+          if (result) setChats(applyManualRead(result).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
         } else {
           const result = await api.tg.getDialogs().catch(() => null);
-          if (result) setChats(result.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+          if (result) setChats(applyManualRead(result).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
         }
       }, 800);
     };
@@ -109,6 +116,8 @@ export default function App() {
         return;
       }
       playMessageSound(msg.from, 'whatsapp');
+      // Neue Nachricht → manuelle Gelesen-Markierung für diesen Chat aufheben
+      manuallyReadRef.current.delete(msg.from);
       const knownChat = chatsRef.current.some(c => c.id === msg.from);
       if (!knownChat) {
         // Chat nicht in der Liste → neu laden
@@ -135,10 +144,11 @@ export default function App() {
       const chatId = String(msg.chatId);
       const knownChat = chatsRef.current.some(c => c.id === chatId);
       if (!knownChat) {
-        if (!msg.fromMe) playMessageSound(chatId, 'telegram');
+        if (!msg.fromMe) { playMessageSound(chatId, 'telegram'); manuallyReadRef.current.delete(chatId); }
         scheduleReload('telegram');
         return;
       }
+      if (!msg.fromMe) manuallyReadRef.current.delete(chatId);
       setChats(prev => {
         const updated = prev.map(c => {
           if (c.id !== chatId) return c;
@@ -175,7 +185,7 @@ export default function App() {
           api.wa.getMyProfile().catch(() => null),
         ]);
         if (profile) setMyProfile(profile);
-        setChats(chatsResult || []);
+        setChats(applyManualRead(chatsResult || []));
         setChatsLoading(false);
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
         setChatsLoading(true);
@@ -184,7 +194,7 @@ export default function App() {
           api.tg.getMe().catch(() => null),
         ]);
         if (me) setMyProfile(me);
-        setChats((dialogs || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        setChats(applyManualRead((dialogs || [])).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
         setChatsLoading(false);
       } else {
         setChats([]);
@@ -207,6 +217,7 @@ export default function App() {
   };
 
   const markGroupsRead = () => {
+    chats.filter(c => c.isGroup).forEach(c => manuallyReadRef.current.add(c.id));
     setChats(prev => prev.map(c => c.isGroup ? { ...c, unreadCount: 0 } : c));
   };
 
