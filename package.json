@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.0",
+  "version": "1.0.13",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -65,10 +65,15 @@
     "files": [
       "build/**/*",
       "electron/**/*",
-      "node_modules/**/*",
-      "!node_modules/whatsapp-web.js/node_modules/puppeteer/.local-chromium/**/*"
+      "node_modules/**/*"
     ],
-    "extraResources": [],
+    "extraResources": [
+      {
+        "from": "puppeteer_cache/chrome",
+        "to": "chrome",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
       "target": [
         { "target": "nsis",     "arch": ["x64"] },

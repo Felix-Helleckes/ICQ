@@ -21,11 +21,35 @@ function broadcast(channel, data) {
 }
 
 // Find a usable Chrome/Edge/Chromium on the host system.
-// The packaged app cannot use puppeteer's downloaded Chromium (it's not bundled).
+// Priority: 1. bundled extraResources chrome, 2. system Chrome/Edge, 3. puppeteer cache (dev)
 function findChromiumExecutable() {
+  // 1. Bundled chromium (extraResources → resources/chrome/<version>/chrome-*/chrome[.exe])
+  try {
+    const resPath = process.resourcesPath;
+    if (resPath) {
+      const chromeDir = path.join(resPath, 'chrome');
+      const versions = fs.readdirSync(chromeDir);
+      for (const v of versions) {
+        const vDir = path.join(chromeDir, v);
+        const candidates = [
+          path.join(vDir, 'chrome-win64',  'chrome.exe'),
+          path.join(vDir, 'chrome-win32',  'chrome.exe'),
+          path.join(vDir, 'chrome-linux64', 'chrome'),
+          path.join(vDir, 'chrome-linux',   'chrome'),
+          path.join(vDir, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+          path.join(vDir, 'chrome-mac-arm64','Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+        ];
+        for (const exe of candidates) {
+          if (fs.existsSync(exe)) return exe;
+        }
+      }
+    }
+  } catch (e) {}
+
+  // 2. System Chrome / Edge
   const win = process.platform === 'win32';
   const mac = process.platform === 'darwin';
-  const candidates = win ? [
+  const sysCandidates = win ? [
     path.join(process.env['ProgramFiles']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
     path.join(process.env['ProgramFiles(x86)']   || '', 'Google\\Chrome\\Application\\chrome.exe'),
     path.join(process.env['LOCALAPPDATA']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
@@ -43,11 +67,11 @@ function findChromiumExecutable() {
     '/snap/bin/chromium',
   ];
 
-  for (const p of candidates) {
+  for (const p of sysCandidates) {
     if (p && fs.existsSync(p)) return p;
   }
 
-  // Dev fallback: puppeteer's own downloaded Chromium
+  // 3. Dev fallback: puppeteer's own downloaded Chromium
   try {
     const p = require('puppeteer').executablePath?.();
     if (p && fs.existsSync(p)) return p;
