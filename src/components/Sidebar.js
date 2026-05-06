@@ -123,7 +123,7 @@ export default function Sidebar({
           onClick={() => setActiveService('whatsapp')}
           title="WhatsApp"
         >
-          <img src="/whatsapp-logo.svg" className="svc-logo" alt="WhatsApp" />
+          <img src={process.env.PUBLIC_URL + '/whatsapp-logo.svg'} className="svc-logo" alt="WhatsApp" />
           <span className="svc-label">WhatsApp</span>
           <span className="svc-dot" style={{ background: STATUS_COLOR[waStatus] }} />
         </button>
@@ -132,7 +132,7 @@ export default function Sidebar({
           onClick={() => setActiveService('telegram')}
           title="Telegram"
         >
-          <img src="/telegram-logo.svg" className="svc-logo" alt="Telegram" />
+          <img src={process.env.PUBLIC_URL + '/telegram-logo.svg'} className="svc-logo" alt="Telegram" />
           <span className="svc-label">Telegram</span>
           <span className="svc-dot" style={{ background: STATUS_COLOR[tgStatus] }} />
         </button>

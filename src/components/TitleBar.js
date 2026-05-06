@@ -9,7 +9,7 @@ export default function TitleBar({ title = 'ICQ Messenger' }) {
   return (
     <div className="titlebar">
       <div className="titlebar-icon">
-        <img src="/icq-logo.png" className="icq-logo" alt="ICQ" />
+        <img src={process.env.PUBLIC_URL + '/icq-logo.png'} className="icq-logo" alt="ICQ" />
       </div>
       <div className="titlebar-title">{title}</div>
       <div className="titlebar-controls">

@@ -82,7 +82,7 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
     return (
       <div className="chat-empty">
         <div className="chat-empty-inner">
-          <img src="/icq-logo.png" className="icq-big-logo" alt="ICQ" />
+          <img src={process.env.PUBLIC_URL + '/icq-logo.png'} className="icq-big-logo" alt="ICQ" />
           <p>Select a conversation to start chatting</p>
         </div>
       </div>

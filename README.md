@@ -8,7 +8,7 @@
 
   <img src="https://img.shields.io/badge/Electron-29-47848F?logo=electron&logoColor=white" alt="Electron" />
   <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-555?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0id2hpdGUiIGQ9Ik0xMiAyQzYuNDggMiAyIDYuNDggMiAxMnM0LjQ4IDEwIDEwIDEwIDEwLTQuNDggMTAtMTBTMTcuNTIgMiAxMiAyeiIvPjwvc3ZnPg==&logoColor=white" alt="Platform" />
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT" />
   <img src="https://img.shields.io/github/v/release/Felix-Helleckes/ICQ?label=latest&color=teal" alt="Latest Release" />
 
@@ -56,7 +56,9 @@
 
 - **Node.js** 18+ (LTS)
 - **npm** 9+
-- Windows (Puppeteer requires a Chromium-compatible system)
+- Windows, macOS, or Linux
+
+> On **Linux**, Puppeteer (WhatsApp) needs: `libnss3 libatk-bridge2.0-0 libx11-xcb1 libdrm2 libgbm1 libasound2`
 
 ### Install & run
 
@@ -92,11 +94,14 @@ npm start
 ## Build
 
 ```bash
-# Portable .exe (no installation needed)
-npm run dist:portable
+# Windows — NSIS installer + Portable
+npx electron-builder --win nsis portable
 
-# NSIS installer
-npm run dist:win
+# macOS — DMG (unsigned)
+npx electron-builder --mac dmg
+
+# Linux — AppImage + .deb
+npx electron-builder --linux AppImage deb
 ```
 
 Output goes to the `dist/` folder.
@@ -144,9 +149,10 @@ Output goes to the `dist/` folder.
 
 ---
 
-## Windows SmartScreen
+## First-run warnings
 
-On first run, SmartScreen may show *"Windows protected your PC"*. This is expected for unsigned apps — it is **not malware**.
+**Windows — SmartScreen:** Click **"More info"** → **"Run anyway"**
 
-→ Click **"More info"** → **"Run anyway"**
+**macOS — Gatekeeper:** Right-click the `.app` → **"Open"** → **"Open"**  
+Or in Terminal: `xattr -cr /Applications/ICQ\ Messenger.app`
 
