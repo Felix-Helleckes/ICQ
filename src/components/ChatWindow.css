@@ -200,7 +200,7 @@
   gap: 0;
   background: var(--icq-bg-mid);
   border-top: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* ── Resizable divider ── */
