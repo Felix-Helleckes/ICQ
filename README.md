@@ -25,7 +25,7 @@
 
 | WhatsApp | Telegram |
 |----------|----------|
-| ![WhatsApp Login](public/screenshot-wa.png) | ![Telegram Login](public/screenshot-tg.png) |
+| ![WhatsApp Login](public/screenshot-wa.png) | ![Telegram Login](public/screenshot-tg.png) | ![Single Chat Windows](public/Chatwindow.png) 
 
 > *Login screens — no personal data shown. Once connected, the sidebar fills with your contacts sorted by recency.*
 
