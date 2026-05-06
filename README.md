@@ -1,5 +1,5 @@
 [![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=for-the-badge&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
-[![Trading Bot](https://img.shields.io/badge/Trading_Bot-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/felix-helleckes/TradingBot)
+[![Current Repo](https://img.shields.io/badge/ICQ-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/felix-helleckes/ICQ)
 [![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=for-the-badge&logo=github)](https://felix-helleckes.github.io/)
 
 # ICQ Messenger
