@@ -119,7 +119,7 @@ export default function Sidebar({
             : '✿'}
         </div>
         <div className="user-info">
-          <div className="user-name">{myProfile?.name || 'ICQ Messenger'}</div>
+          <div className="user-name">{myProfile?.name || 'Retrogram'}</div>
           <div className="user-status" style={{ color: STATUS_COLOR[currentStatus] }}>
             ● {statusLabel(currentStatus)}
           </div>
