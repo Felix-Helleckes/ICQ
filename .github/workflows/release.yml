@@ -53,21 +53,16 @@ jobs:
       - name: Build Electron - Windows
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis portable
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Electron - macOS
         if: matrix.os == 'macos-latest'
         run: npx electron-builder --mac dmg
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Build Electron - Linux
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux AppImage deb
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2

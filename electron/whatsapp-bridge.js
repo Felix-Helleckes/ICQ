@@ -4,6 +4,7 @@
  */
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { BrowserWindow } = require('electron');
+const path = require('path');
 
 let client = null;
 let status = 'disconnected';
@@ -18,13 +19,13 @@ function broadcast(channel, data) {
   if (channel === 'wa:avatar' && onAvatarCb) onAvatarCb(data.id, data.avatar);
 }
 
-function init(avatarCallback) {
+function init(avatarCallback, dataDir) {
   if (avatarCallback) onAvatarCb = avatarCallback;
   status = 'loading';
   broadcast('wa:status', 'loading');
 
   client = new Client({
-    authStrategy: new LocalAuth({ dataPath: './data/whatsapp' }),
+    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, 'whatsapp') }),
     puppeteer: {
       headless: true,
       args: [

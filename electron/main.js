@@ -2,6 +2,11 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const isDev = require('electron-is-dev');
 
+// ── Portable: redirect userData to folder next to .exe ───────
+if (process.env.PORTABLE_EXECUTABLE_DIR) {
+  app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'ICQ-Data'));
+}
+
 let mainWindow;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
@@ -55,9 +60,13 @@ function createWindow() {
 
 app.on('ready', async () => {
   createWindow();
+  // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
+  const dataDir = isDev
+    ? path.join(__dirname, '../data')
+    : app.getPath('userData');
   const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
-  try { await whatsappBridge.init(cacheAvatar); } catch (e) { console.error('[WA init]', e.message); }
-  try { await telegramBridge.init(null, cacheAvatar); } catch (e) { console.error('[TG init]', e.message); }
+  try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
+  try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
 });
 
 app.on('window-all-closed', () => {

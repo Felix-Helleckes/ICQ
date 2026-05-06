@@ -10,8 +10,8 @@ const { BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
-const SESSION_FILE     = path.join(__dirname, '../data/telegram.session');
-const CREDENTIALS_FILE = path.join(__dirname, '../data/telegram-credentials.json');
+let SESSION_FILE     = path.join(__dirname, '../data/telegram.session');
+let CREDENTIALS_FILE = path.join(__dirname, '../data/telegram-credentials.json');
 
 // Fallback: Telegram Desktop open-source credentials (publicly available on GitHub)
 // Users can override via env vars or the credentials file.
@@ -57,7 +57,11 @@ function saveSession(str) {
   fs.writeFileSync(SESSION_FILE, str, 'utf8');
 }
 
-async function init(win, avatarCallback) {
+async function init(win, avatarCallback, dataDir) {
+  if (dataDir) {
+    SESSION_FILE     = path.join(dataDir, 'telegram.session');
+    CREDENTIALS_FILE = path.join(dataDir, 'telegram-credentials.json');
+  }
   if (avatarCallback) onAvatarCb = avatarCallback;
   if (avatarCallback) onAvatarCb = avatarCallback;
   mainWin = win;

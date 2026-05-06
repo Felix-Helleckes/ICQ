@@ -66,37 +66,24 @@
       "!node_modules/whatsapp-web.js/node_modules/puppeteer/.local-chromium/**/*"
     ],
     "extraResources": [],
+    "publish": "never",
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        },
-        {
-          "target": "appx",
-          "arch": ["x64"]
-        }
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
       ],
       "icon": "public/icon.ico"
-    },
-    "appx": {
-      "identityName": "ICQMessenger",
-      "publisher": "CN=DEIN-PUBLISHER-ID-AUS-PARTNER-CENTER",
-      "publisherDisplayName": "Dein Anzeigename",
-      "applicationId": "ICQMessenger",
-      "displayName": "ICQ Messenger",
-      "backgroundColor": "#0A3A3A"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "ICQ Messenger"
+      "shortcutName": "ICQ Messenger",
+      "artifactName": "ICQ-Messenger-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ICQ-Messenger-${version}-Portable.${ext}"
     },
     "mac": {
       "target": [
