@@ -273,6 +273,20 @@ async function sendFile(chatId, filePath) {
   await tgClient.sendFile(toPeer(chatId), { file: filePath });
 }
 
+async function markChatRead(chatId) {
+  if (status !== 'ready') return;
+  try {
+    const { Api } = require('telegram');
+    const peer = toPeer(chatId);
+    // Try channels.ReadHistory first (groups/channels), fall back to messages.ReadHistory
+    try {
+      await tgClient.invoke(new Api.channels.ReadHistory({ channel: peer, maxId: 0 }));
+    } catch (e) {
+      await tgClient.invoke(new Api.messages.ReadHistory({ peer, maxId: 0 }));
+    }
+  } catch (e) { /* ignore */ }
+}
+
 async function getMe() {
   if (!tgClient) return null;
   try {
@@ -293,4 +307,4 @@ async function logout() {
   tgClient = null;
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, getMe, logout, setCredentials, getContactAvatar };
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, markChatRead, getMe, logout, setCredentials, getContactAvatar };

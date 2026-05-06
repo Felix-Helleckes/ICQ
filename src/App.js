@@ -207,7 +207,11 @@ export default function App() {
   // Open a separate chat window (ICQ 5 style) + clear unread badge
   const openChat = (chat) => {
     // Sofort Badge leeren
+    manuallyReadRef.current.add(chat.id);
     setChats(prev => prev.map(c => c.id === chat.id ? { ...c, unreadCount: 0 } : c));
+    // Serverseitig als gelesen markieren
+    if (activeService === 'whatsapp') api?.wa.markRead?.(chat.id).catch(() => {});
+    else api?.tg.markRead?.(chat.id).catch(() => {});
     api?.openChat({ chatId: chat.id, chatName: chat.name || chat.id, service: activeService, avatar: chat.avatar || null });
   };
 
@@ -217,8 +221,14 @@ export default function App() {
   };
 
   const markGroupsRead = () => {
-    chats.filter(c => c.isGroup).forEach(c => manuallyReadRef.current.add(c.id));
+    const groups = chats.filter(c => c.isGroup && (c.unreadCount || 0) > 0);
+    groups.forEach(c => manuallyReadRef.current.add(c.id));
     setChats(prev => prev.map(c => c.isGroup ? { ...c, unreadCount: 0 } : c));
+    // Auf den Servern als gelesen markieren
+    groups.forEach(c => {
+      if (activeService === 'whatsapp') api?.wa.markRead?.(c.id).catch(() => {});
+      else api?.tg.markRead?.(c.id).catch(() => {});
+    });
   };
 
   const handleLogout = async () => {
