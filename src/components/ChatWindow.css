@@ -238,7 +238,7 @@
   border-radius: 3px;
   padding: 5px 7px;
   font-family: inherit;
-  font-size: inherit;
+  font-size: 0.80rem;
   color: var(--icq-text);
 }
 .msg-input:focus { outline: 1px solid var(--icq-teal); border-color: var(--icq-teal); }
