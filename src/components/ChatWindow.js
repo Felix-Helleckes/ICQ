@@ -199,7 +199,14 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
           <div className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
             <div className="message-bubble">
               {msg.mediaData
-                ? (msg.type === 'video' || msg.isGif)
+                ? (msg.type === 'ptt' || msg.type === 'audio')
+                  ? <audio
+                      controls
+                      src={msg.mediaData}
+                      className="msg-audio"
+                      preload="metadata"
+                    />
+                : (msg.type === 'video' || msg.isGif)
                   ? <video
                       src={msg.mediaData}
                       className="msg-video"

@@ -243,10 +243,16 @@ async function getMessages(chatId) {
         const isVideoAttr = attrs.some(a => a.className === 'DocumentAttributeVideo');
         const isAnimated  = attrs.some(a => a.className === 'DocumentAttributeAnimated');
         isGif = isAnimated || mime === 'image/gif';
+        const isVoice = attrs.some(a => a.className === 'DocumentAttributeAudio' && a.voice);
+        const isAudio = attrs.some(a => a.className === 'DocumentAttributeAudio');
         if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
           mediaType = 'video';
           const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
           if (buf && buf.length) mediaData = `data:${mime};base64,` + buf.toString('base64');
+        } else if (isVoice || isAudio || mime.startsWith('audio/')) {
+          mediaType = isVoice ? 'ptt' : 'audio';
+          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
+          if (buf && buf.length) mediaData = `data:${mime || 'audio/ogg'};base64,` + buf.toString('base64');
         }
       }
     } catch (e) { /* skip media errors */ }

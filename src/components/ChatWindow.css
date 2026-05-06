@@ -363,6 +363,14 @@
   border: 1px solid var(--icq-border);
 }
 
+.msg-audio {
+  display: block;
+  width: 240px;
+  height: 32px;
+  accent-color: var(--icq-teal);
+  background: transparent;
+}
+
 /* ── Lightbox ── */
 .lightbox-overlay {
   position: fixed;

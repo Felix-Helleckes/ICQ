@@ -59,7 +59,7 @@ function init(avatarCallback, dataDir) {
 
   client.on('message', async (msg) => {
     let mediaData = null;
-    if (msg.hasMedia && (msg.type === 'sticker' || msg.type === 'image' || msg.type === 'video')) {
+    if (msg.hasMedia && (msg.type === 'sticker' || msg.type === 'image' || msg.type === 'video' || msg.type === 'ptt' || msg.type === 'audio')) {
       try {
         const media = await msg.downloadMedia();
         if (media) mediaData = `data:${media.mimetype};base64,${media.data}`;
@@ -147,7 +147,7 @@ async function getMessages(chatId) {
   const msgs = await chat.fetchMessages({ limit: 50 });
   const result = await Promise.all(msgs.map(async m => {
     let mediaData = null;
-    if (m.hasMedia && (m.type === 'sticker' || m.type === 'image' || m.type === 'video')) {
+    if (m.hasMedia && (m.type === 'sticker' || m.type === 'image' || m.type === 'video' || m.type === 'ptt' || m.type === 'audio')) {
       try {
         const media = await m.downloadMedia();
         if (media) mediaData = `data:${media.mimetype};base64,${media.data}`;
