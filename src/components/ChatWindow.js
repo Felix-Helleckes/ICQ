@@ -122,7 +122,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
     e.preventDefault();
     setIsDragging(false);
     const file = e.dataTransfer.files?.[0];
-    if (file?.path) onSendFile?.(file.path);
+    if (!file) return;
+    const filePath = window.api?.getFilePath?.(file) || file.path;
+    if (filePath) onSendFile?.(filePath);
   };
 
   if (!chat) {

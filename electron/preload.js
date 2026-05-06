@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   // WhatsApp
@@ -43,7 +43,9 @@ contextBridge.exposeInMainWorld('api', {
     submit2FA:    (password)         => ipcRenderer.invoke('tg:2fa-password', password),
     getDialogs:   ()                 => ipcRenderer.invoke('tg:get-dialogs'),
     getMessages:  (chatId)           => ipcRenderer.invoke('tg:get-messages', chatId),
-    sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),    sendFile:    (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),    getStatus:    ()                 => ipcRenderer.invoke('tg:status'),
+    sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
+    sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
+    getStatus:    ()                 => ipcRenderer.invoke('tg:status'),
     getMe:        ()                 => ipcRenderer.invoke('tg:get-me'),
     getAvatar:    (id)               => ipcRenderer.invoke('tg:get-avatar', id),
     logout:       ()                 => ipcRenderer.invoke('tg:logout'),
@@ -79,4 +81,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  // Get real file system path from a dropped File object (Electron 29+)
+  getFilePath: (file) => {
+    try { return webUtils.getPathForFile(file); } catch (e) { return file?.path || null; }
+  },
 });
