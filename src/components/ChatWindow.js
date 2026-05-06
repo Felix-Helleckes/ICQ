@@ -217,9 +217,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
             onClick={() => setShowEmoji(v => !v)}
           >😊</button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
-          <button className="toolbar-btn" title="Bold" style={{ fontWeight: 'bold' }}>B</button>
-          <button className="toolbar-btn" title="Italic" style={{ fontStyle: 'italic' }}>I</button>
-          <span className="toolbar-sep" />
           <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
           <button className="toolbar-btn font-btn" title="Schrift größer" onClick={larger}>A+</button>
 
