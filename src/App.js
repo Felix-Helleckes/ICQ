@@ -131,10 +131,10 @@ export default function App() {
         patchChat('whatsapp', msg.to || msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: 0 });
         return;
       }
-      playMessageSound(msg.from, 'whatsapp');
       const cache = waCacheRef.current;
       const knownChat = cache?.some(c => c.id === msg.from);
       if (!knownChat) { scheduleReload('whatsapp'); return; }
+      playMessageSound(msg.from, 'whatsapp');
       patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: (cache.find(c=>c.id===msg.from)?.unreadCount || 0) + 1 });
     });
     // Avatare nachträglich einspielen (werden im Hintergrund geladen)
@@ -149,7 +149,6 @@ export default function App() {
       const cache = tgCacheRef.current;
       const knownChat = cache?.some(c => c.id === chatId);
       if (!knownChat) {
-        if (!msg.fromMe) playMessageSound(chatId, 'telegram');
         scheduleReload('telegram');
         return;
       }
