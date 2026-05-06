@@ -1,3 +1,7 @@
+[![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=for-the-badge&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
+[![Trading Bot](https://img.shields.io/badge/Trading_Bot-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/felix-helleckes/TradingBot)
+[![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=for-the-badge&logo=github)](https://felix-helleckes.github.io/)
+
 # ICQ Messenger
 
 A retro **ICQ 5**-style multi-messenger desktop app built with **Electron + React**.  
@@ -127,6 +131,19 @@ Output is in the `dist/` folder.
 - **Broadcast pattern**: `BrowserWindow.getAllWindows().forEach(w => w.webContents.send(...))` keeps all windows in sync.
 - **IPC cleanup**: `onMessage` returns a cleanup function (`ipcRenderer.removeListener`) used in `useEffect` — no listener leaks.
 - **Font scaling**: `html { font-size }` set at runtime, all component sizes in `rem`.
+
+---
+
+## Windows SmartScreen Warning
+
+When running the `.exe` for the first time, Windows SmartScreen may show a warning ("Windows protected your PC").  
+This is expected — the app is not code-signed. It is **not malware**.
+
+To run it anyway:
+1. Click **"More info"**
+2. Click **"Run anyway"**
+
+Alternatively: right-click the `.exe` → **Properties** → check **"Unblock"** → OK.
 
 ---
 

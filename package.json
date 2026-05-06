@@ -50,6 +50,10 @@
     "productName": "ICQ Messenger",
     "copyright": "Copyright © 2026",
     "asar": true,
+    "extends": null,
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
     "files": [
       "build/**/*",
       "electron/**/*",
