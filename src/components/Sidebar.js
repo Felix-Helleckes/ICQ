@@ -30,13 +30,22 @@ function ContactItem({ chat, onSelect }) {
   );
 }
 
-function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound }) {
+function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead }) {
   const [expanded, setExpanded] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null);
   const totalUnread = groups.reduce((s, c) => s + (c.unreadCount || 0), 0);
+
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeMenu = () => setCtxMenu(null);
 
   return (
     <div className="group-section">
-      <div className="group-header" onClick={() => setExpanded(v => !v)}>
+      <div className="group-header" onClick={() => setExpanded(v => !v)} onContextMenu={handleContextMenu}>
         <span className="group-arrow">{expanded ? '▾' : '▸'}</span>
         <span className="group-label">Gruppen</span>
         {groups.length > 0 && <span className="group-count">({groups.length})</span>}
@@ -50,6 +59,16 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound }) {
       {expanded && groups.map(chat => (
         <ContactItem key={chat.id} chat={chat} onSelect={onSelect} />
       ))}
+      {ctxMenu && (
+        <>
+          <div className="ctx-overlay" onClick={closeMenu} />
+          <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
+            <button className="ctx-item" onClick={() => { onMarkGroupsRead?.(); closeMenu(); }}>
+              ✓ Alle als gelesen markieren
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -64,6 +83,7 @@ export default function Sidebar({
   soundEnabled, onToggleSound,
   waGroupSound, tgGroupSound,
   onToggleWaGroupSound, onToggleTgGroupSound,
+  onMarkGroupsRead,
 }) {
   const [search, setSearch] = useState('');
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
@@ -169,6 +189,7 @@ export default function Sidebar({
                 onSelect={onSelectChat}
                 groupSound={groupSound}
                 onToggleGroupSound={onToggleGroupSound}
+                onMarkGroupsRead={onMarkGroupsRead}
               />
             )}
             {/* Direct chats */}

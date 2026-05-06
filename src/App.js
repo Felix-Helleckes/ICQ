@@ -177,6 +177,10 @@ export default function App() {
     setChats(prev => prev.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
   };
 
+  const markGroupsRead = () => {
+    setChats(prev => prev.map(c => c.isGroup ? { ...c, unreadCount: 0 } : c));
+  };
+
   const handleLogout = async () => {
     if (activeService === 'whatsapp') {
       await api?.wa.logout().catch(() => {});
@@ -239,6 +243,7 @@ export default function App() {
         tgGroupSound={tgGroupSound}
         onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
         onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
+        onMarkGroupsRead={markGroupsRead}
       />
     </div>
   );

@@ -342,3 +342,33 @@
 }
 .group-sound-btn:hover { background: rgba(255,255,255,0.08); }
 .group-sound-btn.muted { opacity: 0.4; }
+
+/* ── Context menu ── */
+.ctx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 1000;
+  background: var(--icq-bg-mid);
+  border: 1px solid var(--icq-teal-dark);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+  min-width: 180px;
+  padding: 3px 0;
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--icq-text);
+  font-size: 0.82rem;
+  text-align: left;
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ctx-item:hover { background: var(--icq-teal-dark); color: #fff; }
