@@ -8,7 +8,6 @@ A retro **ICQ 5**-style multi-messenger desktop app built with **Electron + Reac
 Supports **WhatsApp** (via whatsapp-web.js) and **Telegram** (via GramJS).  
 Dark teal skin, separate floating chat windows per contact — just like ICQ 5.
 
-![ICQ Dark Teal Skin](public/icon.png)
 
 ---
 
