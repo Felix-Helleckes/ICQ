@@ -1,20 +1,26 @@
 # ICQ Messenger
 
-A retro ICQ-style multi-messenger desktop app built with Electron + React.  
-Supports **WhatsApp** (via whatsapp-web.js) and **Telegram** (via GramJS).
+A retro **ICQ 5**-style multi-messenger desktop app built with **Electron + React**.  
+Supports **WhatsApp** (via whatsapp-web.js) and **Telegram** (via GramJS).  
+Dark teal skin, separate floating chat windows per contact — just like ICQ 5.
 
-![ICQ Retro Style](public/icq-icon.png)
+![ICQ Dark Teal Skin](public/icon.png)
 
 ---
 
 ## Features
 
-- 🌼 Authentic ICQ look & feel (Windows 98 / Win2000 style UI)
-- 💬 WhatsApp Web — scan QR code, no official API needed
-- ✈️ Telegram — MTProto via your own API credentials
-- Custom frameless window with retro title bar
-- Contact list with unread badges
-- Real-time message updates
+- **ICQ 5 dark teal skin** — faithful recreation with CSS variables (`--icq-bg`, `--icq-teal`, `--icq-yellow`)
+- **Separate chat windows** per contact (true ICQ 5 behavior, each in its own `BrowserWindow`)
+- **💬 WhatsApp** — QR login, persistent session, stickers & images, profile pictures
+- **✈️ Telegram** — MTProto via GramJS, QR + phone login, 2FA support, profile pictures
+- **Emoji picker** — 40 emojis, click-outside-to-close, inserted at cursor position
+- **Font size controls** — A− / A+ buttons, persisted in localStorage, range 10–20px (all sizes in `rem`)
+- **Live contact list** — real-time unread badges, last message preview, auto-reset on open
+- **Frameless window** with custom ICQ-style title bar (minimize / close)
+- **Contact profile pictures** — loaded from WhatsApp CDN / Telegram, with letter fallback
+- **Sticker & image display** — inline in chat, downloaded as base64 data URLs
+- **Windows installer** — NSIS `.exe` and portable build via electron-builder
 
 ---
 
@@ -22,7 +28,7 @@ Supports **WhatsApp** (via whatsapp-web.js) and **Telegram** (via GramJS).
 
 - **Node.js** 18+ (LTS recommended)
 - **npm** 9+
-- A Chromium-compatible system (for Puppeteer/WhatsApp)
+- A Chromium-compatible system (for Puppeteer / WhatsApp headless)
 
 ---
 
@@ -55,7 +61,12 @@ export TG_API_ID=12345678
 export TG_API_HASH=your_api_hash_here
 ```
 
-Or create a `.env` file and load it (add a `dotenv` call in `electron/main.js` if you prefer).
+Or create a `.env` file in the project root:
+
+```
+TG_API_ID=12345678
+TG_API_HASH=your_api_hash_here
+```
 
 ---
 
@@ -65,14 +76,18 @@ Or create a `.env` file and load it (add a `dotenv` call in `electron/main.js` i
 npm start
 ```
 
-This starts the React dev server and Electron simultaneously.
+Starts the React dev server and Electron simultaneously. No browser tab opens.
 
 ---
 
-## Building a distributable
+## Building a distributable (.exe)
 
 ```bash
-npm run pack
+# NSIS installer
+npm run dist:win
+
+# Portable .exe (no install needed)
+npm run dist:portable
 ```
 
 Output is in the `dist/` folder.
@@ -83,35 +98,48 @@ Output is in the `dist/` folder.
 
 ```
 ├── electron/
-│   ├── main.js              # Electron main process
-│   ├── preload.js           # Context bridge (IPC)
-│   ├── whatsapp-bridge.js   # WhatsApp integration
-│   └── telegram-bridge.js   # Telegram integration
+│   ├── main.js              # Main process, IPC handlers, multi-window management
+│   ├── preload.js           # contextBridge — exposes window.api with cleanup
+│   ├── whatsapp-bridge.js   # WhatsApp (whatsapp-web.js + Puppeteer)
+│   └── telegram-bridge.js   # Telegram MTProto (GramJS)
 ├── src/
-│   ├── App.js               # Root React component
-│   ├── index.css            # Global ICQ retro styles
+│   ├── App.js               # Main contact-list window (polls status, live updates)
+│   ├── ChatApp.js           # Per-contact chat window entry point
+│   ├── index.css            # Global ICQ 5 dark teal styles, CSS vars, rem units
 │   └── components/
-│       ├── TitleBar.js      # Custom frameless title bar
-│       ├── Sidebar.js       # Service tabs + contact list
-│       ├── ChatWindow.js    # Message view + input
-│       └── LoginPanel.js    # QR / phone auth
+│       ├── TitleBar.js      # Frameless title bar with minimize/close
+│       ├── Sidebar.js       # Service tabs, contact list, A−/A+ font controls
+│       ├── ChatWindow.js    # Messages, emoji picker, sticker/image display
+│       └── LoginPanel.js    # QR code / phone login for both services
+├── scripts/
+│   └── make-icon.js         # Generates icon.ico + icon.png via Jimp
 ├── public/
-│   └── index.html
+│   ├── icon.ico             # App icon (electron-builder)
+│   └── icon.png
 └── package.json
 ```
 
 ---
 
+## Architecture Notes
+
+- **Multi-window**: each chat opens a separate `BrowserWindow` via `open-chat` IPC. Windows are tracked in a `Map` and reused on re-open.
+- **Broadcast pattern**: `BrowserWindow.getAllWindows().forEach(w => w.webContents.send(...))` keeps all windows in sync.
+- **IPC cleanup**: `onMessage` returns a cleanup function (`ipcRenderer.removeListener`) used in `useEffect` — no listener leaks.
+- **Font scaling**: `html { font-size }` set at runtime, all component sizes in `rem`.
+
+---
+
 ## Notes
 
-- WhatsApp session is persisted in `data/whatsapp/`
-- Telegram session is stored in `data/telegram.session`
-- Both are gitignored — never commit your session files
+- WhatsApp session is persisted in `data/whatsapp/` (gitignored)
+- Telegram session is stored in `data/telegram.session` (gitignored)
+- Never commit your session files or `.env`
 
 ---
 
 ## Legal
 
-This project uses unofficial WhatsApp APIs.  
+This project uses the **unofficial** WhatsApp Web API via whatsapp-web.js.  
 Use at your own risk. WhatsApp may block accounts that violate their Terms of Service.  
-Telegram usage is via official MTProto with your own developer credentials.
+Telegram usage is via the **official** MTProto protocol with your own developer credentials.

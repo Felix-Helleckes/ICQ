@@ -174,9 +174,6 @@
   object-fit: cover;
   display: block;
 }
-  line-height: 1;
-  filter: drop-shadow(0 0 2px #000);
-}
 
 .contact-info {
   flex: 1;
