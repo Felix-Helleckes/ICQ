@@ -9,8 +9,20 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+          - os: macos-latest
+            platform: mac
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.platform }})
 
     steps:
       - name: Checkout
@@ -22,24 +34,42 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Install Linux system deps
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libnss3 libatk-bridge2.0-0 libx11-xcb1 libxcb-dri3-0 libdrm2 libgbm1 libasound2
+
       - name: Install dependencies
         run: npm ci
         env:
-          # Puppeteer soll Chrome nicht beim Install herunterladen (nur zur Buildzeit nötig)
           PUPPETEER_SKIP_DOWNLOAD: true
 
       - name: Build React app
         run: npm run build
         env:
-          # Verhindert, dass Warnings den Build als Fehler abbrechen
           CI: false
 
-      - name: Build Electron distributable (NSIS + Portable)
+      - name: Build Electron - Windows
+        if: matrix.os == 'windows-latest'
         run: npx electron-builder --win nsis portable
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release artifacts
+      - name: Build Electron - macOS
+        if: matrix.os == 'macos-latest'
+        run: npx electron-builder --mac dmg
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build Electron - Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: npx electron-builder --linux AppImage deb
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
           name: ICQ Messenger ${{ github.ref_name }}
@@ -49,21 +79,27 @@ jobs:
             Retro ICQ 5-style multi-messenger for WhatsApp + Telegram.
 
             ### Downloads
-            | File | Description |
-            |------|-------------|
-            | `ICQ-Messenger-Setup-*.exe` | Windows Installer (empfohlen) |
-            | `ICQ-Messenger-*.exe` | Portable — kein Setup, direkt starten |
+            | Plattform | Datei | Hinweis |
+            |-----------|-------|---------|
+            | Windows | `ICQ-Messenger-Setup-*.exe` | Installer (empfohlen) |
+            | Windows | `ICQ-Messenger-*.exe` | Portable |
+            | macOS | `ICQ-Messenger-*.dmg` | Unsigned - siehe unten |
+            | Linux | `ICQ-Messenger-*.AppImage` | Portable, direkt ausfuehrbar |
+            | Linux | `icq-messenger_*.deb` | Debian/Ubuntu |
 
-            ### Erste Schritte
-            1. Installer oder Portable starten
-            2. WhatsApp-Tab: QR-Code scannen
-            3. Telegram-Tab: QR-Code oder Telefonnummer
+            ### macOS - Gatekeeper
+            Rechtsklick auf .app -> "Oeffnen" -> "Oeffnen" bestaetigen
+            Oder: `xattr -cr /Applications/ICQ\ Messenger.app`
 
-            > **SmartScreen-Warnung?** → "Weitere Informationen" → "Trotzdem ausführen"
+            ### Windows - SmartScreen
+            "Weitere Informationen" -> "Trotzdem ausfuehren"
           draft: false
           prerelease: false
           generate_release_notes: false
           files: |
             dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

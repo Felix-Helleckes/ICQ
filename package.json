@@ -99,12 +99,27 @@
       "shortcutName": "ICQ Messenger"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "public/icon.icns"
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "public/icon.icns",
+      "category": "public.app-category.social-networking",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "ICQ Messenger",
+      "background": null,
+      "window": { "width": 540, "height": 380 }
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "public/icon.png"
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb",      "arch": ["x64"] }
+      ],
+      "icon": "public/icon.png",
+      "category": "Network;InstantMessaging",
+      "description": "Retro ICQ-style multi-messenger for WhatsApp and Telegram"
     },
     "directories": {
       "output": "dist"
