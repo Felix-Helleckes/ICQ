@@ -176,9 +176,43 @@
   flex-direction: column;
   gap: 0;
   background: var(--icq-bg-mid);
-  border-top: 1px solid var(--icq-border);
-  flex-shrink: 0;
+  border-top: none;
+  overflow: hidden;
 }
+
+/* ── Resizable divider ── */
+.chat-divider {
+  height: 5px;
+  background: var(--icq-bg);
+  border-top: 1px solid var(--icq-border);
+  border-bottom: 1px solid var(--icq-teal-dark);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.chat-divider:hover { background: var(--icq-teal-dark); }
+
+/* ── Drag & Drop overlay ── */
+.drag-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 80, 80, 0.75);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  border: 2px dashed var(--icq-teal-light);
+  border-radius: 4px;
+}
+.drag-overlay-inner {
+  font-size: 1.2rem;
+  color: #fff;
+  background: rgba(0,0,0,0.5);
+  padding: 12px 24px;
+  border-radius: 8px;
+}
+.chat-window { position: relative; }
 
 .input-toolbar {
   display: flex;
@@ -204,7 +238,7 @@
   border-radius: 3px;
   padding: 5px 7px;
   font-family: inherit;
-  font-size: 11px;
+  font-size: inherit;
   color: var(--icq-text);
 }
 .msg-input:focus { outline: 1px solid var(--icq-teal); border-color: var(--icq-teal); }

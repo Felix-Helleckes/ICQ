@@ -173,6 +173,13 @@ async function sendMessage(chatId, text) {
   await client.sendMessage(chatId, text);
 }
 
+async function sendFile(chatId, filePath) {
+  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  const { MessageMedia } = require('whatsapp-web.js');
+  const media = MessageMedia.fromFilePath(filePath);
+  await client.sendMessage(chatId, media);
+}
+
 async function getMyProfile() {
   if (status !== 'ready') return null;
   try {
@@ -198,4 +205,4 @@ async function logout() {
   status = 'disconnected';
 }
 
-module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, getMyProfile, getContactAvatar, logout };
+module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, getMyProfile, getContactAvatar, logout };

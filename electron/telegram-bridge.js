@@ -268,6 +268,11 @@ async function sendMessage(chatId, text) {
   await tgClient.sendMessage(toPeer(chatId), { message: text });
 }
 
+async function sendFile(chatId, filePath) {
+  if (status !== 'ready') throw new Error('Telegram not ready');
+  await tgClient.sendFile(toPeer(chatId), { file: filePath });
+}
+
 async function getMe() {
   if (!tgClient) return null;
   try {
@@ -288,4 +293,4 @@ async function logout() {
   tgClient = null;
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, getMe, logout, setCredentials, getContactAvatar };
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, getMe, logout, setCredentials, getContactAvatar };

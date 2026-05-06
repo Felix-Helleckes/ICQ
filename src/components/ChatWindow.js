@@ -33,10 +33,14 @@ function AckIcon({ ack }) {
   return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
 }
 
-export default function ChatWindow({ chat, messages, onSend, isTyping }) {
+export default function ChatWindow({ chat, messages, onSend, onSendFile, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
-  const [lightbox, setLightbox] = useState(null); // src string or null
+  const [lightbox, setLightbox] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  // Resizable split: inputHeight in px (min 80, max 400)
+  const [inputHeight, setInputHeight] = useState(110);
+  const dividerDragRef = useRef(null);
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
   const emojiRef  = useRef(null);
@@ -52,6 +56,22 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
   }, [fontSize]);
   const smaller = () => setFontSize(f => Math.max(10, f - 1));
   const larger  = () => setFontSize(f => Math.min(20, f + 1));
+
+  // Resizable divider drag
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!dividerDragRef.current) return;
+      const container = dividerDragRef.current.closest('.chat-window');
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const newH = rect.bottom - e.clientY - 1;
+      setInputHeight(Math.min(400, Math.max(80, newH)));
+    };
+    const onMouseUp = () => { dividerDragRef.current = null; };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
+  }, []);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -90,6 +110,21 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
     inputRef.current?.focus();
   };
 
+  const handleFileBtn = async () => {
+    const filePath = await window.api?.openFileDialog?.();
+    if (filePath) onSendFile?.(filePath);
+  };
+
+  // Drag & Drop
+  const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
+  const handleDragLeave = () => setIsDragging(false);
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file?.path) onSendFile?.(file.path);
+  };
+
   if (!chat) {
     return (
       <div className="chat-empty">
@@ -102,7 +137,19 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
   }
 
   return (
-    <div className="chat-window">
+    <div
+      className={`chat-window${isDragging ? ' drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="drag-overlay">
+          <div className="drag-overlay-inner">📎 Datei hier ablegen</div>
+        </div>
+      )}
+
       {/* Chat header */}
       <div className="chat-header">
         <div className="chat-header-avatar">
@@ -152,14 +199,22 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Resizable divider */}
+      <div
+        className="chat-divider"
+        onMouseDown={(e) => { e.preventDefault(); dividerDragRef.current = e.target; }}
+        title="Ziehen um Chatbereich zu vergrößern"
+      />
+
       {/* Input area */}
-      <div className="input-area">
+      <div className="input-area" style={{ height: inputHeight, flexShrink: 0 }}>
         <div className="input-toolbar" style={{ position: 'relative' }}>
           <button
             className={`toolbar-btn${showEmoji ? ' active' : ''}`}
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
           >😊</button>
+          <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
           <button className="toolbar-btn" title="Bold" style={{ fontWeight: 'bold' }}>B</button>
           <button className="toolbar-btn" title="Italic" style={{ fontStyle: 'italic' }}>I</button>
           <span className="toolbar-sep" />
@@ -183,6 +238,7 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
             onKeyDown={handleKey}
             placeholder="Nachricht eingeben..."
             rows={2}
+            style={{ fontSize: fontSize + 'px' }}
           />
           <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
         </div>

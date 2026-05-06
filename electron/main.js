@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const isDev = require('electron-is-dev');
 
@@ -119,6 +119,7 @@ ipcMain.handle('wa:get-qr',       async ()             => whatsappBridge.getQR()
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
 ipcMain.handle('wa:get-messages', async (e, chatId)    => whatsappBridge.getMessages(chatId));
 ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMessage(id, text));
+ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:status',       async ()             => whatsappBridge.getStatus());
 ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyProfile());
 ipcMain.handle('wa:get-avatar',   async (e, id)        => whatsappBridge.getContactAvatar(id));
@@ -132,6 +133,7 @@ ipcMain.handle('tg:2fa-password',   async (e, password)         => telegramBridg
 ipcMain.handle('tg:get-dialogs',    async ()                    => telegramBridge.getDialogs());
 ipcMain.handle('tg:get-messages',   async (e, chatId)           => telegramBridge.getMessages(chatId));
 ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
+ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:status',         async ()                    => telegramBridge.getStatus());
 ipcMain.handle('tg:get-me',         async ()                    => telegramBridge.getMe());
 ipcMain.handle('tg:get-avatar',     async (e, id)               => telegramBridge.getContactAvatar(id));
@@ -145,6 +147,20 @@ ipcMain.on('window:maximize', (e) => {
   if (win?.isMaximized()) win.unmaximize(); else win?.maximize();
 });
 ipcMain.on('window:close',    (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+
+ipcMain.handle('open-file-dialog', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Alle Dateien', extensions: ['*'] },
+      { name: 'Bilder', extensions: ['jpg','jpeg','png','gif','webp','bmp'] },
+      { name: 'Videos', extensions: ['mp4','mov','avi','mkv','webm'] },
+      { name: 'Dokumente', extensions: ['pdf','doc','docx','xls','xlsx','txt','zip'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
 
 // ── IPC: Open URL in default browser ────────────────────────
 ipcMain.on('open-external', (e, url) => {

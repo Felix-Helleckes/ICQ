@@ -70,6 +70,19 @@ export default function ChatApp({ chatId, chatName, service }) {
     } catch (e) { console.error('[ChatApp send]', e); }
   };
 
+  const sendFile = async (filePath) => {
+    if (!filePath || !api) return;
+    try {
+      if (service === 'whatsapp') await api.wa.sendFile(chatId, filePath);
+      else await api.tg.sendFile(chatId, filePath);
+      const ts = Math.floor(Date.now() / 1000);
+      const name = filePath.split(/[\\/]/).pop();
+      const localMsg = { id: Date.now().toString(), body: `📎 ${name}`, fromMe: true, timestamp: ts };
+      setMessages(prev => [...prev, localMsg]);
+      api.notifySent?.({ chatId, body: `📎 ${name}`, timestamp: ts, service });
+    } catch (e) { console.error('[ChatApp sendFile]', e); }
+  };
+
   return (
     <div className="app-root">
       <TitleBar title={`${service === 'whatsapp' ? 'WhatsApp' : 'Telegram'} — ${chatName || 'Chat'}`} />
@@ -77,6 +90,7 @@ export default function ChatApp({ chatId, chatName, service }) {
         chat={{ id: chatId, name: chatName, service, avatar: chatAvatar }}
         messages={messages}
         onSend={sendMessage}
+        onSendFile={sendFile}
         isTyping={isTyping}
       />
     </div>
