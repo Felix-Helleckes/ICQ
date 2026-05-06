@@ -23,9 +23,9 @@
 
 ## Screenshots
 
-| WhatsApp | Telegram | Single Chat Window |
-|----------|----------|----------|
-| ![WhatsApp Login](public/screenshot-wa.png) | ![Telegram Login](public/screenshot-tg.png) | ![Single Chat Windows](public/Chatwindow.png) 
+| Classic Design | Single Chat Window |
+|----------|----------|
+| ![Classic Design](public/Screenshot 2026-05-06 113902.png) | ![Single Chat Windows](public/Chatwindow.png) 
 
 > *Login screens — no personal data shown. Once connected, the sidebar fills with your contacts sorted by recency.*
 
