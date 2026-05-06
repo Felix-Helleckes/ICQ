@@ -86,7 +86,7 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["x64", "arm64"] }
+        { "target": "dmg", "arch": ["universal"] }
       ],
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
