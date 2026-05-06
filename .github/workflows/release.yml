@@ -75,7 +75,37 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npx electron-builder --linux AppImage deb --publish never
 
-      - name: Upload to Release
+      # Upload build artifacts for the release job
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.platform }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: warn
+          retention-days: 1
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    # Run even if some builds failed, so we publish whatever was built
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-all
+          merge-multiple: true
+
+      - name: List files
+        run: find dist-all -type f | sort
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ICQ Messenger ${{ github.ref_name }}
@@ -88,10 +118,13 @@ jobs:
             | Plattform | Datei | Hinweis |
             |-----------|-------|---------|
             | Windows | `ICQ-Messenger-Setup-*.exe` | Installer (empfohlen) |
-            | Windows | `ICQ-Messenger-*.exe` | Portable |
-            | macOS | `ICQ-Messenger-*.dmg` | Unsigned - siehe unten |
+            | Windows | `ICQ-Messenger-*-Portable.exe` | Portable - Login bleibt im `ICQ-Data`-Ordner daneben |
+            | macOS | `ICQ-Messenger-*.dmg` | Universal (M1 + Intel) - unsigned, siehe unten |
             | Linux | `ICQ-Messenger-*.AppImage` | Portable, direkt ausfuehrbar |
             | Linux | `icq-messenger_*.deb` | Debian/Ubuntu |
+
+            ### Portable Windows
+            `ICQ-Data`-Ordner neben der `.exe` behaelt Login-Session. Einfach beide zusammen kopieren (z.B. auf USB-Stick).
 
             ### macOS - Gatekeeper
             Rechtsklick auf .app -> "Oeffnen" -> "Oeffnen" bestaetigen
@@ -102,10 +135,6 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false
-          files: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.AppImage
-            dist/*.deb
+          files: dist-all/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
