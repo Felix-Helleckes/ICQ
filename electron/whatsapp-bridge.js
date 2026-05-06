@@ -119,7 +119,7 @@ async function getChats() {
   if (status !== 'ready') return [];
   const chats = await client.getChats();
   // Sofort die Basisdaten zurückgeben (ohne Avatare)
-  const result = chats.slice(0, 50).map(c => ({
+  const result = chats.slice(0, 100).map(c => ({
     id: c.id._serialized,
     name: c.name,
     lastMessage: c.lastMessage?.body || '',
@@ -130,7 +130,7 @@ async function getChats() {
   }));
   // Avatare im Hintergrund nachladen und einzeln broadcasten
   (async () => {
-    for (const c of chats.slice(0, 50)) {
+    for (const c of chats.slice(0, 100)) {
       try {
         const contact = await c.getContact();
         const pic = await contact.getProfilePicUrl();

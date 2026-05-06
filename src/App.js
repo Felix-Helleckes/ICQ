@@ -78,6 +78,22 @@ export default function App() {
     api.tg.on2FANeeded(data => setTg2FA(data));
 
     // Update lastMessage + unreadCount on incoming messages
+    // Debounced reload for unknown chats
+    let reloadTimer = null;
+    const scheduleReload = (service) => {
+      if (reloadTimer) return; // already scheduled
+      reloadTimer = setTimeout(async () => {
+        reloadTimer = null;
+        if (service === 'whatsapp') {
+          const result = await api.wa.getChats().catch(() => null);
+          if (result) setChats(result.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        } else {
+          const result = await api.tg.getDialogs().catch(() => null);
+          if (result) setChats(result.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        }
+      }, 800);
+    };
+
     const removeWaMsg = api.wa.onMessage(msg => {
       const now = msg.timestamp || Math.floor(Date.now() / 1000);
       if (msg.fromMe) {
@@ -93,6 +109,12 @@ export default function App() {
         return;
       }
       playMessageSound(msg.from, 'whatsapp');
+      const knownChat = chatsRef.current.some(c => c.id === msg.from);
+      if (!knownChat) {
+        // Chat nicht in der Liste → neu laden
+        scheduleReload('whatsapp');
+        return;
+      }
       setChats(prev => {
         const updated = prev.map(c =>
           c.id === msg.from
@@ -110,11 +132,18 @@ export default function App() {
       setChats(prev => prev.map(c => c.id === id ? { ...c, avatar } : c));
     });
     const removeTgMsg = api.tg.onMessage(msg => {
+      const chatId = String(msg.chatId);
+      const knownChat = chatsRef.current.some(c => c.id === chatId);
+      if (!knownChat) {
+        if (!msg.fromMe) playMessageSound(chatId, 'telegram');
+        scheduleReload('telegram');
+        return;
+      }
       setChats(prev => {
         const updated = prev.map(c => {
-          if (c.id !== String(msg.chatId)) return c;
+          if (c.id !== chatId) return c;
           if (msg.fromMe) return { ...c, lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 };
-          playMessageSound(msg.chatId, 'telegram');
+          playMessageSound(chatId, 'telegram');
           return { ...c, lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: (c.unreadCount || 0) + 1 };
         });
         return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -131,7 +160,7 @@ export default function App() {
         return updated.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       });
     });
-    return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); };
+    return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); if (reloadTimer) clearTimeout(reloadTimer); };
   }, []);
 
   // Load chats when service / status changes
