@@ -2,7 +2,10 @@
   "name": "icq-messenger",
   "version": "1.0.0",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
-  "author": "Felix Helleckes",
+  "author": {
+    "name": "Felix Helleckes",
+    "email": "felix@helleckes.de"
+  },
   "license": "MIT",
   "homepage": ".",
   "repository": {
