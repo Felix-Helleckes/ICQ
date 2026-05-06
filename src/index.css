@@ -1,0 +1,86 @@
+/* ── ICQ 5 Skin – Global Styles ────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Tahoma&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 13px; } /* overridden at runtime by font-size control */
+body { font-size: 1rem; font-family: inherit; }
+
+:root {
+  /* ICQ 5 dark skin palette */
+  --icq-bg:           #1F2530;   /* main dark background */
+  --icq-bg-mid:       #252D3A;   /* sidebar / panels */
+  --icq-bg-light:     #2E3748;   /* hover / selected rows */
+  --icq-teal:         #1A8A8A;   /* ICQ 5 teal accent */
+  --icq-teal-dark:    #0E5F5F;
+  --icq-teal-light:   #2BBFBF;
+  --icq-header-grad1: #0D6B6B;
+  --icq-header-grad2: #0A4E4E;
+  --icq-yellow:       #F5C400;   /* ICQ flower yellow */
+  --icq-white:        #FFFFFF;
+  --icq-text:         #E0E8F0;   /* light text on dark */
+  --icq-text-dim:     #7A90A8;
+  --icq-border:       #3A4A5E;
+  --icq-border-light: #4A5E78;
+  /* Status colours */
+  --icq-online:       #44DD44;
+  --icq-away:         #F5C400;
+  --icq-offline:      #CC3333;
+  --icq-dnd:          #FF6600;
+  /* Buttons */
+  --icq-btn-bg:       #2E3748;
+  --icq-btn-hover:    #3A4A5E;
+  --icq-btn-active:   #1A8A8A;
+  font-family: 'Tahoma', Arial, sans-serif;
+}
+
+body {
+  background: var(--icq-bg);
+  color: var(--icq-text);
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Shared button / input styles ── */
+.win98-raised {
+  border: 1px solid var(--icq-border-light);
+  border-bottom-color: var(--icq-bg);
+  border-right-color: var(--icq-bg);
+}
+.win98-sunken {
+  border: 1px solid;
+  border-color: var(--icq-bg) var(--icq-border-light) var(--icq-border-light) var(--icq-bg);
+}
+.win98-btn {
+  background: var(--icq-btn-bg);
+  border: 1px solid var(--icq-border-light);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--icq-text);
+  min-width: 60px;
+  border-radius: 2px;
+  transition: background 0.1s;
+}
+.win98-btn:hover  { background: var(--icq-btn-hover); }
+.win98-btn:active { background: var(--icq-btn-active); color: #fff; }
+.win98-btn:focus  { outline: 1px solid var(--icq-teal-light); outline-offset: 1px; }
+
+input.win98-input {
+  background: #151B24;
+  border: 1px solid var(--icq-border);
+  padding: 3px 6px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--icq-text);
+  width: 100%;
+  border-radius: 2px;
+}
+input.win98-input:focus { outline: 1px solid var(--icq-teal); border-color: var(--icq-teal); }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar       { width: 6px; }
+::-webkit-scrollbar-track { background: var(--icq-bg); }
+::-webkit-scrollbar-thumb { background: var(--icq-border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--icq-teal); }

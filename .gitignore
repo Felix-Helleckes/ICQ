@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+build/
+dist/
+
+# Electron session data (WhatsApp login, Telegram session)
+data/
+.wwebjs_cache/
+.wwebjs_auth/
+
+# Environment / secrets
+.env
+.env.local
+.env.production
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+*.log
+npm-debug.log*
+
+# electron-builder cache
+electron-builder-cache/

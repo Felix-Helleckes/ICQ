@@ -1,0 +1,59 @@
+.titlebar {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
+  color: var(--icq-white);
+  padding: 0 6px;
+  height: 26px;
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--icq-teal-dark);
+}
+
+.titlebar-icon {
+  margin-right: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.icq-flower {
+  color: var(--icq-yellow);
+  font-size: 1.6rem;
+  line-height: 1;
+  filter: drop-shadow(0 0 4px #F5C40099);
+}
+
+.titlebar-title {
+  flex: 1;
+  font-size: 1rem;
+  font-weight: bold;
+  letter-spacing: 0.8px;
+  color: #fff;
+  text-shadow: 0 1px 2px #0004;
+}
+
+.titlebar-controls {
+  display: flex;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+}
+
+.tb-btn {
+  width: 18px;
+  height: 16px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 2px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  padding: 0;
+  transition: background 0.1s;
+}
+.tb-btn:hover  { background: rgba(255,255,255,0.25); }
+.tb-btn:active { background: rgba(0,0,0,0.3); }
+.tb-close:hover { background: #CC2222 !important; }

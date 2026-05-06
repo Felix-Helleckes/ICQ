@@ -1,0 +1,10 @@
+/* ── App Layout (contact-list window) ── */
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--icq-bg);
+  border: 1px solid var(--icq-teal-dark);
+  overflow: hidden;
+}
+

@@ -1,0 +1,96 @@
+{
+  "name": "icq-messenger",
+  "version": "1.0.0",
+  "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
+  "author": "Your Name",
+  "license": "MIT",
+  "homepage": ".",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && electron .\"",
+    "react-start": "react-scripts start",
+    "build": "react-scripts build",
+    "electron": "electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:portable": "npm run build && electron-builder --win portable",
+    "make-icon": "node scripts/make-icon.js"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0",
+    "qrcode": "^1.5.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
+    "telegram": "^2.22.2",
+    "whatsapp-web.js": "^1.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1",
+    "jimp": "^1.6.1",
+    "png2icons": "^2.0.1",
+    "wait-on": "^7.2.0"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "build": {
+    "appId": "com.icqmessenger.app",
+    "productName": "ICQ Messenger",
+    "copyright": "Copyright © 2026",
+    "asar": true,
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "node_modules/**/*",
+      "!node_modules/whatsapp-web.js/node_modules/puppeteer/.local-chromium/**/*"
+    ],
+    "extraResources": [],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ICQ Messenger"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "public/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "public/icon.png"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  }
+}

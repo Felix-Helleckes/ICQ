@@ -1,0 +1,162 @@
+/* ── ICQ 5 Login Panel ── */
+.login-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  padding: 12px 8px;
+  overflow-y: auto;
+}
+
+.login-box {
+  background: var(--icq-bg-mid);
+  border: 1px solid var(--icq-border);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 270px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+
+.login-header {
+  background: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
+  color: white;
+  padding: 8px 10px;
+  font-weight: bold;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--icq-teal-dark);
+}
+
+.login-icon { font-size: 18px; }
+
+.login-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-hint {
+  font-size: 11px;
+  color: var(--icq-text-dim);
+  line-height: 1.5;
+}
+.login-hint.small { font-size: 9px; }
+.login-hint.ok    { color: var(--icq-online); font-weight: bold; }
+.login-hint.error { color: var(--icq-offline); }
+.login-hint b     { color: var(--icq-text); }
+.login-hint a     { color: var(--icq-teal-light); }
+
+/* ── QR box ── */
+.qr-box {
+  background: white;
+  border: 1px solid var(--icq-border);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-shadow: 0 0 12px rgba(26,138,138,0.3);
+}
+.qr-box svg { width: 160px; height: 160px; }
+
+.qr-loading {
+  height: 172px;
+  color: var(--icq-text-dim);
+  font-size: 0.9rem;
+}
+
+/* ── Method toggle tabs ── */
+.method-tabs {
+  display: flex;
+  border: 1px solid var(--icq-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.method-tab {
+  flex: 1;
+  background: var(--icq-bg);
+  border: none;
+  color: var(--icq-text-dim);
+  cursor: pointer;
+  padding: 5px 0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.12s;
+  border-right: 1px solid var(--icq-border);
+}
+.method-tab:last-child { border-right: none; }
+.method-tab:hover { background: var(--icq-bg-light); color: var(--icq-text); }
+.method-tab.active {
+  background: var(--icq-teal-dark);
+  color: #fff;
+  font-weight: bold;
+}
+
+/* ── 2FA overlay ── */
+.twofa-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  text-align: center;
+}
+
+.login-box {
+  background: var(--icq-bg-mid);
+  border: 1px solid var(--icq-border);
+  border-radius: 4px;
+  width: 100%;
+  max-width: 270px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+}
+
+.login-header {
+  background: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
+  color: white;
+  padding: 8px 10px;
+  font-weight: bold;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--icq-teal-dark);
+}
+
+.login-icon { font-size: 18px; }
+
+.login-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-hint {
+  font-size: 11px;
+  color: var(--icq-text-dim);
+  line-height: 1.5;
+}
+.login-hint.small { font-size: 9px; }
+.login-hint.ok    { color: var(--icq-online); font-weight: bold; }
+.login-hint.error { color: var(--icq-offline); }
+.login-hint b     { color: var(--icq-text); }
+.login-hint a     { color: var(--icq-teal-light); }
+
+.qr-box {
+  background: white;
+  border: 1px solid var(--icq-border);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  box-shadow: 0 0 12px rgba(26,138,138,0.3);
+}
+.qr-box svg { width: 160px; height: 160px; }
