@@ -5,6 +5,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const { BrowserWindow } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let client = null;
 let status = 'disconnected';
@@ -19,14 +20,53 @@ function broadcast(channel, data) {
   if (channel === 'wa:avatar' && onAvatarCb) onAvatarCb(data.id, data.avatar);
 }
 
+// Find a usable Chrome/Edge/Chromium on the host system.
+// The packaged app cannot use puppeteer's downloaded Chromium (it's not bundled).
+function findChromiumExecutable() {
+  const win = process.platform === 'win32';
+  const mac = process.platform === 'darwin';
+  const candidates = win ? [
+    path.join(process.env['ProgramFiles']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env['ProgramFiles(x86)']   || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env['LOCALAPPDATA']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    path.join(process.env['ProgramFiles']        || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
+    path.join(process.env['ProgramFiles(x86)']   || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
+  ] : mac ? [
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Chromium.app/Contents/MacOS/Chromium',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  ] : [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium',
+    '/snap/bin/chromium',
+  ];
+
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+
+  // Dev fallback: puppeteer's own downloaded Chromium
+  try {
+    const p = require('puppeteer').executablePath?.();
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) {}
+
+  return null;
+}
+
 function init(avatarCallback, dataDir) {
   if (avatarCallback) onAvatarCb = avatarCallback;
   status = 'loading';
   broadcast('wa:status', 'loading');
 
+  const executablePath = findChromiumExecutable();
+
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(dataDir, 'whatsapp') }),
     puppeteer: {
+      ...(executablePath ? { executablePath } : {}),
       headless: true,
       args: [
         '--no-sandbox',
