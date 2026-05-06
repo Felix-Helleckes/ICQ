@@ -12,6 +12,18 @@ const EMOJIS = [
   '😤','😡','🤯','😱','🤗','😏','🙄','😒','😩','😫',
 ];
 
+const URL_REGEX = /(https?:\/\/[^\s<>"]+)/g;
+
+function linkify(text) {
+  if (!text) return text;
+  const parts = text.split(URL_REGEX);
+  return parts.map((part, i) =>
+    URL_REGEX.test(part)
+      ? <a key={i} href={part} onClick={e => { e.preventDefault(); window.api?.openExternal?.(part); }} style={{ color: '#4fc3f7', wordBreak: 'break-all' }}>{part}</a>
+      : part
+  );
+}
+
 // ack: -1=error, 0=pending, 1=sent, 2=delivered, 3=read
 function AckIcon({ ack }) {
   if (ack === 0)  return <span className="ack ack-pending" title="Ausstehend">🕐</span>;
@@ -128,7 +140,7 @@ export default function ChatWindow({ chat, messages, onSend, isTyping }) {
                       className={msg.type === 'sticker' ? 'msg-sticker' : 'msg-image'}
                       onClick={msg.type !== 'sticker' ? () => setLightbox({ src: msg.mediaData, isVideo: false }) : undefined}
                       style={msg.type !== 'sticker' ? { cursor: 'zoom-in' } : undefined} />
-                : <span className="message-text">{msg.body || (msg.type ? `[${msg.type}]` : '')}</span>
+                : <span className="message-text">{linkify(msg.body) || (msg.type ? `[${msg.type}]` : '')}</span>
               }
               <span className="message-time">
                 {formatTime(msg.timestamp)}

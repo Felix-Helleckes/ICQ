@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const isDev = require('electron-is-dev');
 
@@ -49,6 +49,7 @@ function createWindow() {
   });
 
   mainWindow.loadURL(devUrl());
+  wireExternalLinks(mainWindow);
 
   mainWindow.on('closed', () => {
     // Close all open chat windows when main window is closed
@@ -104,6 +105,7 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => 
 
   const params = new URLSearchParams({ mode: 'chat', chatId, chatName: chatName || '', service }).toString();
   chatWin.loadURL(devUrl(params));
+  wireExternalLinks(chatWin);
   chatWindows.set(chatId, chatWin);
   chatWin.on('closed', () => chatWindows.delete(chatId));
 });
@@ -143,6 +145,28 @@ ipcMain.on('window:maximize', (e) => {
   if (win?.isMaximized()) win.unmaximize(); else win?.maximize();
 });
 ipcMain.on('window:close',    (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+
+// ── IPC: Open URL in default browser ────────────────────────
+ipcMain.on('open-external', (e, url) => {
+  if (typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+    shell.openExternal(url);
+  }
+});
+
+// Helper: intercept any navigation / new-window to redirect to default browser
+function wireExternalLinks(win) {
+  win.webContents.on('will-navigate', (e, url) => {
+    const local = devUrl();
+    if (!url.startsWith(local)) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+}
 
 // Broadcast a sent message to all other windows (so sidebar updates immediately)
 ipcMain.on('chat:sent', (e, msg) => {
