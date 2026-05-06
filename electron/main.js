@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem } = require('electron');
 const path = require('path');
 const isDev = require('electron-is-dev');
 
@@ -181,6 +181,28 @@ function wireExternalLinks(win) {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  // Native right-click context menu (cut / copy / paste / select all)
+  win.webContents.on('context-menu', (e, params) => {
+    const menu = new Menu();
+    if (params.linkURL) {
+      menu.append(new MenuItem({ label: 'Link kopieren', click: () => clipboard.writeText(params.linkURL) }));
+      menu.append(new MenuItem({ label: 'Link öffnen', click: () => shell.openExternal(params.linkURL) }));
+      menu.append(new MenuItem({ type: 'separator' }));
+    }
+    if (params.isEditable) {
+      menu.append(new MenuItem({ label: 'Ausschneiden',  role: 'cut',       enabled: params.selectionText.length > 0 }));
+    }
+    if (params.selectionText.length > 0 || params.isEditable) {
+      menu.append(new MenuItem({ label: 'Kopieren',      role: 'copy',      enabled: params.selectionText.length > 0 }));
+    }
+    if (params.isEditable) {
+      menu.append(new MenuItem({ label: 'Einfügen',      role: 'paste' }));
+      menu.append(new MenuItem({ type: 'separator' }));
+      menu.append(new MenuItem({ label: 'Alles markieren', role: 'selectAll' }));
+    }
+    if (menu.items.length > 0) menu.popup({ window: win });
   });
 }
 

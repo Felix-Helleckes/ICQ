@@ -148,7 +148,10 @@
   align-items: flex-start;
 }
 
-.message-text { color: var(--icq-text); }
+.message-text { color: var(--icq-text); user-select: text; }
+
+/* Allow text selection in message area */
+.message-area, .message-bubble { user-select: text; }
 
 .message-time {
   font-size: 0.69rem;
