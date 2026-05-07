@@ -313,4 +313,9 @@ async function logout() {
   tgClient = null;
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, markChatRead, getMe, logout, setCredentials, getContactAvatar };
+async function shutdown() {
+  try { if (tgClient) await tgClient.disconnect(); } catch (e) {}
+  status = 'disconnected';
+}
+
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };

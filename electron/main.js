@@ -56,6 +56,8 @@ function createWindow() {
     chatWindows.forEach(win => { if (!win.isDestroyed()) win.close(); });
     chatWindows.clear();
     mainWindow = null;
+    // Quit the app entirely so no hidden processes remain
+    app.quit();
   });
 }
 
@@ -71,7 +73,14 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
+});
+
+app.on('before-quit', async (e) => {
+  e.preventDefault();
+  try { await whatsappBridge.shutdown?.(); } catch (_) {}
+  try { await telegramBridge.shutdown?.(); } catch (_) {}
+  app.exit(0);
 });
 
 app.on('activate', () => {

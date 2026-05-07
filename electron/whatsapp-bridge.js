@@ -277,4 +277,9 @@ async function logout() {
   status = 'disconnected';
 }
 
-module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, markChatRead, getMyProfile, getContactAvatar, logout };
+async function shutdown() {
+  try { if (client) await client.destroy(); } catch (e) {}
+  status = 'disconnected';
+}
+
+module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, markChatRead, getMyProfile, getContactAvatar, logout, shutdown };
