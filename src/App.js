@@ -272,7 +272,7 @@ export default function App() {
 
   return (
     <div className="app-root">
-      <TitleBar />
+      <TitleBar showVersion />
       <Sidebar
         activeService={activeService}
         setActiveService={s => { setActiveService(s); }}

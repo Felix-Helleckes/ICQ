@@ -1,11 +1,11 @@
 import React from 'react';
 import './TitleBar.css';
 
-export default function TitleBar({ title = 'Retrogram' }) {
+export default function TitleBar({ title = 'Retrogram', showVersion = false }) {
   const minimize  = () => window.api?.window.minimize();
   const maximize  = () => window.api?.window.maximize();
   const close     = () => window.api?.window.close();
-  const version   = window.api?.appVersion;
+  const version   = showVersion ? window.api?.appVersion : null;
 
   return (
     <div className="titlebar">

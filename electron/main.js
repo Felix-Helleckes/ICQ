@@ -56,8 +56,6 @@ function createWindow() {
     chatWindows.forEach(win => { if (!win.isDestroyed()) win.close(); });
     chatWindows.clear();
     mainWindow = null;
-    // Quit the app entirely so no hidden processes remain
-    app.quit();
   });
 }
 
@@ -76,11 +74,17 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
-app.on('before-quit', async (e) => {
+app.on('before-quit', (e) => {
   e.preventDefault();
-  try { await whatsappBridge.shutdown?.(); } catch (_) {}
-  try { await telegramBridge.shutdown?.(); } catch (_) {}
-  app.exit(0);
+  // Give bridges max 3s to shut down cleanly, then force exit
+  const timeout = setTimeout(() => app.exit(0), 3000);
+  Promise.all([
+    whatsappBridge.shutdown?.().catch(() => {}),
+    telegramBridge.shutdown?.().catch(() => {}),
+  ]).then(() => {
+    clearTimeout(timeout);
+    app.exit(0);
+  });
 });
 
 app.on('activate', () => {
