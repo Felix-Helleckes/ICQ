@@ -228,35 +228,37 @@ async function getContactAvatar(id) {
 async function getMessages(chatId) {
   if (status !== 'ready') return [];
   const messages = await tgClient.getMessages(toPeer(chatId), { limit: 50 });
-  return await Promise.all(messages.map(async m => {
+
+  const results = [];
+  for (const m of messages) {
     let mediaData = null;
     let mediaType = null;
     let isGif = false;
     try {
       if (m.photo) {
-        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
+        // Only download small photos to avoid flood wait
+        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0), thumb: -1 });
         if (buf && buf.length) mediaData = 'data:image/jpeg;base64,' + buf.toString('base64');
         mediaType = 'image';
       } else if (m.document) {
         const mime = m.document.mimeType || '';
         const attrs = m.document.attributes || [];
-        const isVideoAttr = attrs.some(a => a.className === 'DocumentAttributeVideo');
         const isAnimated  = attrs.some(a => a.className === 'DocumentAttributeAnimated');
         isGif = isAnimated || mime === 'image/gif';
         const isVoice = attrs.some(a => a.className === 'DocumentAttributeAudio' && a.voice);
         const isAudio = attrs.some(a => a.className === 'DocumentAttributeAudio');
-        if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
-          mediaType = 'video';
-          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
-          if (buf && buf.length) mediaData = `data:${mime};base64,` + buf.toString('base64');
-        } else if (isVoice || isAudio || mime.startsWith('audio/')) {
+        if (isVoice || isAudio || mime.startsWith('audio/')) {
+          // Only download audio/voice — skip large video on initial load
           mediaType = isVoice ? 'ptt' : 'audio';
           const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
           if (buf && buf.length) mediaData = `data:${mime || 'audio/ogg'};base64,` + buf.toString('base64');
+        } else if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
+          // Mark as video but don't download inline — too large, causes flood wait
+          mediaType = 'video';
         }
       }
     } catch (e) { /* skip media errors */ }
-    return {
+    results.push({
       id: m.id?.toString(),
       body: m.message || '',
       fromMe: m.out,
@@ -265,8 +267,9 @@ async function getMessages(chatId) {
       type: mediaType || 'text',
       isGif,
       mediaData,
-    };
-  }));
+    });
+  }
+  return results;
 }
 
 async function sendMessage(chatId, text) {
