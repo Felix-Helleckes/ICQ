@@ -47,6 +47,9 @@
   gap: 3px;
   -webkit-app-region: no-drag;
 }
+.titlebar-controls * {
+  -webkit-app-region: no-drag;
+}
 
 .tb-btn {
   width: 18px;

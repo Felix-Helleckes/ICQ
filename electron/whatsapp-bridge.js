@@ -173,7 +173,17 @@ function init(avatarCallback, dataDir) {
 
   client.on('disconnected', () => { status = 'disconnected'; });
 
-  client.initialize().catch(console.error);
+  client.on('auth_failure', (msg) => {
+    status = 'error';
+    broadcast('wa:status', 'error');
+    console.error('[WA auth_failure]', msg);
+  });
+
+  client.initialize().catch((err) => {
+    status = 'error';
+    broadcast('wa:status', 'error');
+    console.error('[WA initialize error]', err.message || err);
+  });
 }
 
 async function getQR() { return currentQR; }

@@ -77,7 +77,13 @@ export default function App() {
   useEffect(() => {
     if (!api) return;
     const poll = async () => {
-      setWaStatus(await api.wa.getStatus());
+      const newWaStatus = await api.wa.getStatus();
+      setWaStatus(newWaStatus);
+      // Race condition fix: if status is qr but we missed the event, fetch QR directly
+      if (newWaStatus === 'qr') {
+        const qr = await api.wa.getQR();
+        if (qr) setWaQR(qr);
+      }
       setTgStatus(await api.tg.getStatus());
     };
     poll();

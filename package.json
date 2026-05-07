@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.19",
+  "version": "1.0.23",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -57,7 +57,7 @@
     "appId": "com.icqmessenger.app",
     "productName": "ICQ Messenger",
     "copyright": "Copyright © 2026",
-    "asar": true,
+    "asar": false,
     "extends": null,
     "extraMetadata": {
       "main": "electron/main.js"
@@ -102,7 +102,13 @@
       "category": "public.app-category.social-networking",
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
-      "extraResources": []
+      "extraResources": [
+        {
+          "from": "puppeteer_cache/chrome",
+          "to": "chrome",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "dmg": {
       "title": "ICQ Messenger",

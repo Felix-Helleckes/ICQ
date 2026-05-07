@@ -45,6 +45,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
     title: 'ICQ Messenger',
@@ -78,8 +79,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', (e) => {
   e.preventDefault();
-  // Give bridges max 3s to shut down cleanly, then force exit
-  const timeout = setTimeout(() => app.exit(0), 3000);
+  // Give bridges max 1.5s to shut down cleanly, then force exit
+  const timeout = setTimeout(() => app.exit(0), 1500);
   Promise.all([
     whatsappBridge.shutdown?.().catch(() => {}),
     telegramBridge.shutdown?.().catch(() => {}),
@@ -113,6 +114,7 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => 
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
     title: chatName || 'Chat',
