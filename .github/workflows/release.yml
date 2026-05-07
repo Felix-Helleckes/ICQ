@@ -119,16 +119,19 @@ jobs:
             |-----------|-------|---------|
             | Windows | `ICQ-Messenger-Setup-*.exe` | Installer (empfohlen) |
             | Windows | `ICQ-Messenger-*-Portable.exe` | Portable - Login bleibt im `ICQ-Data`-Ordner daneben |
-            | macOS | `ICQ-Messenger-*.dmg` | Universal (M1 + Intel) - unsigned, siehe unten |
+            | macOS | `ICQ-Messenger-*.dmg` | arm64 (M1/M2/M3 nativ, Intel via Rosetta 2) |
             | Linux | `ICQ-Messenger-*.AppImage` | Portable, direkt ausfuehrbar |
             | Linux | `icq-messenger_*.deb` | Debian/Ubuntu |
 
             ### Portable Windows
             `ICQ-Data`-Ordner neben der `.exe` behaelt Login-Session. Einfach beide zusammen kopieren (z.B. auf USB-Stick).
 
-            ### macOS - Gatekeeper
-            Rechtsklick auf .app -> "Oeffnen" -> "Oeffnen" bestaetigen
-            Oder: `xattr -cr /Applications/ICQ\ Messenger.app`
+            ### macOS - "Datei ist beschaedigt"
+            Da die App nicht notarisiert ist, blockiert macOS den Start. **Einmalig** im Terminal:
+            ```
+            xattr -cr /Applications/ICQ\ Messenger.app
+            ```
+            Danach startet die App normal. Alternativ: Rechtsklick auf .app -> "Oeffnen" -> "Oeffnen" bestaetigen.
 
             ### Windows - SmartScreen
             "Weitere Informationen" -> "Trotzdem ausfuehren"
