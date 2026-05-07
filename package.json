@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.13",
+  "version": "1.0.15",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -65,21 +65,23 @@
     "files": [
       "build/**/*",
       "electron/**/*",
-      "node_modules/**/*"
+      "node_modules/**/*",
+      "!puppeteer_cache/**"
     ],
-    "extraResources": [
-      {
-        "from": "puppeteer_cache/chrome",
-        "to": "chrome",
-        "filter": ["**/*"]
-      }
-    ],
+    "extraResources": [],
     "win": {
       "target": [
         { "target": "nsis",     "arch": ["x64"] },
         { "target": "portable", "arch": ["x64"] }
       ],
-      "icon": "public/icon.ico"
+      "icon": "public/icon.ico",
+      "extraResources": [
+        {
+          "from": "puppeteer_cache/chrome",
+          "to": "chrome",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -93,13 +95,15 @@
       "artifactName": "ICQ-Messenger-${version}-Portable.${ext}"
     },
     "mac": {
+      "asar": false,
       "target": [
         { "target": "dmg", "arch": ["universal"] }
       ],
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false
+      "gatekeeperAssess": false,
+      "extraResources": []
     },
     "dmg": {
       "title": "ICQ Messenger",
@@ -113,7 +117,14 @@
       ],
       "icon": "public/icon.png",
       "category": "Network;InstantMessaging",
-      "description": "Retro ICQ-style multi-messenger for WhatsApp and Telegram"
+      "description": "Retro ICQ-style multi-messenger for WhatsApp and Telegram",
+      "extraResources": [
+        {
+          "from": "puppeteer_cache/chrome",
+          "to": "chrome",
+          "filter": ["**/*"]
+        }
+      ]
     },
     "directories": {
       "output": "dist"
