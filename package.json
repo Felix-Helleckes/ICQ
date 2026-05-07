@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.15",
+  "version": "1.0.16",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -95,9 +95,8 @@
       "artifactName": "ICQ-Messenger-${version}-Portable.${ext}"
     },
     "mac": {
-      "asar": false,
       "target": [
-        { "target": "dmg", "arch": ["universal"] }
+        { "target": "dmg", "arch": ["arm64"] }
       ],
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
