@@ -54,6 +54,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
   // Resizable split: inputHeight in px (min 80, max 400)
   const [inputHeight, setInputHeight] = useState(110);
   const dividerDragRef = useRef(null);
@@ -129,6 +130,33 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
   const handleFileBtn = async () => {
     const filePath = await window.api?.openFileDialog?.();
     if (filePath) onSendFile?.(filePath);
+  };
+
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const blob = item.getAsFile();
+        if (!blob) return;
+        const ext = item.type === 'image/png' ? 'png' : item.type === 'image/jpeg' ? 'jpg' : 'png';
+        const reader = new FileReader();
+        reader.onload = () => setClipboardImage({ dataUrl: reader.result, ext });
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+  };
+
+  const sendClipboardImage = async () => {
+    if (!clipboardImage) return;
+    const base64 = clipboardImage.dataUrl.split(',')[1];
+    try {
+      const tmpPath = await window.api.saveTempImage(base64, clipboardImage.ext);
+      onSendFile?.(tmpPath);
+    } catch (e) { console.error('[paste send]', e); }
+    setClipboardImage(null);
   };
 
   // Drag & Drop
@@ -270,6 +298,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={handleKey}
+            onPaste={handlePaste}
             placeholder="Nachricht eingeben..."
             rows={2}
             style={{ fontSize: '0.80rem' }}
@@ -277,6 +306,20 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
           <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
         </div>
       </div>
+
+      {/* Clipboard image paste preview */}
+      {clipboardImage && (
+        <div className="lightbox-overlay" onClick={() => setClipboardImage(null)}>
+          <div className="paste-preview" onClick={e => e.stopPropagation()}>
+            <p className="paste-preview-title">Bild senden?</p>
+            <img src={clipboardImage.dataUrl} alt="Vorschau" className="paste-preview-img" />
+            <div className="paste-preview-actions">
+              <button className="win98-btn" onClick={sendClipboardImage}>Senden</button>
+              <button className="win98-btn" onClick={() => setClipboardImage(null)}>Abbrechen</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Lightbox */}
       {lightbox && (

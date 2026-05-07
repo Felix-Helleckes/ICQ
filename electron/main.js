@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem } = require('electron');
 const path = require('path');
+const os   = require('os');
+const fs   = require('fs');
 const isDev = require('electron-is-dev');
 
 // ── Portable: redirect userData to folder next to .exe ───────
@@ -175,6 +177,14 @@ ipcMain.handle('open-file-dialog', async () => {
     ],
   });
   return result.canceled ? null : result.filePaths[0];
+});
+
+// ── IPC: Save clipboard image to temp file ─────────────────
+ipcMain.handle('app:save-temp-image', async (e, base64, ext) => {
+  const fname = `clipboard_${Date.now()}.${ext || 'png'}`;
+  const fpath = path.join(os.tmpdir(), fname);
+  fs.writeFileSync(fpath, Buffer.from(base64, 'base64'));
+  return fpath;
 });
 
 // ── IPC: Open URL in default browser ────────────────────────
