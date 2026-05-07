@@ -30,6 +30,16 @@
   letter-spacing: 0.8px;
   color: #fff;
   text-shadow: 0 1px 2px #0004;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.titlebar-version {
+  font-size: 0.65rem;
+  font-weight: normal;
+  letter-spacing: 0;
+  color: rgba(255,255,255,0.55);
 }
 
 .titlebar-controls {

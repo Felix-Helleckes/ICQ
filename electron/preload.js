@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  appVersion: process.env.npm_package_version || require('../package.json').version,
   // Get real file system path from a dropped File object (Electron 29+)
   getFilePath: (file) => {
     try { return webUtils.getPathForFile(file); } catch (e) { return file?.path || null; }
