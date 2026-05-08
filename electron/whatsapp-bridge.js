@@ -87,6 +87,9 @@ function init(avatarCallback, dataDir) {
 
   const executablePath = findChromiumExecutable();
 
+  const isMac = process.platform === 'darwin';
+  const isLinux = process.platform === 'linux';
+
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: path.join(dataDir, 'whatsapp') }),
     puppeteer: {
@@ -96,9 +99,12 @@ function init(avatarCallback, dataDir) {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',
+        // --disable-gpu causes post-auth rendering failures on macOS with Chrome 112+
+        // Only needed on Linux headless environments
+        ...(isLinux ? ['--disable-gpu'] : []),
         '--disable-extensions',
-        '--disable-background-networking',
+        // --disable-background-networking blocks WhatsApp's post-QR WebSocket auth flow
+        // Removed: causes QR scan to succeed but session never becomes ready
         '--disable-default-apps',
         '--disable-sync',
         '--disable-translate',
@@ -113,6 +119,13 @@ function init(avatarCallback, dataDir) {
     currentQR = qr;
     status = 'qr';
     broadcast('wa:qr', qr);
+  });
+
+  // QR was scanned — session is being established, show loading state
+  client.on('authenticated', () => {
+    status = 'loading';
+    currentQR = null;
+    broadcast('wa:status', 'loading');
   });
 
   client.on('ready', () => {
