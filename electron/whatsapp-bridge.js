@@ -99,9 +99,9 @@ function init(avatarCallback, dataDir) {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        // --disable-gpu causes post-auth rendering failures on macOS with Chrome 112+
-        // Only needed on Linux headless environments
-        ...(isLinux ? ['--disable-gpu'] : []),
+        // --disable-gpu: needed on Windows + Linux for headless stability
+        // On macOS with Chrome 112+ it causes post-auth rendering failures → skip on mac
+        ...(!isMac ? ['--disable-gpu'] : []),
         '--disable-extensions',
         // --disable-background-networking blocks WhatsApp's post-QR WebSocket auth flow
         // Removed: causes QR scan to succeed but session never becomes ready
