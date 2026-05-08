@@ -62,9 +62,11 @@ export default function App() {
 
   const playMessageSound = (chatId, service) => {
     if (!soundEnabledRef.current) return;
-    // Gruppen-Sound-Check
+    // Gruppen-Sound-Check — immer den service-eigenen Cache nutzen, nicht chatsRef
+    // (chatsRef enthält nur den aktiv angezeigten Service)
     if (chatId) {
-      const chat = chatsRef.current.find(c => c.id === String(chatId));
+      const cache = service === 'telegram' ? tgCacheRef.current : waCacheRef.current;
+      const chat = cache?.find(c => c.id === String(chatId));
       if (chat?.isGroup) {
         const groupSoundOn = service === 'telegram' ? tgGroupSoundRef.current : waGroupSoundRef.current;
         if (!groupSoundOn) return;
