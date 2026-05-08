@@ -142,12 +142,14 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
 
-  // Trigger QR login as soon as tab is shown and status allows
+  // Trigger QR login as soon as QR tab is active and Telegram needs auth.
+  // Depends on both loginMethod and tgStatus so it also retriggers if a QR
+  // attempt fails and status falls back to 'needs-auth'.
   useEffect(() => {
     if (loginMethod === 'qr' && tgStatus === 'needs-auth') {
       onTgQRLogin();
     }
-  }, [loginMethod]); // eslint-disable-line
+  }, [loginMethod, tgStatus]); // eslint-disable-line
 
   const handlePhoneSend = async () => {
     setLoading(true); setError('');

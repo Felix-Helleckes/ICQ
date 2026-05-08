@@ -18,10 +18,11 @@
     "react-start": "react-scripts start",
     "build": "react-scripts build",
     "electron": "electron .",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:portable": "npm run build && electron-builder --win portable --publish never",
+    "dist": "npm run download-chrome && npm run build && electron-builder --publish never",
+    "dist:win": "npm run download-chrome && npm run build && electron-builder --win --publish never",
+    "dist:portable": "npm run download-chrome && npm run build && electron-builder --win portable --publish never",
     "dist:store": "npm run build && electron-builder --win appx --publish never",
+    "download-chrome": "node scripts/download-chrome.js",
     "make-icon": "node scripts/make-icon.js"
   },
   "dependencies": {

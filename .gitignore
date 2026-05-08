@@ -10,6 +10,9 @@ data/
 .wwebjs_cache/
 .wwebjs_auth/
 
+# Bundled Chromium (downloaded via scripts/download-chrome.js, not committed)
+puppeteer_cache/
+
 # Environment / secrets
 .env
 .env.local

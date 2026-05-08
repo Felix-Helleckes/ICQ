@@ -41,7 +41,7 @@ function createWindow() {
     maxWidth: 360,
     frame: false,
     resizable: true,
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -110,7 +110,7 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => 
     minHeight: 300,
     frame: false,
     resizable: true,
-    icon: path.join(__dirname, '../public/icon.png'),
+    icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

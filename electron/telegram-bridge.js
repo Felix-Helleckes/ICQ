@@ -115,7 +115,8 @@ async function signIn(phone, code, hash) {
 
 // ── QR code login ─────────────────────────────────────────────
 async function startQRLogin() {
-  if (!tgClient) throw new Error('Telegram not initialized');
+  // tgClient can be null after logout — reinitialize if needed
+  if (!tgClient) await connect();
   status = 'qr';
 
   try {
@@ -314,6 +315,8 @@ async function logout() {
   try { fs.unlinkSync(SESSION_FILE); } catch (e) {}
   status = 'needs-auth';
   tgClient = null;
+  // Reinitialize an unauthenticated client so the next login attempt works immediately
+  await connect();
 }
 
 async function shutdown() {
