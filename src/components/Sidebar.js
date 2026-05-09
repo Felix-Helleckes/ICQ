@@ -90,18 +90,16 @@ export default function Sidebar({
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
   const onToggleGroupSound = activeService === 'whatsapp' ? onToggleWaGroupSound : onToggleTgGroupSound;
 
-  // ── Font-size scaling ──────────────────────────────────────
-  const [fontSize, setFontSize] = useState(() => {
-    const saved = localStorage.getItem('icq-font-size');
-    return saved ? parseInt(saved, 10) : 13;
+  // Scale only contact list + search input, not the whole app UI.
+  const [listScale, setListScale] = useState(() => {
+    const saved = Number(localStorage.getItem('icq-contact-scale'));
+    return Number.isFinite(saved) && saved > 0 ? saved : 1;
   });
   useEffect(() => {
-    document.documentElement.style.fontSize = fontSize + 'px';
-    localStorage.setItem('icq-font-size', fontSize);
-  }, [fontSize]);
-  const smaller = () => setFontSize(f => Math.max(10, f - 1));
-  const larger  = () => setFontSize(f => Math.min(20, f + 1));
-  // ──────────────────────────────────────────────────────────
+    localStorage.setItem('icq-contact-scale', String(listScale));
+  }, [listScale]);
+  const smaller = () => setListScale(v => Math.max(0.85, Number((v - 0.05).toFixed(2))));
+  const larger  = () => setListScale(v => Math.min(1.45, Number((v + 0.05).toFixed(2))));
 
   const filtered = chats.filter(c =>
     !search || (c.name || '').toLowerCase().includes(search.toLowerCase())
@@ -110,7 +108,7 @@ export default function Sidebar({
   const contacts = filtered.filter(c => !c.isGroup);
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" style={{ '--contact-scale': listScale }}>
       {/* ICQ 5 user header */}
       <div className="user-header">
         <div className="user-avatar">
@@ -131,6 +129,8 @@ export default function Sidebar({
             title={soundEnabled ? 'Sound aus' : 'Sound an'}
           >{soundEnabled ? '🔔' : '🔕'}</button>
         )}
+        <button className="scale-btn" title="Kontakte kleiner" onClick={smaller}>A-</button>
+        <button className="scale-btn" title="Kontakte größer" onClick={larger}>A+</button>
         {onLogout && (
           <button className="logout-btn" onClick={onLogout} title="Logout">⏏</button>
         )}
@@ -205,9 +205,6 @@ export default function Sidebar({
         <button className="toolbar-btn" title="Add Contact">➕</button>
         <button className="toolbar-btn" title="Settings">⚙️</button>
         <button className="toolbar-btn" title="Status">✿</button>
-        <div className="toolbar-sep" />
-        <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
-        <button className="toolbar-btn font-btn" title="Schrift größer"  onClick={larger}>A+</button>
       </div>
     </div>
   );

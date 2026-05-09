@@ -74,6 +74,24 @@
 .sound-btn:hover { background: rgba(255,255,255,0.08); }
 .sound-btn.muted { opacity: 0.45; }
 
+.scale-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: var(--icq-teal-light);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: bold;
+  padding: 1px 4px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+.scale-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--icq-yellow);
+  border-color: rgba(255,255,255,0.35);
+}
+
 /* ── Service Tabs ── */
 .service-tabs {
   display: flex;
@@ -130,7 +148,7 @@
   border-radius: 10px;
   padding: 2px 8px 2px 22px;
   font-family: inherit;
-  font-size: 0.9rem;
+  font-size: calc(0.9rem * var(--contact-scale, 1));
   color: var(--icq-text);
   width: 100%;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237A90A8' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
@@ -164,18 +182,18 @@
 .contact-item {
   display: flex;
   align-items: center;
-  padding: 5px 7px;
+  padding: calc(5px * var(--contact-scale, 1)) 7px;
   cursor: pointer;
   border-bottom: 1px solid rgba(255,255,255,0.04);
-  gap: 7px;
+  gap: calc(7px * var(--contact-scale, 1));
   transition: background 0.1s;
 }
 .contact-item:hover   { background: var(--icq-bg-light); }
 .contact-item.selected { background: linear-gradient(to right, var(--icq-teal-dark), var(--icq-bg-light)); }
 
 .contact-avatar {
-  width: 2.7rem;
-  height: 2.7rem;
+  width: calc(2.7rem * var(--contact-scale, 1));
+  height: calc(2.7rem * var(--contact-scale, 1));
   border-radius: 50%;
   background: linear-gradient(135deg, #2A4060, #1A2A40);
   color: var(--icq-teal-light);
@@ -183,7 +201,7 @@
   align-items: center;
   justify-content: center;
   font-weight: bold;
-  font-size: 1.2rem;
+  font-size: calc(1.2rem * var(--contact-scale, 1));
   flex-shrink: 0;
   border: 1px solid var(--icq-border);
   position: relative;
@@ -216,14 +234,14 @@
 }
 .contact-name {
   font-weight: bold;
-  font-size: 1rem;
+  font-size: calc(1rem * var(--contact-scale, 1));
   color: var(--icq-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .contact-last {
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--contact-scale, 1));
   color: var(--icq-text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -234,11 +252,11 @@
 .unread-badge {
   background: var(--icq-teal);
   color: white;
-  font-size: 0.82rem;
+  font-size: calc(0.82rem * var(--contact-scale, 1));
   font-weight: bold;
-  padding: 1px 5px;
+  padding: calc(1px * var(--contact-scale, 1)) calc(5px * var(--contact-scale, 1));
   border-radius: 8px;
-  min-width: 16px;
+  min-width: calc(16px * var(--contact-scale, 1));
   text-align: center;
   box-shadow: 0 0 4px var(--icq-teal);
 }
@@ -270,17 +288,6 @@
 
 .toolbar-sep {
   flex: 1;
-}
-
-.font-btn {
-  font-size: 0.75rem !important;
-  font-weight: bold;
-  letter-spacing: -0.5px;
-  padding: 2px 5px;
-  color: var(--icq-teal-light);
-}
-.font-btn:hover {
-  color: var(--icq-yellow) !important;
 }
 
 /* ── Groups collapsible section ── */
