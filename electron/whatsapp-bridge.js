@@ -11,6 +11,11 @@ let client = null;
 let status = 'disconnected';
 let currentQR = null;
 let onAvatarCb = null;
+let lastDataDir = null;
+let loadingWatchdog = null;
+let waRetryUsed = false;
+
+const WA_LOADING_TIMEOUT_MS = 60000;
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -18,6 +23,36 @@ function broadcast(channel, data) {
   });
   // Notify main.js avatar cache if registered
   if (channel === 'wa:avatar' && onAvatarCb) onAvatarCb(data.id, data.avatar);
+}
+
+function clearLoadingWatchdog() {
+  if (loadingWatchdog) {
+    clearTimeout(loadingWatchdog);
+    loadingWatchdog = null;
+  }
+}
+
+function armLoadingWatchdog(reason) {
+  clearLoadingWatchdog();
+  loadingWatchdog = setTimeout(async () => {
+    // Only recover when WA is still not ready and a client exists.
+    if (!client || status === 'ready') return;
+    if (waRetryUsed) {
+      console.error(`[WA watchdog] still stuck after retry (${reason})`);
+      status = 'error';
+      broadcast('wa:status', 'error');
+      return;
+    }
+
+    waRetryUsed = true;
+    console.warn(`[WA watchdog] timeout (${reason}) -> retry init`);
+    try { if (client) await client.destroy(); } catch (e) {}
+    client = null;
+    currentQR = null;
+    status = 'loading';
+    broadcast('wa:status', 'loading');
+    init(onAvatarCb, lastDataDir, { isRetry: true });
+  }, WA_LOADING_TIMEOUT_MS);
 }
 
 // Find a usable Chrome/Edge/Chromium on the host system.
@@ -80,8 +115,13 @@ function findChromiumExecutable() {
   return null;
 }
 
-function init(avatarCallback, dataDir) {
+function init(avatarCallback, dataDir, opts = {}) {
+  const { isRetry = false } = opts;
   if (avatarCallback) onAvatarCb = avatarCallback;
+  lastDataDir = dataDir;
+  if (!isRetry) waRetryUsed = false;
+
+  clearLoadingWatchdog();
   status = 'loading';
   broadcast('wa:status', 'loading');
 
@@ -118,12 +158,21 @@ function init(avatarCallback, dataDir) {
   client.on('qr', (qr) => {
     currentQR = qr;
     status = 'qr';
+    clearLoadingWatchdog();
     broadcast('wa:qr', qr);
+  });
+
+  client.on('authenticated', () => {
+    // After QR scan/auth, WA can still hang before ready in rare cases.
+    status = 'loading';
+    broadcast('wa:status', 'loading');
+    armLoadingWatchdog('post-auth');
   });
 
   client.on('ready', () => {
     status = 'ready';
     currentQR = null;
+    clearLoadingWatchdog();
     broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
   });
@@ -181,17 +230,21 @@ function init(avatarCallback, dataDir) {
   client.on('disconnected', () => {
     status = 'disconnected';
     currentQR = null;
+    clearLoadingWatchdog();
     broadcast('wa:status', 'disconnected');
   });
 
   client.on('auth_failure', (msg) => {
     status = 'error';
+    clearLoadingWatchdog();
     broadcast('wa:status', 'error');
     console.error('[WA auth_failure]', msg);
   });
 
+  armLoadingWatchdog('startup');
   client.initialize().catch((err) => {
     status = 'error';
+    clearLoadingWatchdog();
     broadcast('wa:status', 'error');
     console.error('[WA initialize error]', err.message || err);
   });
@@ -294,6 +347,7 @@ async function getContactAvatar(id) {
 }
 
 async function logout() {
+  clearLoadingWatchdog();
   try { await client.logout(); } catch (e) {}
   try { if (client) await client.destroy(); } catch (e) {}
   client = null;
@@ -303,6 +357,7 @@ async function logout() {
 }
 
 async function shutdown() {
+  clearLoadingWatchdog();
   try { if (client) await client.destroy(); } catch (e) {}
   status = 'disconnected';
 }
