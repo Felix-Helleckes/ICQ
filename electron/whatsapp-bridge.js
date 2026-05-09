@@ -121,16 +121,16 @@ function init(avatarCallback, dataDir) {
     broadcast('wa:qr', qr);
   });
 
-  // QR was scanned — session is being established, show loading state
+  // QR was scanned. Keep QR state until `ready` to avoid UI hanging on
+  // "WhatsApp startet..." when session establishment takes longer.
   client.on('authenticated', () => {
-    status = 'loading';
-    currentQR = null;
-    broadcast('wa:status', 'loading');
+    broadcast('wa:status', status);
   });
 
   client.on('ready', () => {
     status = 'ready';
     currentQR = null;
+    broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
   });
 
@@ -184,7 +184,11 @@ function init(avatarCallback, dataDir) {
     client.on('stop_typing', ({ chatId }) => broadcast('wa:typing', { chatId, typing: false }));
   } catch (e) { /* older whatsapp-web.js versions may not have these events */ }
 
-  client.on('disconnected', () => { status = 'disconnected'; });
+  client.on('disconnected', () => {
+    status = 'disconnected';
+    currentQR = null;
+    broadcast('wa:status', 'disconnected');
+  });
 
   client.on('auth_failure', (msg) => {
     status = 'error';
