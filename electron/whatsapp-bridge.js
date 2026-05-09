@@ -55,6 +55,25 @@ function armLoadingWatchdog(reason) {
   }, WA_LOADING_TIMEOUT_MS);
 }
 
+function cleanupStaleSessionLocks(dataDir) {
+  try {
+    const sessionDir = path.join(dataDir, 'whatsapp', 'session');
+    const lockNames = [
+      'lockfile',
+      'SingletonLock',
+      'SingletonCookie',
+      'SingletonSocket',
+      'DevToolsActivePort',
+    ];
+    for (const name of lockNames) {
+      const fp = path.join(sessionDir, name);
+      if (fs.existsSync(fp)) {
+        try { fs.rmSync(fp, { force: true }); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+}
+
 // Find a usable Chrome/Edge/Chromium on the host system.
 // Priority: 1. bundled extraResources chrome, 2. system Chrome/Edge, 3. puppeteer cache (dev)
 function findChromiumExecutable() {
@@ -120,6 +139,9 @@ function init(avatarCallback, dataDir, opts = {}) {
   if (avatarCallback) onAvatarCb = avatarCallback;
   lastDataDir = dataDir;
   if (!isRetry) waRetryUsed = false;
+
+  // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
+  cleanupStaleSessionLocks(dataDir);
 
   clearLoadingWatchdog();
   status = 'loading';
