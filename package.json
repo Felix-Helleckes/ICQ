@@ -58,6 +58,7 @@
     "appId": "com.icqmessenger.app",
     "productName": "ICQ Messenger",
     "copyright": "Copyright © 2026",
+    "publish": null,
     "asar": true,
     "asarUnpack": [
       "**/node_modules/whatsapp-web.js/**",
