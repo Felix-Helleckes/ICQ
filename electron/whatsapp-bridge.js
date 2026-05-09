@@ -121,16 +121,9 @@ function init(avatarCallback, dataDir) {
     broadcast('wa:qr', qr);
   });
 
-  // QR was scanned. Keep QR state until `ready` to avoid UI hanging on
-  // "WhatsApp startet..." when session establishment takes longer.
-  client.on('authenticated', () => {
-    broadcast('wa:status', status);
-  });
-
   client.on('ready', () => {
     status = 'ready';
     currentQR = null;
-    broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
   });
 
