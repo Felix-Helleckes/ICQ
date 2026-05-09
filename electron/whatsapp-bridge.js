@@ -124,6 +124,7 @@ function init(avatarCallback, dataDir) {
   client.on('ready', () => {
     status = 'ready';
     currentQR = null;
+    broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
   });
 
@@ -294,7 +295,11 @@ async function getContactAvatar(id) {
 
 async function logout() {
   try { await client.logout(); } catch (e) {}
+  try { if (client) await client.destroy(); } catch (e) {}
+  client = null;
   status = 'disconnected';
+  currentQR = null;
+  broadcast('wa:status', 'disconnected');
 }
 
 async function shutdown() {
