@@ -16,6 +16,7 @@ let loadingWatchdog = null;
 let waRetryUsed = false;
 
 const WA_LOADING_TIMEOUT_MS = 60000;
+const WA_POST_AUTH_TIMEOUT_MS = 20000; // Shorter timeout post-auth, should be faster
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -34,6 +35,8 @@ function clearLoadingWatchdog() {
 
 function armLoadingWatchdog(reason) {
   clearLoadingWatchdog();
+  // Use shorter timeout for post-auth (typically <5s), fallback to normal for startup
+  const timeout = reason === 'post-auth' ? WA_POST_AUTH_TIMEOUT_MS : WA_LOADING_TIMEOUT_MS;
   loadingWatchdog = setTimeout(async () => {
     // Only recover when WA is still not ready and a client exists.
     if (!client || status === 'ready') return;
@@ -52,7 +55,7 @@ function armLoadingWatchdog(reason) {
     status = 'loading';
     broadcast('wa:status', 'loading');
     init(onAvatarCb, lastDataDir, { isRetry: true });
-  }, WA_LOADING_TIMEOUT_MS);
+  }, timeout);
 }
 
 function cleanupStaleSessionLocks(dataDir) {
