@@ -10,6 +10,49 @@ export default function ChatApp({ chatId, chatName, service }) {
   const [chatAvatar, setChatAvatar] = useState(null);
   const [isTyping, setIsTyping] = useState(false);
   const typingTimer = React.useRef(null);
+  const latestTgMsgIdRef = React.useRef(0);
+
+  const mergeById = React.useCallback((base, incoming) => {
+    const merged = [...base];
+    const indexById = new Map();
+    for (let i = 0; i < merged.length; i += 1) {
+      const id = merged[i]?.id;
+      if (id) indexById.set(String(id), i);
+    }
+    for (const msg of incoming || []) {
+      const id = msg?.id;
+      if (id && indexById.has(String(id))) {
+        merged[indexById.get(String(id))] = { ...merged[indexById.get(String(id))], ...msg };
+      } else {
+        if (id) indexById.set(String(id), merged.length);
+        merged.push(msg);
+      }
+    }
+    merged.sort((a, b) => {
+      const ta = Number(a?.timestamp || 0);
+      const tb = Number(b?.timestamp || 0);
+      if (ta !== tb) return ta - tb;
+      return Number(a?.id || 0) - Number(b?.id || 0);
+    });
+    return merged;
+  }, []);
+
+  const refreshTelegramDelta = React.useCallback(async () => {
+    if (!api || !chatId || service !== 'telegram') return;
+    try {
+      const latestId = latestTgMsgIdRef.current || 0;
+      const delta = await api.tg.getMessages(chatId, { limit: 20, minId: latestId });
+      if (delta && delta.length) {
+        setMessages(prev => mergeById(prev, delta));
+      }
+    } catch (e) { /* keep UI responsive on transient network errors */ }
+  }, [chatId, mergeById, service]);
+
+  useEffect(() => {
+    if (service !== 'telegram') return;
+    const latest = messages.length ? Number(messages[messages.length - 1]?.id || 0) : 0;
+    latestTgMsgIdRef.current = latest;
+  }, [messages, service]);
 
   useEffect(() => {
     async function loadMessages() {
@@ -17,7 +60,7 @@ export default function ChatApp({ chatId, chatName, service }) {
       try {
         const msgs = service === 'whatsapp'
           ? await api.wa.getMessages(chatId)
-          : await api.tg.getMessages(chatId);
+          : await api.tg.getMessages(chatId, { limit: 50 });
         setMessages(msgs || []);
       } catch (e) { console.error('[ChatApp load]', e); }
     }
@@ -29,6 +72,18 @@ export default function ChatApp({ chatId, chatName, service }) {
   }, [chatId, service]);
 
   useEffect(() => {
+    if (service !== 'telegram' || !chatId) return undefined;
+    const onFocus = () => { refreshTelegramDelta(); };
+    window.addEventListener('focus', onFocus);
+    // Also do one quick delayed delta refresh after initial load.
+    const t = setTimeout(() => { refreshTelegramDelta(); }, 1200);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearTimeout(t);
+    };
+  }, [chatId, refreshTelegramDelta, service]);
+
+  useEffect(() => {
     if (!api) return;
     const removeWa = api.wa.onMessage(msg => {
       if (service === 'whatsapp' && String(msg.from) === String(chatId) && !msg.fromMe)
@@ -37,7 +92,7 @@ export default function ChatApp({ chatId, chatName, service }) {
     const removeTg = api.tg.onMessage(msg => {
       // fromMe-Nachrichten werden optimistisch beim Senden eingefügt → kein Duplikat
       if (service === 'telegram' && String(msg.chatId) === String(chatId) && !msg.fromMe)
-        setMessages(prev => [...prev, msg]);
+        setMessages(prev => mergeById(prev, [msg]));
     });
     const removeAck = service === 'whatsapp'
       ? api.wa.onAck(({ id, ack }) => {
@@ -55,7 +110,7 @@ export default function ChatApp({ chatId, chatName, service }) {
         })
       : null;
     return () => { removeWa?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
-  }, [chatId, service]);
+  }, [chatId, mergeById, service]);
 
   const sendMessage = async (text) => {
     if (!text.trim() || !api) return;

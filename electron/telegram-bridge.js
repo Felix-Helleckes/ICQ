@@ -226,9 +226,11 @@ async function getContactAvatar(id) {
   return null;
 }
 
-async function getMessages(chatId) {
+async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
-  const messages = await tgClient.getMessages(toPeer(chatId), { limit: 50 });
+  const limit = Number.isFinite(opts.limit) ? Math.max(1, Math.min(100, opts.limit)) : 50;
+  const minId = opts.minId ? Number(opts.minId) : 0;
+  const messages = await tgClient.getMessages(toPeer(chatId), { limit, minId });
 
   const results = [];
   for (const m of messages) {

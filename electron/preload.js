@@ -43,7 +43,7 @@ contextBridge.exposeInMainWorld('api', {
     startQRLogin: ()                 => ipcRenderer.invoke('tg:start-qr-login'),
     submit2FA:    (password)         => ipcRenderer.invoke('tg:2fa-password', password),
     getDialogs:   ()                 => ipcRenderer.invoke('tg:get-dialogs'),
-    getMessages:  (chatId)           => ipcRenderer.invoke('tg:get-messages', chatId),
+    getMessages:  (chatId, opts)     => ipcRenderer.invoke('tg:get-messages', chatId, opts),
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     markRead:     (chatId)           => ipcRenderer.invoke('tg:mark-read', chatId),
