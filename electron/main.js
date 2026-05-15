@@ -15,6 +15,7 @@ const avatarStore  = new Map(); // chatId → avatar data URL
 const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CACHE_SIZE = 5;
+let appDataDir = null; // set in app.on('ready'), used for reconnect
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
 let whatsappBridge, telegramBridge;
@@ -71,6 +72,7 @@ app.on('ready', async () => {
   const dataDir = isDev
     ? path.join(__dirname, '../data')
     : app.getPath('userData');
+  appDataDir = dataDir;
   const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
   try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
   try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
@@ -136,6 +138,10 @@ ipcMain.handle('get-stored-avatar', async (e, id) => {
   return avatarStore.get(String(id)) || null;
 });
 ipcMain.handle('wa:get-qr',       async ()             => whatsappBridge.getQR());
+ipcMain.handle('wa:reconnect',    async ()             => {
+  // Force a fresh init — useful when stuck in error state
+  whatsappBridge.reconnect(appDataDir);
+});
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
 ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
   // Check cache for faster repeat opens

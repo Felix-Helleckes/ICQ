@@ -14,9 +14,10 @@ let onAvatarCb = null;
 let lastDataDir = null;
 let loadingWatchdog = null;
 let waRetryUsed = false;
+let waManualLogout = false; // true only when logout() was explicitly called — prevents auto-reconnect
 
-const WA_LOADING_TIMEOUT_MS = 60000;
-const WA_POST_AUTH_TIMEOUT_MS = 20000; // Shorter timeout post-auth, should be faster
+const WA_LOADING_TIMEOUT_MS = 90000;     // 90s startup budget (packaged app + Chrome cold start)
+const WA_POST_AUTH_TIMEOUT_MS = 45000;   // 45s post-auth: packaged apps need more time than dev
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -252,18 +253,52 @@ function init(avatarCallback, dataDir, opts = {}) {
     client.on('stop_typing', ({ chatId }) => broadcast('wa:typing', { chatId, typing: false }));
   } catch (e) { /* older whatsapp-web.js versions may not have these events */ }
 
-  client.on('disconnected', () => {
-    status = 'disconnected';
-    currentQR = null;
+  client.on('disconnected', (reason) => {
     clearLoadingWatchdog();
-    broadcast('wa:status', 'disconnected');
+    console.warn('[WA disconnected]', reason);
+    if (waManualLogout) {
+      // User explicitly logged out — don't reconnect
+      status = 'disconnected';
+      currentQR = null;
+      broadcast('wa:status', 'disconnected');
+      return;
+    }
+    // Auto-reconnect: destroy old client and re-initialize after short delay
+    status = 'loading';
+    broadcast('wa:status', 'loading');
+    const oldClient = client;
+    client = null;
+    currentQR = null;
+    setTimeout(async () => {
+      try { await oldClient.destroy(); } catch (e) {}
+      if (!waManualLogout) {
+        waRetryUsed = false;
+        init(onAvatarCb, lastDataDir);
+      }
+    }, 3000);
   });
 
   client.on('auth_failure', (msg) => {
-    status = 'error';
-    clearLoadingWatchdog();
-    broadcast('wa:status', 'error');
     console.error('[WA auth_failure]', msg);
+    clearLoadingWatchdog();
+    // Clear corrupted session so user can scan QR again cleanly
+    try {
+      const sessionDir = path.join(lastDataDir, 'whatsapp', 'session', 'Default');
+      if (fs.existsSync(sessionDir)) {
+        const files = ['Cookies', 'Local Storage', 'Session Storage', 'IndexedDB'];
+        files.forEach(f => {
+          const fp = path.join(sessionDir, f);
+          try { if (fs.existsSync(fp)) fs.rmSync(fp, { recursive: true, force: true }); } catch (e) {}
+        });
+      }
+    } catch (e) {}
+    // Reinit to show QR again instead of stuck error screen
+    client = null;
+    currentQR = null;
+    waRetryUsed = false;
+    status = 'loading';
+    broadcast('wa:status', 'loading');
+    setTimeout(() => init(onAvatarCb, lastDataDir), 2000);
   });
 
   armLoadingWatchdog('startup');
@@ -390,6 +425,7 @@ async function getContactAvatar(id) {
 }
 
 async function logout() {
+  waManualLogout = true;
   clearLoadingWatchdog();
   try { await client.logout(); } catch (e) {}
   try { if (client) await client.destroy(); } catch (e) {}
@@ -397,6 +433,8 @@ async function logout() {
   status = 'disconnected';
   currentQR = null;
   broadcast('wa:status', 'disconnected');
+  // Reset flag after a short delay so the user can re-login
+  setTimeout(() => { waManualLogout = false; }, 2000);
 }
 
 async function shutdown() {
@@ -405,4 +443,19 @@ async function shutdown() {
   status = 'disconnected';
 }
 
-module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMyProfile, getContactAvatar, logout, shutdown };
+function reconnect(dataDir) {
+  clearLoadingWatchdog();
+  const oldClient = client;
+  client = null;
+  currentQR = null;
+  waRetryUsed = false;
+  waManualLogout = false;
+  status = 'loading';
+  broadcast('wa:status', 'loading');
+  setTimeout(async () => {
+    try { if (oldClient) await oldClient.destroy(); } catch (e) {}
+    init(onAvatarCb, dataDir || lastDataDir);
+  }, 500);
+}
+
+module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMyProfile, getContactAvatar, logout, reconnect, shutdown };

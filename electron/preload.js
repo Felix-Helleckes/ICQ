@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('api', {
     getMyProfile:()              => ipcRenderer.invoke('wa:get-my-profile'),
     getAvatar:   (id)            => ipcRenderer.invoke('wa:get-avatar', id),
     logout:      ()              => ipcRenderer.invoke('wa:logout'),
+    reconnect:   ()              => ipcRenderer.invoke('wa:reconnect'),
     onQR:        (cb)            => ipcRenderer.on('wa:qr', (_, data) => cb(data)),
     onReady:     (cb)            => ipcRenderer.on('wa:ready', (_, data) => cb(data)),
     onMessage:   (cb)            => {

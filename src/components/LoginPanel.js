@@ -76,10 +76,17 @@ function WhatsAppPanel({ waStatus, waQR }) {
         <div className="wa-error">
           <p className="login-hint error">❌ WhatsApp konnte nicht gestartet werden.</p>
           <p className="login-hint small">
-            Bitte installiere{' '}
+            Falls Chrome fehlt, installiere{' '}
             <a href="https://www.google.com/chrome" onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://www.google.com/chrome'); }}>Google Chrome</a>
             {' '}und starte die App neu.
           </p>
+          <button
+            className="win98-btn"
+            style={{ marginTop: 8 }}
+            onClick={() => window.api?.wa?.reconnect?.()}
+          >
+            🔄 Neu verbinden
+          </button>
         </div>
       )}
       {waStatus === 'ready' && <p className="login-hint ok">✓ Connected to WhatsApp!</p>}
