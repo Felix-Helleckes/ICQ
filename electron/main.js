@@ -32,7 +32,10 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
   }
 }
 
-let mainWindow;
+// Tray/Contactlist/Chat windows
+let tray = null;
+let contactListWindow = null;
+let trayNotificationTimer = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
 const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
@@ -58,16 +61,23 @@ function devUrl(params = '') {
     : `file://${path.join(__dirname, '../build/index.html')}${params ? '?' + params : ''}`;
 }
 
-// ── Main contact-list window ─────────────────────────────────
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width:    270,
-    height:   580,
+
+// ── Tray + Contactlist window ───────────────────────────────
+function createContactListWindow() {
+  if (contactListWindow) {
+    contactListWindow.focus();
+    return contactListWindow;
+  }
+  contactListWindow = new BrowserWindow({
+    width: 270,
+    height: 580,
     minWidth: 240,
     minHeight: 420,
     maxWidth: 360,
     frame: false,
     resizable: true,
+    show: false,
+    skipTaskbar: true,
     icon: path.join(__dirname, '../build/icon.png'),
     webPreferences: {
       nodeIntegration: false,
@@ -75,62 +85,79 @@ function createWindow() {
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
-    title: 'ICQ Messenger',
+    title: 'ICQ Kontaktliste',
   });
-
-  mainWindow.loadURL(devUrl());
-  wireExternalLinks(mainWindow);
-
-  mainWindow.on('closed', () => {
-    // Close all open chat windows when main window is closed
-    chatWindows.forEach(win => { if (!win.isDestroyed()) win.close(); });
-    chatWindows.clear();
-    mainWindow = null;
+  contactListWindow.loadURL(devUrl());
+  wireExternalLinks(contactListWindow);
+  contactListWindow.on('blur', () => {
+    contactListWindow.hide();
   });
+  contactListWindow.on('close', (e) => {
+    e.preventDefault();
+    contactListWindow.hide();
+  });
+  return contactListWindow;
 }
 
-app.on('ready', async () => {
-  createWindow();
-  // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
-  const dataDir = isDev
-    ? path.join(__dirname, '../data')
-    : app.getPath('userData');
-  appDataDir = dataDir;
-  const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
-  try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
-  try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
-});
+function setTrayIcon(iconName) {
+  if (!tray) return;
+  const { nativeImage } = require('electron');
+  const iconPath = path.join(__dirname, `../public/${iconName}`);
+  tray.setImage(nativeImage.createFromPath(iconPath));
+}
 
-app.on('window-all-closed', () => {
-  app.quit();
-});
-
-app.on('before-quit', (e) => {
-  e.preventDefault();
-  // Give bridges max 1.5s to shut down cleanly, then force exit
-  const timeout = setTimeout(() => app.exit(0), 1500);
-  Promise.all([
-    whatsappBridge.shutdown?.().catch(() => {}),
-    telegramBridge.shutdown?.().catch(() => {}),
-  ]).then(() => {
-    clearTimeout(timeout);
-    app.exit(0);
+function createTray() {
+  if (tray) return;
+  const { Tray, nativeImage, Menu } = require('electron');
+  const iconPath = process.platform === 'darwin'
+    ? path.join(__dirname, '../public/icon.icns')
+    : path.join(__dirname, '../public/icon.ico');
+  tray = new Tray(nativeImage.createFromPath(iconPath));
+  tray.setToolTip('ICQ Messenger');
+    // IPC: Notification aus Renderer
+    ipcMain.on('tray:notify', () => {
+      if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
+      setTrayIcon('icq-logo.png');
+      trayNotificationTimer = setTimeout(() => {
+        setTrayIcon(process.platform === 'darwin' ? 'icon.icns' : 'icon.ico');
+      }, 2000);
+    });
+  tray.on('click', () => {
+    // Toggle contact list window
+    const win = createContactListWindow();
+    if (win.isVisible()) {
+      win.hide();
+    } else {
+      // Position window near tray icon
+      const { x, y } = tray.getBounds();
+      const { width, height } = win.getBounds();
+      let posX = x;
+      let posY = y;
+      // Windows: tray bottom right, macOS: top bar
+      if (process.platform === 'darwin') {
+        posX = x + Math.round((tray.getBounds().width - width) / 2);
+        posY = y + tray.getBounds().height + 4;
+      } else {
+        posX = x + Math.round((tray.getBounds().width - width) / 2);
+        posY = y - height - 4;
+      }
+      win.setPosition(Math.max(0, posX), Math.max(0, posY), false);
+      win.show();
+      win.focus();
+    }
   });
-});
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Öffne Kontaktliste', click: () => {
+      const win = createContactListWindow();
+      win.show();
+      win.focus();
+    }},
+    { label: 'Beenden', click: () => { app.quit(); } },
+  ]));
+}
 
-app.on('activate', () => {
-  if (mainWindow === null) createWindow();
-});
-
-// ── IPC: Open separate chat window (ICQ 5 style) ─────────────
-ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => {
-  if (avatar) avatarStore.set(chatId, avatar);
-  // Focus existing window if already open
-  if (chatWindows.has(chatId)) {
-    const existing = chatWindows.get(chatId);
-    if (!existing.isDestroyed()) { existing.focus(); return; }
-  }
-
+// Chat window logic
+function createChatWindow(chatId, chatName, service, avatar) {
   const chatWin = new BrowserWindow({
     width:    520,
     height:   440,
@@ -147,12 +174,57 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => 
     },
     title: chatName || 'Chat',
   });
-
   const params = new URLSearchParams({ mode: 'chat', chatId, chatName: chatName || '', service }).toString();
   chatWin.loadURL(devUrl(params));
   wireExternalLinks(chatWin);
   chatWindows.set(chatId, chatWin);
   chatWin.on('closed', () => chatWindows.delete(chatId));
+  return chatWin;
+}
+
+app.on('ready', async () => {
+  createTray();
+  createContactListWindow();
+  // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
+  const dataDir = isDev
+    ? path.join(__dirname, '../data')
+    : app.getPath('userData');
+  appDataDir = dataDir;
+  const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
+  try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
+  try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
+});
+
+app.on('window-all-closed', () => {
+  // Unter macOS bleibt Tray aktiv, unter Windows beenden
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', (e) => {
+  e.preventDefault();
+  // Give bridges max 1.5s to shut down cleanly, then force exit
+  const timeout = setTimeout(() => app.exit(0), 1500);
+  Promise.all([
+    whatsappBridge.shutdown?.().catch(() => {}),
+    telegramBridge.shutdown?.().catch(() => {}),
+  ]).then(() => {
+    clearTimeout(timeout);
+    app.exit(0);
+  });
+});
+
+app.on('activate', () => {
+  if (!contactListWindow) createContactListWindow();
+});
+
+ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => {
+  if (avatar) avatarStore.set(chatId, avatar);
+  // Focus existing window if already open
+  if (chatWindows.has(chatId)) {
+    const existing = chatWindows.get(chatId);
+    if (!existing.isDestroyed()) { existing.focus(); return; }
+  }
+  createChatWindow(chatId, chatName, service, avatar);
 });
 
 // ── IPC: WhatsApp ─────────────────────────────────────────────
@@ -315,6 +387,7 @@ function wireExternalLinks(win) {
   });
 }
 
+ipcMain.on('chat:sent', (e, msg) => {
 // Broadcast a sent message to all other windows (so sidebar updates immediately)
 ipcMain.on('chat:sent', (e, msg) => {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -322,4 +395,19 @@ ipcMain.on('chat:sent', (e, msg) => {
       w.webContents.send('chat:sent-broadcast', msg);
   });
 });
+
+// Tray-Notification bei neuer Nachricht (aus WhatsApp/Telegram)
+function trayNotifyNewMessage() {
+  if (tray) {
+    if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
+    setTrayIcon('icq-logo.png');
+    trayNotificationTimer = setTimeout(() => {
+      setTrayIcon(process.platform === 'darwin' ? 'icon.icns' : 'icon.ico');
+    }, 2000);
+  }
+}
+
+// WhatsApp/Telegram: bei neuer Nachricht Tray-Icon ändern
+ipcMain.on('wa:message', trayNotifyNewMessage);
+ipcMain.on('tg:message', trayNotifyNewMessage);
 

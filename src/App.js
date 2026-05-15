@@ -7,6 +7,14 @@ import './App.css';
 const api = window.api;
 
 export default function App() {
+  // Tray/Popup-Modus erkennen (Kontaktliste als Tray-Fenster)
+  const [isTrayMode, setIsTrayMode] = useState(false);
+  React.useEffect(() => {
+    // Prüfe, ob das Fenster als Tray/Popup läuft (z.B. skipTaskbar, title)
+    if (window?.location?.search?.includes('tray')) setIsTrayMode(true);
+    // Alternativ: per IPC/Preload-API nachreichen
+    if (window.api?.isTrayWindow) window.api.isTrayWindow().then(setIsTrayMode).catch(() => {});
+  }, []);
   const [waStatus, setWaStatus] = useState('disconnected');
   const [tgStatus, setTgStatus] = useState('disconnected');
   const [waQR, setWaQR]         = useState(null);
@@ -279,27 +287,30 @@ export default function App() {
   ) : null;
 
   return (
-    <div className="app-root">
-      <TitleBar showVersion />
-      <Sidebar
-        activeService={activeService}
-        setActiveService={s => { setActiveService(s); }}
-        waStatus={waStatus}
-        tgStatus={tgStatus}
-        chats={chats}
-        chatsLoading={chatsLoading}
-        onSelectChat={openChat}
-        loginPanel={loginPanel}
-        myProfile={myProfile}
-        onLogout={handleLogout}
-        soundEnabled={soundEnabled}
-        onToggleSound={() => setSoundEnabled(v => !v)}
-        waGroupSound={waGroupSound}
-        tgGroupSound={tgGroupSound}
-        onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
-        onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
-        onMarkGroupsRead={markGroupsRead}
-      />
-    </div>
+    <>
+      {!isTrayMode && <TitleBar title="ICQ Messenger" showVersion />}
+      <div className="main-layout">
+        <Sidebar
+          activeService={activeService}
+          setActiveService={setActiveService}
+          waStatus={waStatus}
+          tgStatus={tgStatus}
+          chats={chats}
+          chatsLoading={chatsLoading}
+          onSelectChat={handleSelectChat}
+          loginPanel={loginPanel}
+          myProfile={myProfile}
+          onLogout={handleLogout}
+          soundEnabled={soundEnabled}
+          onToggleSound={() => setSoundEnabled(v => !v)}
+          waGroupSound={waGroupSound}
+          tgGroupSound={tgGroupSound}
+          onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
+          onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
+          onMarkGroupsRead={handleMarkGroupsRead}
+        />
+        {/* ...evtl. weitere Panels... */}
+      </div>
+    </>
   );
 }

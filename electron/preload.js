@@ -1,6 +1,17 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+const { remote } = require('electron');
+
 contextBridge.exposeInMainWorld('api', {
+    // Utility: Erkennen ob Tray/Popup Fenster
+    isTrayWindow: async () => {
+      try {
+        // skipTaskbar ist nur im Main-Prozess bekannt, daher per IPC oder remote
+        const win = remote?.getCurrentWindow?.();
+        if (win) return win.isVisible() && win.isSkipTaskbar();
+      } catch {}
+      return false;
+    },
   // WhatsApp
   wa: {
     getQR:       ()              => ipcRenderer.invoke('wa:get-qr'),

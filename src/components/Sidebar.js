@@ -90,7 +90,7 @@ export default function Sidebar({
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
   const onToggleGroupSound = activeService === 'whatsapp' ? onToggleWaGroupSound : onToggleTgGroupSound;
 
-  // Scale only contact list + search input, not the whole app UI.
+  // Skalierung wirkt auf gesamte Sidebar inkl. Buttons, Header, Toolbar
   const [listScale, setListScale] = useState(() => {
     const saved = Number(localStorage.getItem('icq-contact-scale'));
     return Number.isFinite(saved) && saved > 0 ? saved : 1;
