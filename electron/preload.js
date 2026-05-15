@@ -5,7 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   wa: {
     getQR:       ()              => ipcRenderer.invoke('wa:get-qr'),
     getChats:    ()              => ipcRenderer.invoke('wa:get-chats'),
-    getMessages: (chatId)        => ipcRenderer.invoke('wa:get-messages', chatId),
+    getMessages: (chatId, opts)  => ipcRenderer.invoke('wa:get-messages', chatId, opts),
     sendMessage: (chatId, text)  => ipcRenderer.invoke('wa:send-message', chatId, text),
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
     sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
+    getRecentStickers: (limit)       => ipcRenderer.invoke('tg:get-recent-stickers', limit),
     markRead:     (chatId)           => ipcRenderer.invoke('tg:mark-read', chatId),
     getStatus:    ()                 => ipcRenderer.invoke('tg:status'),
     getMe:        ()                 => ipcRenderer.invoke('tg:get-me'),
@@ -93,6 +94,7 @@ contextBridge.exposeInMainWorld('api', {
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   openStickerDialog: () => ipcRenderer.invoke('open-sticker-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
+  downloadTempFromUrl: (url, ext) => ipcRenderer.invoke('app:download-media-temp', url, ext),
   appVersion: process.env.npm_package_version || require('../package.json').version,
   // Get real file system path from a dropped File object (Electron 29+)
   getFilePath: (file) => {

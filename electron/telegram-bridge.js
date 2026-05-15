@@ -9,6 +9,7 @@ const { NewMessage } = require('telegram/events');
 const { BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 let SESSION_FILE     = path.join(__dirname, '../data/telegram.session');
 let CREDENTIALS_FILE = path.join(__dirname, '../data/telegram-credentials.json');
@@ -327,6 +328,57 @@ async function sendSticker(chatId, filePath) {
   }
 }
 
+async function getRecentStickers(limit = 24) {
+  if (status !== 'ready') return [];
+  const { Api } = require('telegram');
+  let result;
+  try {
+    result = await tgClient.invoke(new Api.messages.GetRecentStickers({ attached: false, hash: BigInt(0) }));
+  } catch (e) {
+    return [];
+  }
+
+  const docs = Array.isArray(result?.stickers) ? result.stickers.slice(0, Math.max(1, Math.min(50, limit))) : [];
+  const out = [];
+  const baseDir = path.join(os.tmpdir(), 'icq-tg-stickers');
+  try { fs.mkdirSync(baseDir, { recursive: true }); } catch (e) {}
+
+  for (const doc of docs) {
+    const mimeType = doc?.mimeType || 'image/webp';
+    // Lottie tgs cannot be rendered in our current UI without an additional player.
+    if (mimeType === 'application/x-tgsticker') continue;
+    try {
+      const buf = await tgClient.downloadMedia(doc, { outputFile: Buffer.alloc(0) });
+      if (!buf || !buf.length) continue;
+      const ext =
+        mimeType === 'image/webp' ? 'webp' :
+        mimeType === 'image/png' ? 'png' :
+        mimeType === 'image/jpeg' ? 'jpg' :
+        mimeType === 'image/gif' ? 'gif' :
+        mimeType.startsWith('video/') ? 'webm' : 'bin';
+      const filePath = path.join(baseDir, `${doc.id.toString()}.${ext}`);
+      try { fs.writeFileSync(filePath, Buffer.from(buf)); } catch (e) { continue; }
+
+      const attrs = Array.isArray(doc.attributes) ? doc.attributes : [];
+      const stickerAttr = attrs.find(a => a.className === 'DocumentAttributeSticker');
+      const emoji = stickerAttr?.alt || '';
+
+      out.push({
+        id: doc.id.toString(),
+        emoji,
+        mimeType,
+        type: mimeType.startsWith('video/') ? 'video' : 'image',
+        previewData: `data:${mimeType};base64,${Buffer.from(buf).toString('base64')}`,
+        filePath,
+      });
+    } catch (e) {
+      // Ignore broken sticker entries
+    }
+  }
+
+  return out;
+}
+
 async function markChatRead(chatId) {
   if (status !== 'ready') return;
   try {
@@ -368,4 +420,4 @@ async function shutdown() {
   status = 'disconnected';
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, sendSticker, getRecentStickers, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };

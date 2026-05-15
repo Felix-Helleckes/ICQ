@@ -4,9 +4,32 @@ const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
 
+const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
+function logStartup(msg, err) {
+  try {
+    const detail = err ? ` | ${err.stack || err.message || String(err)}` : '';
+    fs.appendFileSync(STARTUP_LOG, `[${new Date().toISOString()}] ${msg}${detail}\n`, 'utf8');
+  } catch (e) {}
+}
+
+process.on('uncaughtException', (err) => logStartup('uncaughtException', err));
+process.on('unhandledRejection', (err) => logStartup('unhandledRejection', err));
+
 // ── Portable: redirect userData to folder next to .exe ───────
 if (process.env.PORTABLE_EXECUTABLE_DIR) {
-  app.setPath('userData', path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'ICQ-Data'));
+  const portableUserData = path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'ICQ-Data');
+  const portableSessionData = path.join(portableUserData, 'session');
+  try {
+    fs.mkdirSync(portableUserData, { recursive: true });
+    fs.mkdirSync(portableSessionData, { recursive: true });
+    fs.accessSync(portableUserData, fs.constants.W_OK);
+    app.setPath('userData', portableUserData);
+    app.setPath('sessionData', portableSessionData);
+    logStartup(`Portable paths active: userData=${portableUserData}`);
+  } catch (e) {
+    // Keep Electron default userData when portable dir is not writable.
+    logStartup('Portable path setup failed, using default userData', e);
+  }
 }
 
 let mainWindow;
@@ -180,6 +203,7 @@ ipcMain.handle('tg:get-messages',   async (e, chatId, opts)     => telegramBridg
 ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
+ipcMain.handle('tg:get-recent-stickers', async (e, limit)       => telegramBridge.getRecentStickers(limit));
 ipcMain.handle('tg:mark-read',      async (e, chatId)           => telegramBridge.markChatRead(chatId));
 ipcMain.handle('tg:status',         async ()                    => telegramBridge.getStatus());
 ipcMain.handle('tg:get-me',         async ()                    => telegramBridge.getMe());
@@ -226,6 +250,24 @@ ipcMain.handle('app:save-temp-image', async (e, base64, ext) => {
   const fname = `clipboard_${Date.now()}.${ext || 'png'}`;
   const fpath = path.join(os.tmpdir(), fname);
   fs.writeFileSync(fpath, Buffer.from(base64, 'base64'));
+  return fpath;
+});
+
+ipcMain.handle('app:download-media-temp', async (e, url, ext) => {
+  if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
+    throw new Error('Invalid media URL');
+  }
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'ICQ-Messenger/1.0' },
+  });
+  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  const arr = await response.arrayBuffer();
+  const inferred =
+    (ext && String(ext).replace(/[^a-zA-Z0-9]/g, '')) ||
+    (response.headers.get('content-type') || '').split('/')[1]?.split(';')[0] ||
+    'bin';
+  const fpath = path.join(os.tmpdir(), `media_${Date.now()}.${inferred}`);
+  fs.writeFileSync(fpath, Buffer.from(arr));
   return fpath;
 });
 

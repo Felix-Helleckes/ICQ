@@ -59,7 +59,7 @@ export default function ChatApp({ chatId, chatName, service }) {
       if (!api || !chatId) return;
       try {
         const msgs = service === 'whatsapp'
-          ? await api.wa.getMessages(chatId)
+          ? await api.wa.getMessages(chatId, { refresh: true })
           : await api.tg.getMessages(chatId, { limit: 50 });
         setMessages(msgs || []);
       } catch (e) { console.error('[ChatApp load]', e); }
@@ -86,8 +86,13 @@ export default function ChatApp({ chatId, chatName, service }) {
   useEffect(() => {
     if (!api) return;
     const removeWa = api.wa.onMessage(msg => {
-      if (service === 'whatsapp' && String(msg.from) === String(chatId) && !msg.fromMe)
-        setMessages(prev => [...prev, msg]);
+      if (service !== 'whatsapp') return;
+      // Handle both inbound and outbound messages for this open chat.
+      // Outbound WA events are needed for accurate ack/media updates.
+      const sameChat = msg.fromMe
+        ? String(msg.to) === String(chatId)
+        : String(msg.from) === String(chatId);
+      if (sameChat) setMessages(prev => mergeById(prev, [msg]));
     });
     const removeWaMedia = service === 'whatsapp' && api.wa.onMedia
       ? api.wa.onMedia(({ msgId, mediaData }) => {
@@ -123,11 +128,14 @@ export default function ChatApp({ chatId, chatName, service }) {
     if (!text.trim() || !api) return;
     try {
       if (service === 'whatsapp') await api.wa.sendMessage(chatId, text);
-      else await api.tg.sendMessage(chatId, text);
-      const ts = Math.floor(Date.now() / 1000);
-      const localMsg = { id: Date.now().toString(), body: text, fromMe: true, timestamp: ts };
-      setMessages(prev => [...prev, localMsg]);
+      else {
+        await api.tg.sendMessage(chatId, text);
+        const ts = Math.floor(Date.now() / 1000);
+        const localMsg = { id: Date.now().toString(), body: text, fromMe: true, timestamp: ts };
+        setMessages(prev => [...prev, localMsg]);
+      }
       // Sidebar sofort benachrichtigen
+      const ts = Math.floor(Date.now() / 1000);
       api.notifySent?.({ chatId, body: text, timestamp: ts, service });
     } catch (e) { console.error('[ChatApp send]', e); }
   };
@@ -136,11 +144,15 @@ export default function ChatApp({ chatId, chatName, service }) {
     if (!filePath || !api) return;
     try {
       if (service === 'whatsapp') await api.wa.sendFile(chatId, filePath);
-      else await api.tg.sendFile(chatId, filePath);
+      else {
+        await api.tg.sendFile(chatId, filePath);
+        const ts = Math.floor(Date.now() / 1000);
+        const name = filePath.split(/[\\/]/).pop();
+        const localMsg = { id: Date.now().toString(), body: `📎 ${name}`, fromMe: true, timestamp: ts };
+        setMessages(prev => [...prev, localMsg]);
+      }
       const ts = Math.floor(Date.now() / 1000);
       const name = filePath.split(/[\\/]/).pop();
-      const localMsg = { id: Date.now().toString(), body: `📎 ${name}`, fromMe: true, timestamp: ts };
-      setMessages(prev => [...prev, localMsg]);
       api.notifySent?.({ chatId, body: `📎 ${name}`, timestamp: ts, service });
     } catch (e) { console.error('[ChatApp sendFile]', e); }
   };
@@ -149,17 +161,20 @@ export default function ChatApp({ chatId, chatName, service }) {
     if (!filePath || !api) return;
     try {
       if (service === 'whatsapp') await api.wa.sendSticker(chatId, filePath);
-      else await api.tg.sendSticker(chatId, filePath);
+      else {
+        await api.tg.sendSticker(chatId, filePath);
+        const ts = Math.floor(Date.now() / 1000);
+        const localMsg = {
+          id: Date.now().toString(),
+          body: '',
+          fromMe: true,
+          timestamp: ts,
+          type: 'sticker',
+          mediaData: null,
+        };
+        setMessages(prev => [...prev, localMsg]);
+      }
       const ts = Math.floor(Date.now() / 1000);
-      const localMsg = {
-        id: Date.now().toString(),
-        body: '',
-        fromMe: true,
-        timestamp: ts,
-        type: 'sticker',
-        mediaData: null,
-      };
-      setMessages(prev => [...prev, localMsg]);
       api.notifySent?.({ chatId, body: 'Sticker', timestamp: ts, service });
     } catch (e) { console.error('[ChatApp sendSticker]', e); }
   };
