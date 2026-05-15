@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -77,15 +77,27 @@
     "extraResources": [],
     "win": {
       "target": [
-        { "target": "nsis",     "arch": ["x64"] },
-        { "target": "portable", "arch": ["x64"] }
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.ico",
       "extraResources": [
         {
           "from": "puppeteer_cache/chrome",
           "to": "chrome",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
@@ -102,7 +114,12 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["arm64"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
@@ -112,19 +129,34 @@
         {
           "from": "puppeteer_cache/chrome",
           "to": "chrome",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
     "dmg": {
       "title": "ICQ Messenger",
       "background": null,
-      "window": { "width": 540, "height": 380 }
+      "window": {
+        "width": 540,
+        "height": 380
+      }
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb",      "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "public/icon.png",
       "category": "Network;InstantMessaging",
@@ -133,7 +165,9 @@
         {
           "from": "puppeteer_cache/chrome",
           "to": "chrome",
-          "filter": ["**/*"]
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
