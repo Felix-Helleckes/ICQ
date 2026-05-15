@@ -304,30 +304,41 @@ async function getChats() {
   return result;
 }
 
-async function getMessages(chatId) {
+async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
+  const limit = opts.limit ?? 30; // Limit reduced for faster initial load
   const chat = await client.getChatById(chatId);
-  const msgs = await chat.fetchMessages({ limit: 50 });
-  const result = await Promise.all(msgs.map(async m => {
-    let mediaData = null;
-    if (m.hasMedia && (m.type === 'sticker' || m.type === 'image' || m.type === 'video' || m.type === 'ptt' || m.type === 'audio')) {
-      try {
-        const media = await m.downloadMedia();
-        if (media) mediaData = `data:${media.mimetype};base64,${media.data}`;
-      } catch (e) { /* ignore */ }
-    }
-    return {
-      id: m.id._serialized,
-      body: m.body || '',
-      fromMe: m.fromMe,
-      timestamp: m.timestamp,
-      author: m.author || m.from,
-      type: m.type,
-      isGif: m.isGif || false,
-      ack: m.ack ?? (m.fromMe ? 1 : -1),
-      mediaData,
-    };
+  const msgs = await chat.fetchMessages({ limit });
+  
+  // Return immediately WITHOUT media to unblock UI
+  const result = msgs.map(m => ({
+    id: m.id._serialized,
+    body: m.body || '',
+    fromMe: m.fromMe,
+    timestamp: m.timestamp,
+    author: m.author || m.from,
+    type: m.type,
+    isGif: m.isGif || false,
+    ack: m.ack ?? (m.fromMe ? 1 : -1),
+    hasMedia: m.hasMedia,
+    mediaData: null,
   }));
+  
+  // Load media in background (don't block UI)
+  (async () => {
+    for (const m of msgs) {
+      if (m.hasMedia && (m.type === 'sticker' || m.type === 'image' || m.type === 'video' || m.type === 'ptt' || m.type === 'audio')) {
+        try {
+          const media = await m.downloadMedia();
+          if (media) {
+            const mediaData = `data:${media.mimetype};base64,${media.data}`;
+            broadcast('wa:media', { msgId: m.id._serialized, mediaData });
+          }
+        } catch (e) { /* ignore media load errors */ }
+      }
+    }
+  })();
+  
   return result;
 }
 
@@ -349,6 +360,13 @@ async function sendFile(chatId, filePath) {
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
   await client.sendMessage(chatId, media);
+}
+
+async function sendSticker(chatId, filePath) {
+  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  const { MessageMedia } = require('whatsapp-web.js');
+  const media = MessageMedia.fromFilePath(filePath);
+  await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
 }
 
 async function getMyProfile() {
@@ -387,4 +405,4 @@ async function shutdown() {
   status = 'disconnected';
 }
 
-module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, markChatRead, getMyProfile, getContactAvatar, logout, shutdown };
+module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMyProfile, getContactAvatar, logout, shutdown };

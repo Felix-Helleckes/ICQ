@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
     getMessages: (chatId)        => ipcRenderer.invoke('wa:get-messages', chatId),
     sendMessage: (chatId, text)  => ipcRenderer.invoke('wa:send-message', chatId, text),
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
+    sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
     markRead:    (chatId)        => ipcRenderer.invoke('wa:mark-read', chatId),
     getStatus:   ()              => ipcRenderer.invoke('wa:status'),
     getMyProfile:()              => ipcRenderer.invoke('wa:get-my-profile'),
@@ -24,6 +25,11 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_, data) => cb(data);
       ipcRenderer.on('wa:avatar', handler);
       return () => ipcRenderer.removeListener('wa:avatar', handler);
+    },
+    onMedia:     (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:media', handler);
+      return () => ipcRenderer.removeListener('wa:media', handler);
     },
     onAck:       (cb)            => {
       const handler = (_, data) => cb(data);
@@ -46,6 +52,7 @@ contextBridge.exposeInMainWorld('api', {
     getMessages:  (chatId, opts)     => ipcRenderer.invoke('tg:get-messages', chatId, opts),
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
+    sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
     markRead:     (chatId)           => ipcRenderer.invoke('tg:mark-read', chatId),
     getStatus:    ()                 => ipcRenderer.invoke('tg:status'),
     getMe:        ()                 => ipcRenderer.invoke('tg:get-me'),
@@ -83,6 +90,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
+  openStickerDialog: () => ipcRenderer.invoke('open-sticker-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
   appVersion: process.env.npm_package_version || require('../package.json').version,
   // Get real file system path from a dropped File object (Electron 29+)

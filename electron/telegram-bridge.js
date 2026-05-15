@@ -172,12 +172,29 @@ function listenForMessages() {
     let chatId;
     try { chatId = tgUtils.getPeerId(msg.peerId)?.toString(); } catch (e) {}
     if (!chatId) chatId = msg.chatId?.toString();
+    let mediaData = null;
+    let type = 'text';
+    try {
+      const attrs = msg.document?.attributes || [];
+      const isSticker = attrs.some(a => a.className === 'DocumentAttributeSticker');
+      if (isSticker) {
+        const mime = msg.document?.mimeType || 'image/webp';
+        const buf = await tgClient.downloadMedia(msg, { outputFile: Buffer.alloc(0) });
+        if (buf && buf.length) {
+          mediaData = `data:${mime};base64,` + buf.toString('base64');
+          type = 'sticker';
+        }
+      }
+    } catch (e) { /* ignore media download errors */ }
+
     broadcast('tg:message', {
       chatId,
       body: msg.message,
       fromMe: msg.out,
       timestamp: msg.date,
       id: msg.id?.toString(),
+      type,
+      mediaData,
     });
   }, new NewMessage({}));
 }
@@ -246,11 +263,16 @@ async function getMessages(chatId, opts = {}) {
       } else if (m.document) {
         const mime = m.document.mimeType || '';
         const attrs = m.document.attributes || [];
+        const isSticker = attrs.some(a => a.className === 'DocumentAttributeSticker');
         const isAnimated  = attrs.some(a => a.className === 'DocumentAttributeAnimated');
         isGif = isAnimated || mime === 'image/gif';
         const isVoice = attrs.some(a => a.className === 'DocumentAttributeAudio' && a.voice);
         const isAudio = attrs.some(a => a.className === 'DocumentAttributeAudio');
-        if (isVoice || isAudio || mime.startsWith('audio/')) {
+        if (isSticker) {
+          mediaType = 'sticker';
+          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
+          if (buf && buf.length) mediaData = `data:${mime || 'image/webp'};base64,` + buf.toString('base64');
+        } else if (isVoice || isAudio || mime.startsWith('audio/')) {
           // Only download audio/voice — skip large video on initial load
           mediaType = isVoice ? 'ptt' : 'audio';
           const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
@@ -283,6 +305,26 @@ async function sendMessage(chatId, text) {
 async function sendFile(chatId, filePath) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   await tgClient.sendFile(toPeer(chatId), { file: filePath });
+}
+
+async function sendSticker(chatId, filePath) {
+  if (status !== 'ready') throw new Error('Telegram not ready');
+  const { Api } = require('telegram');
+  try {
+    await tgClient.sendFile(toPeer(chatId), {
+      file: filePath,
+      forceDocument: true,
+      attributes: [
+        new Api.DocumentAttributeSticker({
+          alt: '',
+          stickerset: new Api.InputStickerSetEmpty(),
+        }),
+      ],
+    });
+  } catch (e) {
+    // Fallback: send as a regular file if sticker attributes are rejected by server.
+    await tgClient.sendFile(toPeer(chatId), { file: filePath });
+  }
 }
 
 async function markChatRead(chatId) {
@@ -326,4 +368,4 @@ async function shutdown() {
   status = 'disconnected';
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };
+module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };

@@ -17,6 +17,9 @@ puppeteer_cache/
 .env
 .env.local
 .env.production
+.env.development
+.env.*
+!.env.example
 
 # OS files
 .DS_Store

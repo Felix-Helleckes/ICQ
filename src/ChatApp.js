@@ -89,6 +89,13 @@ export default function ChatApp({ chatId, chatName, service }) {
       if (service === 'whatsapp' && String(msg.from) === String(chatId) && !msg.fromMe)
         setMessages(prev => [...prev, msg]);
     });
+    const removeWaMedia = service === 'whatsapp' && api.wa.onMedia
+      ? api.wa.onMedia(({ msgId, mediaData }) => {
+          setMessages(prev => prev.map(m => 
+            m.id === msgId ? { ...m, mediaData } : m
+          ));
+        })
+      : null;
     const removeTg = api.tg.onMessage(msg => {
       // fromMe-Nachrichten werden optimistisch beim Senden eingefügt → kein Duplikat
       if (service === 'telegram' && String(msg.chatId) === String(chatId) && !msg.fromMe)
@@ -109,7 +116,7 @@ export default function ChatApp({ chatId, chatName, service }) {
           }
         })
       : null;
-    return () => { removeWa?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
+    return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
   }, [chatId, mergeById, service]);
 
   const sendMessage = async (text) => {
@@ -138,6 +145,25 @@ export default function ChatApp({ chatId, chatName, service }) {
     } catch (e) { console.error('[ChatApp sendFile]', e); }
   };
 
+  const sendSticker = async (filePath) => {
+    if (!filePath || !api) return;
+    try {
+      if (service === 'whatsapp') await api.wa.sendSticker(chatId, filePath);
+      else await api.tg.sendSticker(chatId, filePath);
+      const ts = Math.floor(Date.now() / 1000);
+      const localMsg = {
+        id: Date.now().toString(),
+        body: '',
+        fromMe: true,
+        timestamp: ts,
+        type: 'sticker',
+        mediaData: null,
+      };
+      setMessages(prev => [...prev, localMsg]);
+      api.notifySent?.({ chatId, body: 'Sticker', timestamp: ts, service });
+    } catch (e) { console.error('[ChatApp sendSticker]', e); }
+  };
+
   return (
     <div className="app-root">
       <TitleBar title={`${service === 'whatsapp' ? 'WhatsApp' : 'Telegram'} — ${chatName || 'Chat'}`} />
@@ -146,6 +172,7 @@ export default function ChatApp({ chatId, chatName, service }) {
         messages={messages}
         onSend={sendMessage}
         onSendFile={sendFile}
+        onSendSticker={sendSticker}
         isTyping={isTyping}
       />
     </div>

@@ -49,7 +49,7 @@ function AckIcon({ ack }) {
   return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
 }
 
-export default function ChatWindow({ chat, messages, onSend, onSendFile, isTyping }) {
+export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendSticker, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
@@ -110,6 +110,18 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
     return () => document.removeEventListener('mousedown', onDown);
   }, [showEmoji]);
 
+  // ESC closes the current chat window.
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        window.api?.window?.close?.();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleSend = () => {
     if (!text.trim()) return;
     onSend(text);
@@ -118,6 +130,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
   };
 
   const handleKey = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      window.api?.window?.close?.();
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
@@ -130,6 +147,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
   const handleFileBtn = async () => {
     const filePath = await window.api?.openFileDialog?.();
     if (filePath) onSendFile?.(filePath);
+  };
+
+  const handleStickerBtn = async () => {
+    const filePath = await window.api?.openStickerDialog?.();
+    if (filePath) onSendSticker?.(filePath);
   };
 
   const handlePaste = (e) => {
@@ -281,6 +303,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, isTypin
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
           >😊</button>
+          <button className="toolbar-btn" title="Sticker senden" onClick={handleStickerBtn}>🧩</button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
 
           {showEmoji && (

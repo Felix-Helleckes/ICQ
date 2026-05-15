@@ -12,6 +12,9 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
 let mainWindow;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
+const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_SIZE = 5;
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
 let whatsappBridge, telegramBridge;
@@ -134,9 +137,27 @@ ipcMain.handle('get-stored-avatar', async (e, id) => {
 });
 ipcMain.handle('wa:get-qr',       async ()             => whatsappBridge.getQR());
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
-ipcMain.handle('wa:get-messages', async (e, chatId)    => whatsappBridge.getMessages(chatId));
+ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
+  // Check cache for faster repeat opens
+  const cached = waMessageCache.get(chatId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL && !opts.refresh) {
+    return cached.messages;
+  }
+  
+  const messages = await whatsappBridge.getMessages(chatId, opts);
+  
+  // Maintain cache size limit
+  if (waMessageCache.size >= CACHE_SIZE) {
+    const firstKey = waMessageCache.keys().next().value;
+    waMessageCache.delete(firstKey);
+  }
+  waMessageCache.set(chatId, { messages, timestamp: Date.now() });
+  
+  return messages;
+});
 ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMessage(id, text));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
+ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));
 ipcMain.handle('wa:mark-read',    async (e, id)        => whatsappBridge.markChatRead(id));
 ipcMain.handle('wa:status',       async ()             => whatsappBridge.getStatus());
 ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyProfile());
@@ -152,6 +173,7 @@ ipcMain.handle('tg:get-dialogs',    async ()                    => telegramBridg
 ipcMain.handle('tg:get-messages',   async (e, chatId, opts)     => telegramBridge.getMessages(chatId, opts));
 ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
+ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
 ipcMain.handle('tg:mark-read',      async (e, chatId)           => telegramBridge.markChatRead(chatId));
 ipcMain.handle('tg:status',         async ()                    => telegramBridge.getStatus());
 ipcMain.handle('tg:get-me',         async ()                    => telegramBridge.getMe());
@@ -176,6 +198,18 @@ ipcMain.handle('open-file-dialog', async () => {
       { name: 'Bilder', extensions: ['jpg','jpeg','png','gif','webp','bmp'] },
       { name: 'Videos', extensions: ['mp4','mov','avi','mkv','webm'] },
       { name: 'Dokumente', extensions: ['pdf','doc','docx','xls','xlsx','txt','zip'] },
+    ],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+
+ipcMain.handle('open-sticker-dialog', async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showOpenDialog(win, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Sticker', extensions: ['webp', 'png', 'jpg', 'jpeg', 'gif', 'webm', 'tgs'] },
+      { name: 'Alle Dateien', extensions: ['*'] },
     ],
   });
   return result.canceled ? null : result.filePaths[0];
