@@ -7,14 +7,6 @@ import './App.css';
 const api = window.api;
 
 export default function App() {
-  // Tray/Popup-Modus erkennen (Kontaktliste als Tray-Fenster)
-  const [isTrayMode, setIsTrayMode] = useState(false);
-  React.useEffect(() => {
-    // Prüfe, ob das Fenster als Tray/Popup läuft (z.B. skipTaskbar, title)
-    if (window?.location?.search?.includes('tray')) setIsTrayMode(true);
-    // Alternativ: per IPC/Preload-API nachreichen
-    if (window.api?.isTrayWindow) window.api.isTrayWindow().then(setIsTrayMode).catch(() => {});
-  }, []);
   const [waStatus, setWaStatus] = useState('disconnected');
   const [tgStatus, setTgStatus] = useState('disconnected');
   const [waQR, setWaQR]         = useState(null);
@@ -287,8 +279,8 @@ export default function App() {
   ) : null;
 
   return (
-    <>
-      {!isTrayMode && <TitleBar title="ICQ Messenger" showVersion />}
+    <div className="app-root">
+      <TitleBar title="ICQ Messenger" showVersion />
       <div className="main-layout">
         <Sidebar
           activeService={activeService}
@@ -297,7 +289,7 @@ export default function App() {
           tgStatus={tgStatus}
           chats={chats}
           chatsLoading={chatsLoading}
-          onSelectChat={handleSelectChat}
+          onSelectChat={openChat}
           loginPanel={loginPanel}
           myProfile={myProfile}
           onLogout={handleLogout}
@@ -307,10 +299,9 @@ export default function App() {
           tgGroupSound={tgGroupSound}
           onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
           onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
-          onMarkGroupsRead={handleMarkGroupsRead}
+          onMarkGroupsRead={markGroupsRead}
         />
-        {/* ...evtl. weitere Panels... */}
       </div>
-    </>
+    </div>
   );
 }

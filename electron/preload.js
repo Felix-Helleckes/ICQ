@@ -1,17 +1,6 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-const { remote } = require('electron');
-
 contextBridge.exposeInMainWorld('api', {
-    // Utility: Erkennen ob Tray/Popup Fenster
-    isTrayWindow: async () => {
-      try {
-        // skipTaskbar ist nur im Main-Prozess bekannt, daher per IPC oder remote
-        const win = remote?.getCurrentWindow?.();
-        if (win) return win.isVisible() && win.isSkipTaskbar();
-      } catch {}
-      return false;
-    },
   // WhatsApp
   wa: {
     getQR:       ()              => ipcRenderer.invoke('wa:get-qr'),
@@ -20,6 +9,8 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage: (chatId, text)  => ipcRenderer.invoke('wa:send-message', chatId, text),
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
     sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
+    editMessage: (chatId, messageId, newText) => ipcRenderer.invoke('wa:edit-message', chatId, messageId, newText),
+    deleteMessage: (chatId, messageId, forEveryone = true) => ipcRenderer.invoke('wa:delete-message', chatId, messageId, forEveryone),
     markRead:    (chatId)        => ipcRenderer.invoke('wa:mark-read', chatId),
     getStatus:   ()              => ipcRenderer.invoke('wa:status'),
     getMyProfile:()              => ipcRenderer.invoke('wa:get-my-profile'),
@@ -65,6 +56,8 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
+    editMessage:  (chatId, messageId, newText) => ipcRenderer.invoke('tg:edit-message', chatId, messageId, newText),
+    deleteMessage:(chatId, messageId, revoke = true) => ipcRenderer.invoke('tg:delete-message', chatId, messageId, revoke),
     getRecentStickers: (limit)       => ipcRenderer.invoke('tg:get-recent-stickers', limit),
     markRead:     (chatId)           => ipcRenderer.invoke('tg:mark-read', chatId),
     getStatus:    ()                 => ipcRenderer.invoke('tg:status'),

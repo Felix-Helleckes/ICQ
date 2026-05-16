@@ -129,9 +129,15 @@ export default function ChatApp({ chatId, chatName, service }) {
     try {
       if (service === 'whatsapp') await api.wa.sendMessage(chatId, text);
       else {
-        await api.tg.sendMessage(chatId, text);
-        const ts = Math.floor(Date.now() / 1000);
-        const localMsg = { id: Date.now().toString(), body: text, fromMe: true, timestamp: ts };
+        const sent = await api.tg.sendMessage(chatId, text);
+        const ts = sent?.timestamp || Math.floor(Date.now() / 1000);
+        const localMsg = {
+          id: sent?.id || Date.now().toString(),
+          body: sent?.body || text,
+          fromMe: true,
+          timestamp: ts,
+          type: 'text',
+        };
         setMessages(prev => [...prev, localMsg]);
       }
       // Sidebar sofort benachrichtigen
@@ -145,10 +151,16 @@ export default function ChatApp({ chatId, chatName, service }) {
     try {
       if (service === 'whatsapp') await api.wa.sendFile(chatId, filePath);
       else {
-        await api.tg.sendFile(chatId, filePath);
-        const ts = Math.floor(Date.now() / 1000);
+        const sent = await api.tg.sendFile(chatId, filePath);
+        const ts = sent?.timestamp || Math.floor(Date.now() / 1000);
         const name = filePath.split(/[\\/]/).pop();
-        const localMsg = { id: Date.now().toString(), body: `📎 ${name}`, fromMe: true, timestamp: ts };
+        const localMsg = {
+          id: sent?.id || Date.now().toString(),
+          body: sent?.body || `📎 ${name}`,
+          fromMe: true,
+          timestamp: ts,
+          type: 'file',
+        };
         setMessages(prev => [...prev, localMsg]);
       }
       const ts = Math.floor(Date.now() / 1000);
@@ -162,10 +174,10 @@ export default function ChatApp({ chatId, chatName, service }) {
     try {
       if (service === 'whatsapp') await api.wa.sendSticker(chatId, filePath);
       else {
-        await api.tg.sendSticker(chatId, filePath);
-        const ts = Math.floor(Date.now() / 1000);
+        const sent = await api.tg.sendSticker(chatId, filePath);
+        const ts = sent?.timestamp || Math.floor(Date.now() / 1000);
         const localMsg = {
-          id: Date.now().toString(),
+          id: sent?.id || Date.now().toString(),
           body: '',
           fromMe: true,
           timestamp: ts,
@@ -179,6 +191,48 @@ export default function ChatApp({ chatId, chatName, service }) {
     } catch (e) { console.error('[ChatApp sendSticker]', e); }
   };
 
+  const editMessage = async (message, newText) => {
+    if (!api || !message?.id) return;
+    const next = (newText || '').trim();
+    if (!next) return;
+    try {
+      if (service === 'whatsapp') await api.wa.editMessage(chatId, message.id, next);
+      else await api.tg.editMessage(chatId, message.id, next);
+      setMessages(prev => prev.map(m => (
+        String(m.id) === String(message.id)
+          ? { ...m, body: next, edited: true, type: 'text', mediaData: null }
+          : m
+      )));
+    } catch (e) {
+      console.error('[ChatApp edit]', e);
+    }
+  };
+
+  const deleteMessage = async (message, forEveryone = true) => {
+    if (!api || !message?.id) return;
+    try {
+      if (service === 'whatsapp') await api.wa.deleteMessage(chatId, message.id, forEveryone);
+      else await api.tg.deleteMessage(chatId, message.id, forEveryone);
+      setMessages(prev => prev.filter(m => String(m.id) !== String(message.id)));
+    } catch (e) {
+      console.error('[ChatApp delete]', e);
+    }
+  };
+
+  const forwardMessage = async (message, targetChatId) => {
+    if (!api || !message || !targetChatId) return false;
+    const payload = (message.body || '').trim();
+    if (!payload) return false;
+    try {
+      if (service === 'whatsapp') await api.wa.sendMessage(targetChatId, payload);
+      else await api.tg.sendMessage(targetChatId, payload);
+      return true;
+    } catch (e) {
+      console.error('[ChatApp forward]', e);
+      return false;
+    }
+  };
+
   return (
     <div className="app-root">
       <TitleBar title={`${service === 'whatsapp' ? 'WhatsApp' : 'Telegram'} — ${chatName || 'Chat'}`} />
@@ -188,6 +242,9 @@ export default function ChatApp({ chatId, chatName, service }) {
         onSend={sendMessage}
         onSendFile={sendFile}
         onSendSticker={sendSticker}
+        onEditMessage={editMessage}
+        onDeleteMessage={deleteMessage}
+        onForwardMessage={forwardMessage}
         isTyping={isTyping}
       />
     </div>

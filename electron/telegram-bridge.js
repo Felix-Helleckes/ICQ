@@ -300,19 +300,33 @@ async function getMessages(chatId, opts = {}) {
 
 async function sendMessage(chatId, text) {
   if (status !== 'ready') throw new Error('Telegram not ready');
-  await tgClient.sendMessage(toPeer(chatId), { message: text });
+  const msg = await tgClient.sendMessage(toPeer(chatId), { message: text });
+  return {
+    id: msg?.id?.toString?.() || null,
+    timestamp: msg?.date || Math.floor(Date.now() / 1000),
+    body: msg?.message || text,
+    fromMe: true,
+    type: 'text',
+  };
 }
 
 async function sendFile(chatId, filePath) {
   if (status !== 'ready') throw new Error('Telegram not ready');
-  await tgClient.sendFile(toPeer(chatId), { file: filePath });
+  const msg = await tgClient.sendFile(toPeer(chatId), { file: filePath });
+  return {
+    id: msg?.id?.toString?.() || null,
+    timestamp: msg?.date || Math.floor(Date.now() / 1000),
+    fromMe: true,
+    body: msg?.message || '',
+    type: 'file',
+  };
 }
 
 async function sendSticker(chatId, filePath) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   const { Api } = require('telegram');
   try {
-    await tgClient.sendFile(toPeer(chatId), {
+    const msg = await tgClient.sendFile(toPeer(chatId), {
       file: filePath,
       forceDocument: true,
       attributes: [
@@ -322,10 +336,44 @@ async function sendSticker(chatId, filePath) {
         }),
       ],
     });
+    return {
+      id: msg?.id?.toString?.() || null,
+      timestamp: msg?.date || Math.floor(Date.now() / 1000),
+      fromMe: true,
+      body: msg?.message || '',
+      type: 'sticker',
+    };
   } catch (e) {
     // Fallback: send as a regular file if sticker attributes are rejected by server.
-    await tgClient.sendFile(toPeer(chatId), { file: filePath });
+    const msg = await tgClient.sendFile(toPeer(chatId), { file: filePath });
+    return {
+      id: msg?.id?.toString?.() || null,
+      timestamp: msg?.date || Math.floor(Date.now() / 1000),
+      fromMe: true,
+      body: msg?.message || '',
+      type: 'file',
+    };
   }
+}
+
+async function editMessage(chatId, messageId, newText) {
+  if (status !== 'ready') throw new Error('Telegram not ready');
+  if (!messageId) throw new Error('Missing message id');
+  const { Api } = require('telegram');
+  await tgClient.invoke(new Api.messages.EditMessage({
+    peer: toPeer(chatId),
+    id: Number(messageId),
+    message: newText,
+    noWebpage: true,
+  }));
+  return true;
+}
+
+async function deleteMessage(chatId, messageId, revoke = true) {
+  if (status !== 'ready') throw new Error('Telegram not ready');
+  if (!messageId) throw new Error('Missing message id');
+  await tgClient.deleteMessages(toPeer(chatId), [Number(messageId)], { revoke: Boolean(revoke) });
+  return true;
 }
 
 async function getRecentStickers(limit = 24) {
@@ -420,4 +468,25 @@ async function shutdown() {
   status = 'disconnected';
 }
 
-module.exports = { init, requestCode, signIn, startQRLogin, submit2FA, getStatus, getDialogs, getMessages, sendMessage, sendFile, sendSticker, getRecentStickers, markChatRead, getMe, logout, shutdown, setCredentials, getContactAvatar };
+module.exports = {
+  init,
+  requestCode,
+  signIn,
+  startQRLogin,
+  submit2FA,
+  getStatus,
+  getDialogs,
+  getMessages,
+  sendMessage,
+  sendFile,
+  sendSticker,
+  editMessage,
+  deleteMessage,
+  getRecentStickers,
+  markChatRead,
+  getMe,
+  logout,
+  shutdown,
+  setCredentials,
+  getContactAvatar,
+};

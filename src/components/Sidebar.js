@@ -199,13 +199,6 @@ export default function Sidebar({
           </div>
         </>
       )}
-
-      {/* Bottom toolbar */}
-      <div className="sidebar-toolbar">
-        <button className="toolbar-btn" title="Add Contact">➕</button>
-        <button className="toolbar-btn" title="Settings">⚙️</button>
-        <button className="toolbar-btn" title="Status">✿</button>
-      </div>
     </div>
   );
 }

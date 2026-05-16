@@ -80,6 +80,9 @@ function WhatsAppPanel({ waStatus, waQR }) {
             <a href="https://www.google.com/chrome" onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://www.google.com/chrome'); }}>Google Chrome</a>
             {' '}und starte die App neu.
           </p>
+          <p className="login-hint small">
+            Linux Mint: <code>sudo apt install chromium-browser</code> (oder <code>sudo apt install chromium</code>)
+          </p>
           <button
             className="win98-btn"
             style={{ marginTop: 8 }}

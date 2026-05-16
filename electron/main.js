@@ -12,8 +12,32 @@ function logStartup(msg, err) {
   } catch (e) {}
 }
 
+function wireWindowDiagnostics(win, label) {
+  const safeLabel = label || 'window';
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    logStartup(`${safeLabel} did-fail-load code=${code} desc=${desc} url=${url}`);
+  });
+  win.webContents.on('render-process-gone', (_e, details) => {
+    logStartup(`${safeLabel} render-process-gone reason=${details?.reason} exitCode=${details?.exitCode}`);
+  });
+  win.webContents.on('unresponsive', () => {
+    logStartup(`${safeLabel} unresponsive`);
+  });
+  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    if (level >= 2) logStartup(`${safeLabel} console level=${level} ${sourceId}:${line} ${message}`);
+  });
+}
+
 process.on('uncaughtException', (err) => logStartup('uncaughtException', err));
 process.on('unhandledRejection', (err) => logStartup('unhandledRejection', err));
+
+logStartup('app bootstrap start');
+
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  logStartup('second instance blocked: quitting new process');
+  app.quit();
+}
 
 // ── Portable: redirect userData to folder next to .exe ───────
 if (process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -61,10 +85,28 @@ function devUrl(params = '') {
     : `file://${path.join(__dirname, '../build/index.html')}${params ? '?' + params : ''}`;
 }
 
+function resolveAssetPath(...parts) {
+  const candidates = [
+    path.join(__dirname, '..', ...parts),
+    path.join(app.getAppPath(), ...parts),
+    path.join(process.resourcesPath || '', ...parts),
+  ];
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return candidates[0];
+}
 
-// ── Tray + Contactlist window ───────────────────────────────
+function getWindowIconPath() {
+  if (process.platform === 'darwin') return resolveAssetPath('public', 'icon.icns');
+  if (process.platform === 'linux') return resolveAssetPath('public', 'icon.png');
+  return resolveAssetPath('public', 'icon.ico');
+}
+
+
+// ── Contactlist window ───────────────────────────────────────
 function createContactListWindow() {
-  if (contactListWindow) {
+  if (contactListWindow && !contactListWindow.isDestroyed()) {
     contactListWindow.focus();
     return contactListWindow;
   }
@@ -73,12 +115,11 @@ function createContactListWindow() {
     height: 580,
     minWidth: 240,
     minHeight: 420,
-    maxWidth: 360,
     frame: false,
     resizable: true,
-    show: false,
-    skipTaskbar: true,
-    icon: path.join(__dirname, '../build/icon.png'),
+    show: true,
+    skipTaskbar: true,  // kein Eintrag in der Windows-Taskleiste
+    icon: getWindowIconPath(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -88,11 +129,10 @@ function createContactListWindow() {
     title: 'ICQ Kontaktliste',
   });
   contactListWindow.loadURL(devUrl());
+  wireWindowDiagnostics(contactListWindow, 'contact-list');
   wireExternalLinks(contactListWindow);
-  contactListWindow.on('blur', () => {
-    contactListWindow.hide();
-  });
   contactListWindow.on('close', (e) => {
+    // Minimieren statt schließen – App bleibt im Tray
     e.preventDefault();
     contactListWindow.hide();
   });
@@ -102,16 +142,20 @@ function createContactListWindow() {
 function setTrayIcon(iconName) {
   if (!tray) return;
   const { nativeImage } = require('electron');
-  const iconPath = path.join(__dirname, `../public/${iconName}`);
+  const iconPath = resolveAssetPath('public', iconName);
   tray.setImage(nativeImage.createFromPath(iconPath));
+}
+
+function getBaseTrayIconName() {
+  if (process.platform === 'darwin') return 'icon.icns';
+  if (process.platform === 'linux') return 'icon.png';
+  return 'icon.ico';
 }
 
 function createTray() {
   if (tray) return;
   const { Tray, nativeImage, Menu } = require('electron');
-  const iconPath = process.platform === 'darwin'
-    ? path.join(__dirname, '../public/icon.icns')
-    : path.join(__dirname, '../public/icon.ico');
+  const iconPath = resolveAssetPath('public', getBaseTrayIconName());
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('ICQ Messenger');
     // IPC: Notification aus Renderer
@@ -119,29 +163,14 @@ function createTray() {
       if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
       setTrayIcon('icq-logo.png');
       trayNotificationTimer = setTimeout(() => {
-        setTrayIcon(process.platform === 'darwin' ? 'icon.icns' : 'icon.ico');
+        setTrayIcon(getBaseTrayIconName());
       }, 2000);
     });
   tray.on('click', () => {
-    // Toggle contact list window
     const win = createContactListWindow();
     if (win.isVisible()) {
       win.hide();
     } else {
-      // Position window near tray icon
-      const { x, y } = tray.getBounds();
-      const { width, height } = win.getBounds();
-      let posX = x;
-      let posY = y;
-      // Windows: tray bottom right, macOS: top bar
-      if (process.platform === 'darwin') {
-        posX = x + Math.round((tray.getBounds().width - width) / 2);
-        posY = y + tray.getBounds().height + 4;
-      } else {
-        posX = x + Math.round((tray.getBounds().width - width) / 2);
-        posY = y - height - 4;
-      }
-      win.setPosition(Math.max(0, posX), Math.max(0, posY), false);
       win.show();
       win.focus();
     }
@@ -165,7 +194,7 @@ function createChatWindow(chatId, chatName, service, avatar) {
     minHeight: 300,
     frame: false,
     resizable: true,
-    icon: path.join(__dirname, '../build/icon.png'),
+    icon: getWindowIconPath(),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -176,6 +205,7 @@ function createChatWindow(chatId, chatName, service, avatar) {
   });
   const params = new URLSearchParams({ mode: 'chat', chatId, chatName: chatName || '', service }).toString();
   chatWin.loadURL(devUrl(params));
+  wireWindowDiagnostics(chatWin, `chat-${chatId}`);
   wireExternalLinks(chatWin);
   chatWindows.set(chatId, chatWin);
   chatWin.on('closed', () => chatWindows.delete(chatId));
@@ -183,8 +213,12 @@ function createChatWindow(chatId, chatName, service, avatar) {
 }
 
 app.on('ready', async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.icqmessenger.app');
+  }
   createTray();
-  createContactListWindow();
+  const win = createContactListWindow();
+  win.show();
   // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
   const dataDir = isDev
     ? path.join(__dirname, '../data')
@@ -215,6 +249,18 @@ app.on('before-quit', (e) => {
 
 app.on('activate', () => {
   if (!contactListWindow) createContactListWindow();
+});
+
+app.on('second-instance', () => {
+  try {
+    const win = createContactListWindow();
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    logStartup('second-instance: focused existing contact window');
+  } catch (e) {
+    logStartup('second-instance handler failed', e);
+  }
 });
 
 ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => {
@@ -259,6 +305,8 @@ ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
 ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMessage(id, text));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));
+ipcMain.handle('wa:edit-message', async (e, chatId, messageId, newText) => whatsappBridge.editMessage(chatId, messageId, newText));
+ipcMain.handle('wa:delete-message', async (e, chatId, messageId, forEveryone) => whatsappBridge.deleteMessage(chatId, messageId, forEveryone));
 ipcMain.handle('wa:mark-read',    async (e, id)        => whatsappBridge.markChatRead(id));
 ipcMain.handle('wa:status',       async ()             => whatsappBridge.getStatus());
 ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyProfile());
@@ -275,6 +323,8 @@ ipcMain.handle('tg:get-messages',   async (e, chatId, opts)     => telegramBridg
 ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
+ipcMain.handle('tg:edit-message',   async (e, chatId, messageId, newText) => telegramBridge.editMessage(chatId, messageId, newText));
+ipcMain.handle('tg:delete-message', async (e, chatId, messageId, revoke)  => telegramBridge.deleteMessage(chatId, messageId, revoke));
 ipcMain.handle('tg:get-recent-stickers', async (e, limit)       => telegramBridge.getRecentStickers(limit));
 ipcMain.handle('tg:mark-read',      async (e, chatId)           => telegramBridge.markChatRead(chatId));
 ipcMain.handle('tg:status',         async ()                    => telegramBridge.getStatus());
@@ -387,7 +437,6 @@ function wireExternalLinks(win) {
   });
 }
 
-ipcMain.on('chat:sent', (e, msg) => {
 // Broadcast a sent message to all other windows (so sidebar updates immediately)
 ipcMain.on('chat:sent', (e, msg) => {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -402,7 +451,7 @@ function trayNotifyNewMessage() {
     if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
     setTrayIcon('icq-logo.png');
     trayNotificationTimer = setTimeout(() => {
-      setTrayIcon(process.platform === 'darwin' ? 'icon.icns' : 'icon.ico');
+      setTrayIcon(getBaseTrayIconName());
     }, 2000);
   }
 }

@@ -80,6 +80,12 @@ function cleanupStaleSessionLocks(dataDir) {
 
 // Find a usable Chrome/Edge/Chromium on the host system.
 // Priority: 1. bundled extraResources chrome, 2. system Chrome/Edge, 3. puppeteer cache (dev)
+function ensureExecutable(filePath) {
+  if (!filePath || process.platform === 'win32') return filePath;
+  try { fs.chmodSync(filePath, 0o755); } catch (e) {}
+  return filePath;
+}
+
 function findChromiumExecutable() {
   // 1. Bundled chromium (extraResources → resources/chrome/<version>/chrome-*/chrome[.exe])
   try {
@@ -98,7 +104,7 @@ function findChromiumExecutable() {
           path.join(vDir, 'chrome-mac-arm64','Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
         ];
         for (const exe of candidates) {
-          if (fs.existsSync(exe)) return exe;
+          if (fs.existsSync(exe)) return ensureExecutable(exe);
         }
       }
     }
@@ -126,13 +132,13 @@ function findChromiumExecutable() {
   ];
 
   for (const p of sysCandidates) {
-    if (p && fs.existsSync(p)) return p;
+    if (p && fs.existsSync(p)) return ensureExecutable(p);
   }
 
   // 3. Dev fallback: puppeteer's own downloaded Chromium
   try {
     const p = require('puppeteer').executablePath?.();
-    if (p && fs.existsSync(p)) return p;
+    if (p && fs.existsSync(p)) return ensureExecutable(p);
   } catch (e) {}
 
   return null;
@@ -152,6 +158,15 @@ function init(avatarCallback, dataDir, opts = {}) {
   broadcast('wa:status', 'loading');
 
   const executablePath = findChromiumExecutable();
+
+  if (!executablePath && process.platform === 'linux') {
+    status = 'error';
+    currentQR = null;
+    clearLoadingWatchdog();
+    broadcast('wa:status', 'error');
+    console.error('[WA init] No Chrome/Chromium executable found on Linux. Install chromium or google-chrome and restart.');
+    return;
+  }
 
   const isMac = process.platform === 'darwin';
   const isLinux = process.platform === 'linux';
@@ -404,6 +419,26 @@ async function sendSticker(chatId, filePath) {
   await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
 }
 
+async function editMessage(chatId, messageId, newText) {
+  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  if (!messageId) throw new Error('Missing message id');
+  const msg = await client.getMessageById(messageId);
+  if (!msg) throw new Error('Message not found');
+  if (!msg.fromMe) throw new Error('Only own messages can be edited');
+  await msg.edit(newText);
+  return true;
+}
+
+async function deleteMessage(chatId, messageId, forEveryone = true) {
+  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  if (!messageId) throw new Error('Missing message id');
+  const msg = await client.getMessageById(messageId);
+  if (!msg) throw new Error('Message not found');
+  if (!msg.fromMe) throw new Error('Only own messages can be deleted');
+  await msg.delete(Boolean(forEveryone));
+  return true;
+}
+
 async function getMyProfile() {
   if (status !== 'ready') return null;
   try {
@@ -433,8 +468,11 @@ async function logout() {
   status = 'disconnected';
   currentQR = null;
   broadcast('wa:status', 'disconnected');
-  // Reset flag after a short delay so the user can re-login
-  setTimeout(() => { waManualLogout = false; }, 2000);
+  // After explicit logout, start a clean session init so QR login is immediately possible.
+  setTimeout(() => {
+    waManualLogout = false;
+    reconnect(lastDataDir);
+  }, 700);
 }
 
 async function shutdown() {
@@ -458,4 +496,21 @@ function reconnect(dataDir) {
   }, 500);
 }
 
-module.exports = { init, getQR, getStatus, getChats, getMessages, sendMessage, sendFile, sendSticker, markChatRead, getMyProfile, getContactAvatar, logout, reconnect, shutdown };
+module.exports = {
+  init,
+  getQR,
+  getStatus,
+  getChats,
+  getMessages,
+  sendMessage,
+  sendFile,
+  sendSticker,
+  editMessage,
+  deleteMessage,
+  markChatRead,
+  getMyProfile,
+  getContactAvatar,
+  logout,
+  reconnect,
+  shutdown,
+};

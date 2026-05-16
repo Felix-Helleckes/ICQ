@@ -49,19 +49,24 @@ function AckIcon({ ack }) {
   return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
 }
 
-export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendSticker, isTyping }) {
+export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendSticker, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const [stickerTab, setStickerTab] = useState('stickers');
   const [tgStickers, setTgStickers] = useState([]);
   const [tgStickersLoading, setTgStickersLoading] = useState(false);
-  const [gifQuery, setGifQuery] = useState('funny cat');
+  const [gifQuery, setGifQuery] = useState('');
   const [gifResults, setGifResults] = useState([]);
   const [gifLoading, setGifLoading] = useState(false);
+  const [gifError, setGifError] = useState('');
+  const [gifSearched, setGifSearched] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
+  const [messageContext, setMessageContext] = useState(null); // { x, y, msg }
+  const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
+  const [forwardDialog, setForwardDialog] = useState({ open: false, msg: null, chats: [], loading: false, query: '' });
   // Resizable split: inputHeight in px (min 80, max 400)
   const [inputHeight, setInputHeight] = useState(110);
   const dividerDragRef = useRef(null);
@@ -132,13 +137,36 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (forwardDialog.open) {
+          setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' });
+          return;
+        }
+        if (editDialog.open) {
+          setEditDialog({ open: false, msg: null, text: '' });
+          return;
+        }
+        if (messageContext) {
+          setMessageContext(null);
+          return;
+        }
         e.preventDefault();
         window.api?.window?.close?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [editDialog.open, forwardDialog.open, messageContext]);
+
+  useEffect(() => {
+    if (!messageContext) return undefined;
+    const close = () => setMessageContext(null);
+    window.addEventListener('mousedown', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('mousedown', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [messageContext]);
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -182,20 +210,29 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
 
   const searchGifs = async (q) => {
     const query = (q || gifQuery || '').trim();
-    if (!query) return;
+    if (!query) {
+      setGifResults([]);
+      setGifError('');
+      setGifSearched(false);
+      return;
+    }
+    setGifSearched(true);
     setGifLoading(true);
+    setGifError('');
     try {
-      const key = 'LIVDSRZULELA'; // Tenor demo key
-      const url = `https://tenor.googleapis.com/v2/search?q=${encodeURIComponent(query)}&key=${key}&limit=24&media_filter=gif,tinygif`;
+      const key = process.env.REACT_APP_GIPHY_API_KEY || 'dc6zaTOxFJmzC';
+      const url = `https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${encodeURIComponent(query)}&limit=24&offset=0&rating=pg-13&lang=de`;
       const res = await fetch(url);
+      if (!res.ok) throw new Error(`GIF search failed (${res.status})`);
       const data = await res.json();
-      const items = (data?.results || []).map(r => {
-        const tiny = r?.media_formats?.tinygif?.url;
-        const full = r?.media_formats?.gif?.url || tiny;
-        return tiny || full ? { id: r.id, previewUrl: tiny || full, downloadUrl: full } : null;
+      const items = (data?.data || []).map(r => {
+        const preview = r?.images?.fixed_width?.url || r?.images?.downsized_small?.mp4;
+        const full = r?.images?.original?.url || r?.images?.downsized?.url || preview;
+        return preview || full ? { id: r.id, previewUrl: preview || full, downloadUrl: full } : null;
       }).filter(Boolean);
       setGifResults(items);
     } catch (e) {
+      setGifError('GIF-Suche nicht verfuegbar.');
       setGifResults([]);
     } finally {
       setGifLoading(false);
@@ -214,7 +251,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
     } else {
       setStickerTab('gifs');
     }
-    if (!gifResults.length) searchGifs(gifQuery);
   };
 
   const pickTelegramSticker = (item) => {
@@ -281,6 +317,98 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
     if (filePath) onSendFile?.(filePath);
   };
 
+  const openMessageContext = (e, msg) => {
+    if (!msg?.fromMe) return;
+    e.preventDefault();
+    setMessageContext({ x: e.clientX, y: e.clientY, msg });
+  };
+
+  const canEditMessage = (msg) => Boolean(msg?.id && msg?.fromMe && msg?.type === 'text' && (msg?.body || '').trim());
+
+  const handleEditMessage = (msg) => {
+    setMessageContext(null);
+    if (!canEditMessage(msg)) return;
+    const initial = msg.body || '';
+    setEditDialog({ open: true, msg, text: initial });
+  };
+
+  const submitEditDialog = async () => {
+    const msg = editDialog.msg;
+    const next = (editDialog.text || '').trim();
+    const initial = (msg?.body || '').trim();
+    if (!msg || !next || next === initial) {
+      setEditDialog({ open: false, msg: null, text: '' });
+      return;
+    }
+    await onEditMessage?.(msg, next);
+    setEditDialog({ open: false, msg: null, text: '' });
+  };
+
+  const handleDeleteMessage = async (msg, forEveryone) => {
+    setMessageContext(null);
+    if (!msg?.fromMe || !msg?.id) return;
+    const text = forEveryone ? 'Diese Nachricht fuer alle loeschen?' : 'Diese Nachricht nur fuer dich loeschen?';
+    if (!window.confirm(text)) return;
+    await onDeleteMessage?.(msg, forEveryone);
+  };
+
+  const handleCopyMessage = async (msg) => {
+    setMessageContext(null);
+    const value = (msg?.body || '').trim() || `[${msg?.type || 'message'}]`;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch (e) {}
+  };
+
+  const handleReplyMessage = (msg) => {
+    setMessageContext(null);
+    const body = (msg?.body || '').trim();
+    if (!body) return;
+    const quote = `> ${body.replace(/\n/g, '\n> ')}\n`;
+    setText(prev => (prev ? `${quote}${prev}` : quote));
+    inputRef.current?.focus();
+  };
+
+  const handleForwardMessage = async (msg) => {
+    setMessageContext(null);
+    if (!msg?.body?.trim()) return;
+    setForwardDialog({ open: true, msg, chats: [], loading: true, query: '' });
+    try {
+      const list = chat?.service === 'telegram'
+        ? await window.api?.tg?.getDialogs?.()
+        : await window.api?.wa?.getChats?.();
+      setForwardDialog(prev => ({ ...prev, chats: Array.isArray(list) ? list : [], loading: false }));
+    } catch (e) {
+      setForwardDialog(prev => ({ ...prev, chats: [], loading: false }));
+    }
+  };
+
+  const closeForwardDialog = () => setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' });
+
+  const chooseForwardTarget = async (targetChat) => {
+    if (!targetChat?.id || !forwardDialog.msg) return;
+    const ok = await onForwardMessage?.(forwardDialog.msg, String(targetChat.id));
+    if (!ok) {
+      window.alert('Weiterleiten fehlgeschlagen.');
+      return;
+    }
+    closeForwardDialog();
+  };
+
+  const filteredForwardChats = forwardDialog.chats
+    .filter(c => String(c.id) !== String(chat?.id))
+    .filter(c => {
+      const q = (forwardDialog.query || '').trim().toLowerCase();
+      if (!q) return true;
+      const name = String(c.name || '').toLowerCase();
+      const id = String(c.id || '').toLowerCase();
+      return name.includes(q) || id.includes(q);
+    })
+    .slice(0, 120);
+
+  const deleteForAllLabel = chat?.service === 'telegram' ? 'Bei allen loeschen' : 'Fuer alle loeschen';
+  const deleteForMeLabel = chat?.service === 'telegram' ? 'Nur bei mir loeschen' : 'Nur fuer mich loeschen';
+
   if (!chat) {
     return (
       <div className="chat-empty">
@@ -335,7 +463,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
               </div>
             )}
           <div className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
-            <div className="message-bubble">
+            <div className="message-bubble" onContextMenu={(e) => openMessageContext(e, msg)}>
               {msg.mediaData
                 ? (msg.type === 'ptt' || msg.type === 'audio')
                   ? <audio
@@ -418,7 +546,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
                   className={`sticker-tab-btn${stickerTab === 'gifs' ? ' active' : ''}`}
                   onClick={() => {
                     setStickerTab('gifs');
-                    if (!gifResults.length) searchGifs(gifQuery);
                   }}
                 >GIFs</button>
                 <button className="sticker-local-btn" onClick={openStickerFileDialog}>Datei…</button>
@@ -454,7 +581,13 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
                 ))}
 
                 {stickerTab === 'gifs' && gifLoading && <div className="picker-info">GIFs werden geladen…</div>}
-                {stickerTab === 'gifs' && !gifLoading && gifResults.length === 0 && (
+                {stickerTab === 'gifs' && !gifLoading && gifError && (
+                  <div className="picker-info">{gifError}</div>
+                )}
+                {stickerTab === 'gifs' && !gifLoading && !gifError && !gifSearched && (
+                  <div className="picker-info">GIF suchen und Enter druecken.</div>
+                )}
+                {stickerTab === 'gifs' && !gifLoading && gifSearched && !gifError && gifResults.length === 0 && (
                   <div className="picker-info">Keine GIFs gefunden.</div>
                 )}
                 {stickerTab === 'gifs' && gifResults.map(item => (
@@ -491,6 +624,88 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
             <div className="paste-preview-actions">
               <button className="win98-btn" onClick={sendClipboardImage}>Senden</button>
               <button className="win98-btn" onClick={() => setClipboardImage(null)}>Abbrechen</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messageContext && (
+        <div
+          className="message-context-menu"
+          style={{ left: messageContext.x, top: messageContext.y }}
+          onMouseDown={e => e.stopPropagation()}
+        >
+          <button className="message-context-item" onClick={() => handleCopyMessage(messageContext.msg)}>
+            Kopieren
+          </button>
+          {!!(messageContext.msg?.body || '').trim() && (
+            <button className="message-context-item" onClick={() => handleReplyMessage(messageContext.msg)}>
+              Antworten
+            </button>
+          )}
+          {!!(messageContext.msg?.body || '').trim() && (
+            <button className="message-context-item" onClick={() => handleForwardMessage(messageContext.msg)}>
+              Weiterleiten
+            </button>
+          )}
+          {canEditMessage(messageContext.msg) && (
+            <button className="message-context-item" onClick={() => handleEditMessage(messageContext.msg)}>
+              Nachricht bearbeiten
+            </button>
+          )}
+          <button className="message-context-item danger" onClick={() => handleDeleteMessage(messageContext.msg, true)}>
+            {deleteForAllLabel}
+          </button>
+          <button className="message-context-item" onClick={() => handleDeleteMessage(messageContext.msg, false)}>
+            {deleteForMeLabel}
+          </button>
+        </div>
+      )}
+
+      {editDialog.open && (
+        <div className="lightbox-overlay" onClick={() => setEditDialog({ open: false, msg: null, text: '' })}>
+          <div className="edit-dialog" onClick={e => e.stopPropagation()}>
+            <div className="edit-dialog-title">Nachricht bearbeiten</div>
+            <textarea
+              className="edit-dialog-input"
+              value={editDialog.text}
+              onChange={e => setEditDialog(prev => ({ ...prev, text: e.target.value }))}
+              rows={4}
+              autoFocus
+            />
+            <div className="edit-dialog-actions">
+              <button className="win98-btn" onClick={() => setEditDialog({ open: false, msg: null, text: '' })}>Abbrechen</button>
+              <button className="win98-btn" onClick={submitEditDialog}>Speichern</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {forwardDialog.open && (
+        <div className="lightbox-overlay" onClick={closeForwardDialog}>
+          <div className="forward-dialog" onClick={e => e.stopPropagation()}>
+            <div className="forward-dialog-title">Weiterleiten an...</div>
+            <input
+              className="forward-search-input"
+              value={forwardDialog.query}
+              onChange={e => setForwardDialog(prev => ({ ...prev, query: e.target.value }))}
+              placeholder="Chat suchen..."
+              autoFocus
+            />
+            <div className="forward-list">
+              {forwardDialog.loading && <div className="picker-info">Chats werden geladen...</div>}
+              {!forwardDialog.loading && filteredForwardChats.length === 0 && (
+                <div className="picker-info">Keine passenden Chats gefunden.</div>
+              )}
+              {!forwardDialog.loading && filteredForwardChats.map(item => (
+                <button key={item.id} className="forward-item" onClick={() => chooseForwardTarget(item)}>
+                  <span className="forward-item-name">{item.name || item.id}</span>
+                  <span className="forward-item-id">{item.id}</span>
+                </button>
+              ))}
+            </div>
+            <div className="edit-dialog-actions">
+              <button className="win98-btn" onClick={closeForwardDialog}>Abbrechen</button>
             </div>
           </div>
         </div>

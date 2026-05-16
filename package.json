@@ -70,6 +70,7 @@
     },
     "files": [
       "build/**/*",
+      "public/**/*",
       "electron/**/*",
       "node_modules/**/*",
       "!puppeteer_cache/**"
