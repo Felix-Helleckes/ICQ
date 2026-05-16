@@ -1,0 +1,55 @@
+/* Modern Theme (Current Teal) */
+:root, [data-theme="modern"] {
+  --icq-bg: #0A1418;
+  --icq-teal: #00B4CC;
+  --icq-text: #FFFFFF;
+  --icq-text-secondary: #A0A0A0;
+  --icq-border: #1A3E42;
+  --icq-border-light: #2A5E62;
+  --icq-input-bg: #0F2428;
+  --icq-hover: #1A4A52;
+  --icq-button-active: #008899;
+  
+  /* Message bubbles */
+  --icq-msg-sent-bg: linear-gradient(135deg, #00B4CC 0%, #008899 100%);
+  --icq-msg-sent-text: #FFFFFF;
+  --icq-msg-received-bg: #1A2428;
+  --icq-msg-received-text: #FFFFFF;
+  
+  /* Status colors */
+  --icq-online: #00FF00;
+  --icq-away: #FFFF00;
+  --icq-offline: #808080;
+}
+
+/* Classic ICQ 5 Theme */
+[data-theme="classic"] {
+  --icq-bg: #000000;
+  --icq-teal: #00CC00;
+  --icq-text: #00FF00;
+  --icq-text-secondary: #00AA00;
+  --icq-border: #003300;
+  --icq-border-light: #005500;
+  --icq-input-bg: #001100;
+  --icq-hover: #003300;
+  --icq-button-active: #00AA00;
+  
+  /* Message bubbles */
+  --icq-msg-sent-bg: linear-gradient(135deg, #00CC00 0%, #008800 100%);
+  --icq-msg-sent-text: #000000;
+  --icq-msg-received-bg: #003300;
+  --icq-msg-received-text: #00FF00;
+  
+  /* Status colors */
+  --icq-online: #00FF00;
+  --icq-away: #FFFF00;
+  --icq-offline: #666666;
+  
+  /* Classic font for retro feel */
+  font-family: 'Courier New', monospace !important;
+}
+
+/* Smooth theme transition */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
