@@ -53,18 +53,9 @@ function AckIcon({ ack }) {
   return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
 }
 
-export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendSticker, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
+export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
-  const [showStickerPicker, setShowStickerPicker] = useState(false);
-  const [stickerTab, setStickerTab] = useState('stickers');
-  const [tgStickers, setTgStickers] = useState([]);
-  const [tgStickersLoading, setTgStickersLoading] = useState(false);
-  const [gifQuery, setGifQuery] = useState('');
-  const [gifResults, setGifResults] = useState([]);
-  const [gifLoading, setGifLoading] = useState(false);
-  const [gifError, setGifError] = useState('');
-  const [gifSearched, setGifSearched] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
@@ -77,7 +68,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
   const emojiRef  = useRef(null);
-  const stickerRef = useRef(null);
 
   // Font-size (shared via localStorage with sidebar)
   const [fontSize, setFontSize] = useState(() => {
@@ -126,16 +116,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [showEmoji]);
-
-  // Close sticker picker when clicking outside
-  useEffect(() => {
-    if (!showStickerPicker) return;
-    const onDown = (e) => {
-      if (stickerRef.current && !stickerRef.current.contains(e.target)) setShowStickerPicker(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [showStickerPicker]);
 
   // ESC closes the current chat window.
   useEffect(() => {
@@ -197,89 +177,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
   const handleFileBtn = async () => {
     const filePath = await window.api?.openFileDialog?.();
     if (filePath) onSendFile?.(filePath);
-  };
-
-  const loadTelegramStickers = async () => {
-    if (chat?.service !== 'telegram') return;
-    setTgStickersLoading(true);
-    try {
-      const items = await window.api?.tg?.getRecentStickers?.(24);
-      setTgStickers(Array.isArray(items) ? items : []);
-    } catch (e) {
-      setTgStickers([]);
-    } finally {
-      setTgStickersLoading(false);
-    }
-  };
-
-  const searchGifs = async (q) => {
-    const query = (q || gifQuery || '').trim();
-    if (!query) {
-      setGifResults([]);
-      setGifError('');
-      setGifSearched(false);
-      return;
-    }
-    setGifSearched(true);
-    setGifLoading(true);
-    setGifError('');
-    try {
-      const key = process.env.REACT_APP_GIPHY_API_KEY || 'dc6zaTOxFJmzC';
-      const url = `https://api.giphy.com/v1/gifs/search?api_key=${key}&q=${encodeURIComponent(query)}&limit=24&offset=0&rating=pg-13&lang=de`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`GIF search failed (${res.status})`);
-      const data = await res.json();
-      const items = (data?.data || []).map(r => {
-        const preview = r?.images?.fixed_width?.url || r?.images?.downsized_small?.mp4;
-        const full = r?.images?.original?.url || r?.images?.downsized?.url || preview;
-        return preview || full ? { id: r.id, previewUrl: preview || full, downloadUrl: full } : null;
-      }).filter(Boolean);
-      setGifResults(items);
-    } catch (e) {
-      setGifError('GIF-Suche nicht verfuegbar.');
-      setGifResults([]);
-    } finally {
-      setGifLoading(false);
-    }
-  };
-
-  const handleStickerBtn = async () => {
-    const next = !showStickerPicker;
-    setShowStickerPicker(next);
-    setShowEmoji(false);
-    if (!next) return;
-
-    if (chat?.service === 'telegram') {
-      if (!tgStickers.length && !tgStickersLoading) loadTelegramStickers();
-      setStickerTab('stickers');
-    } else {
-      setStickerTab('gifs');
-    }
-  };
-
-  const pickTelegramSticker = (item) => {
-    if (!item?.filePath) return;
-    onSendSticker?.(item.filePath);
-    setShowStickerPicker(false);
-    inputRef.current?.focus();
-  };
-
-  const pickGif = async (item) => {
-    if (!item?.downloadUrl || !window.api?.downloadTempFromUrl) return;
-    try {
-      const filePath = await window.api.downloadTempFromUrl(item.downloadUrl, 'gif');
-      if (filePath) onSendFile?.(filePath);
-      setShowStickerPicker(false);
-      inputRef.current?.focus();
-    } catch (e) {
-      console.error('[gif send]', e);
-    }
-  };
-
-  const openStickerFileDialog = async () => {
-    const filePath = await window.api?.openStickerDialog?.();
-    if (filePath) onSendSticker?.(filePath);
-    setShowStickerPicker(false);
   };
 
   const handlePaste = (e) => {
@@ -523,7 +420,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
           >😊</button>
-          <button className={`toolbar-btn${showStickerPicker ? ' active' : ''}`} title="Sticker / GIF" onClick={handleStickerBtn}>🧩</button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
 
           {showEmoji && (
@@ -534,74 +430,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendS
             </div>
           )}
 
-          {showStickerPicker && (
-            <div className="sticker-picker" ref={stickerRef}>
-              <div className="sticker-picker-head">
-                {chat?.service === 'telegram' && (
-                  <button
-                    className={`sticker-tab-btn${stickerTab === 'stickers' ? ' active' : ''}`}
-                    onClick={() => {
-                      setStickerTab('stickers');
-                      if (!tgStickers.length) loadTelegramStickers();
-                    }}
-                  >Telegram Stickers</button>
-                )}
-                <button
-                  className={`sticker-tab-btn${stickerTab === 'gifs' ? ' active' : ''}`}
-                  onClick={() => {
-                    setStickerTab('gifs');
-                  }}
-                >GIFs</button>
-                <button className="sticker-local-btn" onClick={openStickerFileDialog}>Datei…</button>
-              </div>
-
-              {stickerTab === 'gifs' && (
-                <div className="gif-search-row">
-                  <input
-                    className="gif-search-input"
-                    value={gifQuery}
-                    onChange={e => setGifQuery(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') searchGifs(gifQuery); }}
-                    placeholder="GIF suchen..."
-                  />
-                  <button className="win98-btn" onClick={() => searchGifs(gifQuery)} disabled={gifLoading}>Go</button>
-                </div>
-              )}
-
-              <div className="sticker-grid">
-                {stickerTab === 'stickers' && chat?.service === 'telegram' && tgStickersLoading && (
-                  <div className="picker-info">Sticker werden geladen…</div>
-                )}
-                {stickerTab === 'stickers' && chat?.service === 'telegram' && !tgStickersLoading && tgStickers.length === 0 && (
-                  <div className="picker-info">Keine Telegram-Sticker gefunden.</div>
-                )}
-                {stickerTab === 'stickers' && chat?.service === 'telegram' && tgStickers.map(item => (
-                  <button key={item.id} className="sticker-item" onClick={() => pickTelegramSticker(item)} title={item.emoji || 'Sticker'}>
-                    {item.type === 'video'
-                      ? <video src={item.previewData} className="sticker-thumb" muted loop autoPlay playsInline />
-                      : <img src={item.previewData} className="sticker-thumb" alt={item.emoji || 'Sticker'} />}
-                    {item.emoji ? <span className="sticker-emoji">{item.emoji}</span> : null}
-                  </button>
-                ))}
-
-                {stickerTab === 'gifs' && gifLoading && <div className="picker-info">GIFs werden geladen…</div>}
-                {stickerTab === 'gifs' && !gifLoading && gifError && (
-                  <div className="picker-info">{gifError}</div>
-                )}
-                {stickerTab === 'gifs' && !gifLoading && !gifError && !gifSearched && (
-                  <div className="picker-info">GIF suchen und Enter druecken.</div>
-                )}
-                {stickerTab === 'gifs' && !gifLoading && gifSearched && !gifError && gifResults.length === 0 && (
-                  <div className="picker-info">Keine GIFs gefunden.</div>
-                )}
-                {stickerTab === 'gifs' && gifResults.map(item => (
-                  <button key={item.id} className="sticker-item" onClick={() => pickGif(item)} title="GIF senden">
-                    <img src={item.previewUrl} className="sticker-thumb" alt="GIF" loading="lazy" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
         <div className="input-row">
           <textarea

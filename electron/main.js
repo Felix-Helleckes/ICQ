@@ -304,41 +304,11 @@ ipcMain.handle('open-file-dialog', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
-ipcMain.handle('open-sticker-dialog', async () => {
-  const win = BrowserWindow.getFocusedWindow();
-  const result = await dialog.showOpenDialog(win, {
-    properties: ['openFile'],
-    filters: [
-      { name: 'Sticker', extensions: ['webp', 'png', 'jpg', 'jpeg', 'gif', 'webm', 'tgs'] },
-      { name: 'Alle Dateien', extensions: ['*'] },
-    ],
-  });
-  return result.canceled ? null : result.filePaths[0];
-});
-
 // ── IPC: Save clipboard image to temp file ─────────────────
 ipcMain.handle('app:save-temp-image', async (e, base64, ext) => {
   const fname = `clipboard_${Date.now()}.${ext || 'png'}`;
   const fpath = path.join(os.tmpdir(), fname);
   fs.writeFileSync(fpath, Buffer.from(base64, 'base64'));
-  return fpath;
-});
-
-ipcMain.handle('app:download-media-temp', async (e, url, ext) => {
-  if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) {
-    throw new Error('Invalid media URL');
-  }
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'ICQ-Messenger/1.0' },
-  });
-  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
-  const arr = await response.arrayBuffer();
-  const inferred =
-    (ext && String(ext).replace(/[^a-zA-Z0-9]/g, '')) ||
-    (response.headers.get('content-type') || '').split('/')[1]?.split(';')[0] ||
-    'bin';
-  const fpath = path.join(os.tmpdir(), `media_${Date.now()}.${inferred}`);
-  fs.writeFileSync(fpath, Buffer.from(arr));
   return fpath;
 });
 

@@ -96,9 +96,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
-  openStickerDialog: () => ipcRenderer.invoke('open-sticker-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
-  downloadTempFromUrl: (url, ext) => ipcRenderer.invoke('app:download-media-temp', url, ext),
   appVersion: process.env.npm_package_version || require('../package.json').version,
   // Get real file system path from a dropped File object (Electron 29+)
   getFilePath: (file) => {
