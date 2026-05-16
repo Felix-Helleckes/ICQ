@@ -16,6 +16,13 @@ export default function App() {
   const [chats, setChats]       = useState([]);
   const [chatsLoading, setChatsLoading] = useState(false);
   const [myProfile, setMyProfile] = useState({ name: null, avatar: null });
+  const [contactScale, setContactScale] = useState(() => {
+    const saved = Number(localStorage.getItem('icq-contact-scale'));
+    return Number.isFinite(saved) && saved > 0 ? saved : 1;
+  });
+  useEffect(() => {
+    localStorage.setItem('icq-contact-scale', String(contactScale));
+  }, [contactScale]);
 
   // Per-service chat cache — so switching services is instant (no reload)
   const waCacheRef = React.useRef(null);   // null = not loaded yet
@@ -300,6 +307,9 @@ export default function App() {
           onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
           onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
           onMarkGroupsRead={markGroupsRead}
+          contactScale={contactScale}
+          onDecreaseContactScale={() => setContactScale(v => Math.max(0.85, Number((v - 0.05).toFixed(2))))}
+          onIncreaseContactScale={() => setContactScale(v => Math.min(1.45, Number((v + 0.05).toFixed(2))))}
         />
       </div>
     </div>

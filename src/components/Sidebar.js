@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import './Sidebar.css';
 
 const STATUS_COLOR = {
@@ -84,22 +84,14 @@ export default function Sidebar({
   waGroupSound, tgGroupSound,
   onToggleWaGroupSound, onToggleTgGroupSound,
   onMarkGroupsRead,
+  contactScale,
+  onDecreaseContactScale,
+  onIncreaseContactScale,
 }) {
   const [search, setSearch] = useState('');
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
   const onToggleGroupSound = activeService === 'whatsapp' ? onToggleWaGroupSound : onToggleTgGroupSound;
-
-  // Skalierung wirkt auf gesamte Sidebar inkl. Buttons, Header, Toolbar
-  const [listScale, setListScale] = useState(() => {
-    const saved = Number(localStorage.getItem('icq-contact-scale'));
-    return Number.isFinite(saved) && saved > 0 ? saved : 1;
-  });
-  useEffect(() => {
-    localStorage.setItem('icq-contact-scale', String(listScale));
-  }, [listScale]);
-  const smaller = () => setListScale(v => Math.max(0.85, Number((v - 0.05).toFixed(2))));
-  const larger  = () => setListScale(v => Math.min(1.45, Number((v + 0.05).toFixed(2))));
 
   const filtered = chats.filter(c =>
     !search || (c.name || '').toLowerCase().includes(search.toLowerCase())
@@ -108,7 +100,7 @@ export default function Sidebar({
   const contacts = filtered.filter(c => !c.isGroup);
 
   return (
-    <div className="sidebar" style={{ '--contact-scale': listScale }}>
+    <div className="sidebar" style={{ '--contact-scale': contactScale ?? 1 }}>
       {/* ICQ 5 user header */}
       <div className="user-header">
         <div className="user-avatar">
@@ -129,8 +121,8 @@ export default function Sidebar({
             title={soundEnabled ? 'Sound aus' : 'Sound an'}
           >{soundEnabled ? '🔔' : '🔕'}</button>
         )}
-        <button className="scale-btn" title="Kontakte kleiner" onClick={smaller}>A-</button>
-        <button className="scale-btn" title="Kontakte größer" onClick={larger}>A+</button>
+        <button className="scale-btn" title="Kontakte kleiner" onClick={onDecreaseContactScale}>A-</button>
+        <button className="scale-btn" title="Kontakte größer" onClick={onIncreaseContactScale}>A+</button>
         {onLogout && (
           <button className="logout-btn" onClick={onLogout} title="Logout">⏏</button>
         )}

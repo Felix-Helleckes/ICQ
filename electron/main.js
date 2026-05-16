@@ -56,10 +56,8 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
   }
 }
 
-// Tray/Contactlist/Chat windows
-let tray = null;
+// Contactlist/Chat windows
 let contactListWindow = null;
-let trayNotificationTimer = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
 const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
@@ -115,10 +113,10 @@ function createContactListWindow() {
     height: 580,
     minWidth: 240,
     minHeight: 420,
+    maxWidth: 360,
     frame: false,
     resizable: true,
     show: true,
-    skipTaskbar: true,  // kein Eintrag in der Windows-Taskleiste
     icon: getWindowIconPath(),
     webPreferences: {
       nodeIntegration: false,
@@ -131,58 +129,14 @@ function createContactListWindow() {
   contactListWindow.loadURL(devUrl());
   wireWindowDiagnostics(contactListWindow, 'contact-list');
   wireExternalLinks(contactListWindow);
-  contactListWindow.on('close', (e) => {
-    // Minimieren statt schließen – App bleibt im Tray
-    e.preventDefault();
-    contactListWindow.hide();
+
+  contactListWindow.on('closed', () => {
+    // Close all open chat windows when contact list is closed
+    chatWindows.forEach(win => { if (!win.isDestroyed()) win.close(); });
+    chatWindows.clear();
+    contactListWindow = null;
   });
   return contactListWindow;
-}
-
-function setTrayIcon(iconName) {
-  if (!tray) return;
-  const { nativeImage } = require('electron');
-  const iconPath = resolveAssetPath('public', iconName);
-  tray.setImage(nativeImage.createFromPath(iconPath));
-}
-
-function getBaseTrayIconName() {
-  if (process.platform === 'darwin') return 'icon.icns';
-  if (process.platform === 'linux') return 'icon.png';
-  return 'icon.ico';
-}
-
-function createTray() {
-  if (tray) return;
-  const { Tray, nativeImage, Menu } = require('electron');
-  const iconPath = resolveAssetPath('public', getBaseTrayIconName());
-  tray = new Tray(nativeImage.createFromPath(iconPath));
-  tray.setToolTip('ICQ Messenger');
-    // IPC: Notification aus Renderer
-    ipcMain.on('tray:notify', () => {
-      if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
-      setTrayIcon('icq-logo.png');
-      trayNotificationTimer = setTimeout(() => {
-        setTrayIcon(getBaseTrayIconName());
-      }, 2000);
-    });
-  tray.on('click', () => {
-    const win = createContactListWindow();
-    if (win.isVisible()) {
-      win.hide();
-    } else {
-      win.show();
-      win.focus();
-    }
-  });
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Öffne Kontaktliste', click: () => {
-      const win = createContactListWindow();
-      win.show();
-      win.focus();
-    }},
-    { label: 'Beenden', click: () => { app.quit(); } },
-  ]));
 }
 
 // Chat window logic
@@ -213,10 +167,6 @@ function createChatWindow(chatId, chatName, service, avatar) {
 }
 
 app.on('ready', async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.icqmessenger.app');
-  }
-  createTray();
   const win = createContactListWindow();
   win.show();
   // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
@@ -230,8 +180,7 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Unter macOS bleibt Tray aktiv, unter Windows beenden
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
 
 app.on('before-quit', (e) => {
@@ -248,7 +197,7 @@ app.on('before-quit', (e) => {
 });
 
 app.on('activate', () => {
-  if (!contactListWindow) createContactListWindow();
+  if (contactListWindow === null) createContactListWindow();
 });
 
 app.on('second-instance', () => {
@@ -445,18 +394,5 @@ ipcMain.on('chat:sent', (e, msg) => {
   });
 });
 
-// Tray-Notification bei neuer Nachricht (aus WhatsApp/Telegram)
-function trayNotifyNewMessage() {
-  if (tray) {
-    if (trayNotificationTimer) clearTimeout(trayNotificationTimer);
-    setTrayIcon('icq-logo.png');
-    trayNotificationTimer = setTimeout(() => {
-      setTrayIcon(getBaseTrayIconName());
-    }, 2000);
-  }
-}
 
-// WhatsApp/Telegram: bei neuer Nachricht Tray-Icon ändern
-ipcMain.on('wa:message', trayNotifyNewMessage);
-ipcMain.on('tg:message', trayNotifyNewMessage);
 

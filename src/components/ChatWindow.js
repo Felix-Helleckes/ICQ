@@ -32,12 +32,16 @@ const URL_REGEX = /(https?:\/\/[^\s<>"]+)/g;
 
 function linkify(text) {
   if (!text) return text;
-  const parts = text.split(URL_REGEX);
-  return parts.map((part, i) =>
-    URL_REGEX.test(part)
-      ? <a key={i} href={part} onClick={e => { e.preventDefault(); window.api?.openExternal?.(part); }} style={{ color: '#4fc3f7', wordBreak: 'break-all' }}>{part}</a>
-      : part
-  );
+  // Split on newlines first to preserve paragraph breaks, then linkify each line
+  return text.split('\n').map((line, lineIdx, lines) => {
+    const parts = line.split(URL_REGEX);
+    const linked = parts.map((part, i) =>
+      URL_REGEX.test(part)
+        ? <a key={i} href={part} onClick={e => { e.preventDefault(); window.api?.openExternal?.(part); }} style={{ color: '#4fc3f7', wordBreak: 'break-all' }}>{part}</a>
+        : part
+    );
+    return lineIdx < lines.length - 1 ? [...linked, <br key={`br-${lineIdx}`} />] : linked;
+  });
 }
 
 // ack: -1=error, 0=pending, 1=sent, 2=delivered, 3=read

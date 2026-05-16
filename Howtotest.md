@@ -9,15 +9,15 @@
 git clone https://github.com/dein-user/ICQ.git
 cd ICQ
 npm install
-npm run dist                    # Generiert .dmg + signed für macOS
-# oder
-npm run dist:portable          # macOS-Portable
+npm run dist                    # Generates .dmg + signed for macOS
+# or
+npm run dist:portable          # macOS Portable
 ```
 
-**Verifizieren:**
-- Tray-Icon in macOS Menubar sichtbar
-- Icon im Dock korrekt
-- Edge-Snap auf macOS (Four-Corner-Snap funktioniert)
+**Verification:**
+- Tray icon visible in macOS menubar
+- Icon displays correctly in Dock
+- Edge-snap on macOS (Four-Corner-Snap works)
 
 ### Linux
 
@@ -25,13 +25,15 @@ npm run dist:portable          # macOS-Portable
 git clone https://github.com/dein-user/ICQ.git
 cd ICQ
 npm install
-npm run dist                    # Generiert .AppImage, .deb, .rpm für Linux
-# oder
-npm run dist:portable          # Linux-Portable
+npm run dist                    # Generates .AppImage, .deb, .rpm for Linux
+# or
+npm run dist:portable          # Linux Portable
 ```
 
-**Test Plan:**
-- WhatsApp QR-Code wird angezeigt (kein Error)
-- Tray-Icon sichtbar in Systemtray
-- Chromium/Chrome gefunden und ausgeführt
-- Message Edit/Delete funktioniert
+**Verification:**
+- WhatsApp and Telegram QR code displays (no error)
+- Login is possible
+- Chat windows loading
+- Tray icon visible in system tray
+- A+ A- works in Chatwindow
+- A+ A- works in Contactlist
