@@ -87,6 +87,21 @@ function ensureExecutable(filePath) {
 }
 
 function findChromiumExecutable() {
+  const win = process.platform === 'win32';
+  const mac = process.platform === 'darwin';
+  // Auf macOS immer System-Chrome bevorzugen!
+  if (mac) {
+    const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (fs.existsSync(chromePath)) return ensureExecutable(chromePath);
+    const chromiumPath = '/Applications/Chromium.app/Contents/MacOS/Chromium';
+    if (fs.existsSync(chromiumPath)) return ensureExecutable(chromiumPath);
+    const edgePath = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+    if (fs.existsSync(edgePath)) return ensureExecutable(edgePath);
+    // Kein Chrome gefunden
+    console.error('[WA init] Kein Google Chrome auf macOS gefunden! Bitte Chrome installieren.');
+    return null;
+  }
+  // Windows/Linux: wie gehabt
   // 1. Bundled chromium (extraResources → resources/chrome/<version>/chrome-*/chrome[.exe])
   try {
     const resPath = process.resourcesPath;
@@ -111,18 +126,12 @@ function findChromiumExecutable() {
   } catch (e) {}
 
   // 2. System Chrome / Edge
-  const win = process.platform === 'win32';
-  const mac = process.platform === 'darwin';
   const sysCandidates = win ? [
     path.join(process.env['ProgramFiles']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
     path.join(process.env['ProgramFiles(x86)']   || '', 'Google\\Chrome\\Application\\chrome.exe'),
     path.join(process.env['LOCALAPPDATA']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
     path.join(process.env['ProgramFiles']        || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
     path.join(process.env['ProgramFiles(x86)']   || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
-  ] : mac ? [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
   ] : [
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
