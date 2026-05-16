@@ -67,6 +67,18 @@ export default function App() {
   const chatsRef = React.useRef(chats);
   useEffect(() => { chatsRef.current = chats; }, [chats]);
 
+  // Play startup sound once when first service connects
+  const startupSoundPlayedRef = React.useRef(false);
+  useEffect(() => {
+    const bothReady = waStatus === 'ready' || tgStatus === 'ready';
+    if (bothReady && !startupSoundPlayedRef.current) {
+      startupSoundPlayedRef.current = true;
+      try {
+        new Audio(process.env.PUBLIC_URL + '/sounds/Startup.wav').play().catch(() => {});
+      } catch (e) {}
+    }
+  }, [waStatus, tgStatus]);
+
   const playMessageSound = (chatId, service) => {
     if (!soundEnabledRef.current) return;
     // Gruppen-Sound-Check — immer den service-eigenen Cache nutzen, nicht chatsRef
