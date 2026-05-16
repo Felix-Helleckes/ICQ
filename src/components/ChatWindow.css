@@ -119,6 +119,102 @@
   gap: 6px;
 }
 
+/* Date separator */
+.date-separator {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 8px 12px 4px;
+  color: var(--icq-text-dim);
+  font-size: 10px;
+}
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--icq-border);
+}
+.date-separator span {
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.message-row { display: flex; }
+.message-row.me   { justify-content: flex-end; }
+.message-row.them { justify-content: flex-start; }
+
+.message-bubble {
+  max-width: 78%;
+  padding: 5px 9px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  word-break: break-word;
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+}
+
+.message-row.me .message-bubble {
+  background: linear-gradient(135deg, #0D5C5C, #0A3A3A);
+  border: 1px solid var(--icq-teal-dark);
+  border-radius: 8px 8px 2px 8px;
+  align-items: flex-end;
+}
+
+.message-row.them .message-bubble {
+  background: var(--icq-bg-mid);
+  border: 1px solid var(--icq-border);
+  border-radius: 8px 8px 8px 2px;
+  align-items: flex-start;
+}
+
+.message-text { color: var(--icq-text); user-select: text; }
+
+/* Allow text selection in message area */
+.message-area, .message-bubble { user-select: text; }
+
+.message-time {
+  font-size: 0.69rem;
+  color: var(--icq-text-dim);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.ack {
+  font-size: 9px;
+  font-weight: bold;
+  line-height: 1;
+}
+.ack-pending  { color: var(--icq-text-dim); font-size: 8px; }
+.ack-error    { color: #ff4444; }
+.ack-sent     { color: var(--icq-text-dim); }
+.ack-delivered{ color: var(--icq-text-dim); }
+.ack-read     { color: #4fc3f7; }
+
+/* ── Input area ── */
+.input-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--icq-bg-mid);
+  border-top: none;
+  overflow: visible;
+}
+
+/* ── Resizable divider ── */
+.chat-divider {
+  height: 5px;
+  background: var(--icq-bg);
+  border-top: 1px solid var(--icq-border);
+  border-bottom: 1px solid var(--icq-teal-dark);
+  cursor: ns-resize;
+  flex-shrink: 0;
+  transition: background 0.1s;
+}
+.chat-divider:hover { background: var(--icq-teal-dark); }
+
 .drag-overlay {
   position: absolute;
   inset: 0;
