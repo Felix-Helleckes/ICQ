@@ -4,6 +4,7 @@
   flex-direction: column;
   height: 100vh;
   background: var(--icq-bg);
+  background-image: var(--icq-panel-bg);
   border: 1px solid var(--icq-teal-dark);
   overflow: hidden;
 }

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useTheme } from '../ThemeContext';
 import './ChatWindow.css';
 
 function formatTime(ts) {
@@ -54,6 +55,7 @@ function AckIcon({ ack }) {
 }
 
 export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
+  const { theme } = useTheme();
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
@@ -290,7 +292,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     if (!targetChat?.id || !forwardDialog.msg) return;
     const ok = await onForwardMessage?.(forwardDialog.msg, String(targetChat.id));
     if (!ok) {
-      window.alert('Weiterleiten fehlgeschlagen.');
+      window.alert('Failed to forward message.');
       return;
     }
     closeForwardDialog();
@@ -307,14 +309,15 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     })
     .slice(0, 120);
 
-  const deleteForAllLabel = chat?.service === 'telegram' ? 'Bei allen loeschen' : 'Fuer alle loeschen';
-  const deleteForMeLabel = chat?.service === 'telegram' ? 'Nur bei mir loeschen' : 'Nur fuer mich loeschen';
+  const deleteForAllLabel = chat?.service === 'telegram' ? 'Delete for all' : 'Delete for everyone';
+  const deleteForMeLabel = chat?.service === 'telegram' ? 'Delete for me only' : 'Delete for me only';
 
   if (!chat) {
+    const emptyLogoSrc = process.env.PUBLIC_URL + (theme === 'classic' ? '/icq5/icon.gif' : '/icq-logo.png');
     return (
       <div className="chat-empty">
         <div className="chat-empty-inner">
-          <img src={process.env.PUBLIC_URL + '/icq-logo.png'} className="icq-big-logo" alt="ICQ" />
+          <img src={emptyLogoSrc} className="icq-big-logo" alt="ICQ" />
           <p>Select a conversation to start chatting</p>
         </div>
       </div>
@@ -468,21 +471,21 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
           onMouseDown={e => e.stopPropagation()}
         >
           <button className="message-context-item" onClick={() => handleCopyMessage(messageContext.msg)}>
-            Kopieren
+            Copy
           </button>
           {!!(messageContext.msg?.body || '').trim() && (
             <button className="message-context-item" onClick={() => handleReplyMessage(messageContext.msg)}>
-              Antworten
+              Reply
             </button>
           )}
           {!!(messageContext.msg?.body || '').trim() && (
             <button className="message-context-item" onClick={() => handleForwardMessage(messageContext.msg)}>
-              Weiterleiten
+              Forward
             </button>
           )}
           {canEditMessage(messageContext.msg) && (
             <button className="message-context-item" onClick={() => handleEditMessage(messageContext.msg)}>
-              Nachricht bearbeiten
+              Edit Message
             </button>
           )}
           <button className="message-context-item danger" onClick={() => handleDeleteMessage(messageContext.msg, true)}>

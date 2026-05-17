@@ -1,55 +1,68 @@
-/* Modern Theme (Current Teal) */
-:root, [data-theme="modern"] {
-  --icq-bg: #0A1418;
-  --icq-teal: #00B4CC;
-  --icq-text: #FFFFFF;
-  --icq-text-secondary: #A0A0A0;
-  --icq-border: #1A3E42;
-  --icq-border-light: #2A5E62;
-  --icq-input-bg: #0F2428;
-  --icq-hover: #1A4A52;
-  --icq-button-active: #008899;
-  
-  /* Message bubbles */
-  --icq-msg-sent-bg: linear-gradient(135deg, #00B4CC 0%, #008899 100%);
-  --icq-msg-sent-text: #FFFFFF;
-  --icq-msg-received-bg: #1A2428;
-  --icq-msg-received-text: #FFFFFF;
-  
-  /* Status colors */
-  --icq-online: #00FF00;
-  --icq-away: #FFFF00;
-  --icq-offline: #808080;
+/* Modern Theme (current app look) */
+:root,
+[data-theme="modern"] {
+  --icq-bg:           #1F2530;
+  --icq-bg-mid:       #252D3A;
+  --icq-bg-light:     #2E3748;
+  --icq-teal:         #1A8A8A;
+  --icq-teal-dark:    #0E5F5F;
+  --icq-teal-light:   #2BBFBF;
+  --icq-header-grad1: #0D6B6B;
+  --icq-header-grad2: #0A4E4E;
+  --icq-yellow:       #F5C400;
+  --icq-white:        #FFFFFF;
+  --icq-text:         #E0E8F0;
+  --icq-text-dim:     #7A90A8;
+  --icq-border:       #3A4A5E;
+  --icq-border-light: #4A5E78;
+  --icq-online:       #44DD44;
+  --icq-away:         #F5C400;
+  --icq-offline:      #CC3333;
+  --icq-dnd:          #FF6600;
+  --icq-btn-bg:       #2E3748;
+  --icq-btn-hover:    #3A4A5E;
+  --icq-btn-active:   #1A8A8A;
+
+  --icq-titlebar-bg: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
+  --icq-header-bg: linear-gradient(180deg, var(--icq-header-grad1) 0%, #0A3A3A 100%);
+  --icq-panel-bg: none;
+  --icq-list-bg: none;
+  --icq-footer-bg: none;
 }
 
-/* Classic ICQ 5 Theme */
+/* Classic ICQ5 Theme with original assets from C:\ICQ5\LiteDataFiles */
 [data-theme="classic"] {
-  --icq-bg: #000000;
-  --icq-teal: #00CC00;
-  --icq-text: #00FF00;
-  --icq-text-secondary: #00AA00;
-  --icq-border: #003300;
-  --icq-border-light: #005500;
-  --icq-input-bg: #001100;
-  --icq-hover: #003300;
-  --icq-button-active: #00AA00;
-  
-  /* Message bubbles */
-  --icq-msg-sent-bg: linear-gradient(135deg, #00CC00 0%, #008800 100%);
-  --icq-msg-sent-text: #000000;
-  --icq-msg-received-bg: #003300;
-  --icq-msg-received-text: #00FF00;
-  
-  /* Status colors */
-  --icq-online: #00FF00;
-  --icq-away: #FFFF00;
-  --icq-offline: #666666;
-  
-  /* Classic font for retro feel */
-  font-family: 'Courier New', monospace !important;
+  --icq-bg:           #2B3443;
+  --icq-bg-mid:       #313B4B;
+  --icq-bg-light:     #3A4558;
+  --icq-teal:         #2C8FA0;
+  --icq-teal-dark:    #1C6B78;
+  --icq-teal-light:   #57B8C5;
+  --icq-header-grad1: #6F8AA8;
+  --icq-header-grad2: #5D7694;
+  --icq-yellow:       #F2C300;
+  --icq-white:        #FFFFFF;
+  --icq-text:         #E9EEF7;
+  --icq-text-dim:     #B7C4D8;
+  --icq-border:       #4A5C76;
+  --icq-border-light: #6D82A2;
+  --icq-online:       #44DD44;
+  --icq-away:         #F5C400;
+  --icq-offline:      #CC3333;
+  --icq-dnd:          #FF6600;
+  --icq-btn-bg:       #5E7594;
+  --icq-btn-hover:    #6D86A7;
+  --icq-btn-active:   #476283;
+
+  --icq-titlebar-bg: url('./assets/icq5/top.gif') repeat-x center top, linear-gradient(180deg, #6F8AA8 0%, #5D7694 100%);
+  --icq-header-bg: url('./assets/icq5/top.gif') repeat-x center top, linear-gradient(180deg, #6F8AA8 0%, #5D7694 100%);
+  --icq-panel-bg: url('./assets/icq5/climage.gif') repeat;
+  --icq-list-bg: url('./assets/icq5/climage.gif') repeat;
+  --icq-footer-bg: url('./assets/icq5/bottom.gif') repeat-x center bottom;
+
+  font-family: Tahoma, Arial, sans-serif;
 }
 
-/* Smooth theme transition */
 * {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }

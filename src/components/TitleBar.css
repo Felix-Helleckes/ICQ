@@ -1,7 +1,7 @@
 .titlebar {
   display: flex;
   align-items: center;
-  background: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
+  background: var(--icq-titlebar-bg);
   color: var(--icq-white);
   padding: 0 6px;
   height: 26px;
