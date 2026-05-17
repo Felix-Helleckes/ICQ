@@ -1,6 +1,5 @@
-/* Modern Theme (current app look) */
-:root,
-[data-theme="modern"] {
+/* Main app theme */
+:root {
   --icq-bg:           #1F2530;
   --icq-bg-mid:       #252D3A;
   --icq-bg-light:     #2E3748;
@@ -28,39 +27,6 @@
   --icq-panel-bg: none;
   --icq-list-bg: none;
   --icq-footer-bg: none;
-}
-
-/* Classic ICQ5 Theme with original assets from C:\ICQ5\LiteDataFiles */
-[data-theme="classic"] {
-  --icq-bg:           #2B3443;
-  --icq-bg-mid:       #313B4B;
-  --icq-bg-light:     #3A4558;
-  --icq-teal:         #2C8FA0;
-  --icq-teal-dark:    #1C6B78;
-  --icq-teal-light:   #57B8C5;
-  --icq-header-grad1: #6F8AA8;
-  --icq-header-grad2: #5D7694;
-  --icq-yellow:       #F2C300;
-  --icq-white:        #FFFFFF;
-  --icq-text:         #E9EEF7;
-  --icq-text-dim:     #B7C4D8;
-  --icq-border:       #4A5C76;
-  --icq-border-light: #6D82A2;
-  --icq-online:       #44DD44;
-  --icq-away:         #F5C400;
-  --icq-offline:      #CC3333;
-  --icq-dnd:          #FF6600;
-  --icq-btn-bg:       #5E7594;
-  --icq-btn-hover:    #6D86A7;
-  --icq-btn-active:   #476283;
-
-  --icq-titlebar-bg: url('./assets/icq5/top.gif') repeat-x center top, linear-gradient(180deg, #6F8AA8 0%, #5D7694 100%);
-  --icq-header-bg: url('./assets/icq5/top.gif') repeat-x center top, linear-gradient(180deg, #6F8AA8 0%, #5D7694 100%);
-  --icq-panel-bg: url('./assets/icq5/climage.gif') repeat;
-  --icq-list-bg: url('./assets/icq5/climage.gif') repeat;
-  --icq-footer-bg: url('./assets/icq5/bottom.gif') repeat-x center bottom;
-
-  font-family: Tahoma, Arial, sans-serif;
 }
 
 * {

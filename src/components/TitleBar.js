@@ -1,14 +1,12 @@
 import React from 'react';
-import { useTheme } from '../ThemeContext';
 import './TitleBar.css';
 
 export default function TitleBar({ title = 'Retrogram', showVersion = false }) {
-  const { theme } = useTheme();
   const minimize  = () => window.api?.window.minimize();
   const maximize  = () => window.api?.window.maximize();
   const close     = () => window.api?.window.close();
   const version   = showVersion ? window.api?.appVersion : null;
-  const logoSrc = process.env.PUBLIC_URL + (theme === 'classic' ? '/icq5/logo.gif' : '/icq-logo.png');
+  const logoSrc = process.env.PUBLIC_URL + '/icq-logo.png';
 
   return (
     <div className="titlebar">

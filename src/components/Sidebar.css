@@ -75,19 +75,6 @@
 .sound-btn:hover { background: rgba(255,255,255,0.08); }
 .sound-btn.muted { opacity: 0.45; }
 
-.theme-btn {
-  background: transparent;
-  border: none;
-  color: var(--icq-text-dim, #8ab);
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 2px 4px;
-  border-radius: 3px;
-  flex-shrink: 0;
-  transition: color 0.3s ease;
-}
-.theme-btn:hover { background: rgba(255,255,255,0.08); }
-
 .scale-btn {
   background: transparent;
   border: 1px solid rgba(255,255,255,0.2);

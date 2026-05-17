@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useTheme } from '../ThemeContext';
 import './ChatWindow.css';
 
 function formatTime(ts) {
@@ -55,7 +54,6 @@ function AckIcon({ ack }) {
 }
 
 export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
-  const { theme } = useTheme();
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
@@ -335,11 +333,10 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const deleteForMeLabel = chat?.service === 'telegram' ? 'Delete for me only' : 'Delete for me only';
 
   if (!chat) {
-    const emptyLogoSrc = process.env.PUBLIC_URL + (theme === 'classic' ? '/icq5/icon.gif' : '/icq-logo.png');
     return (
       <div className="chat-empty">
         <div className="chat-empty-inner">
-          <img src={emptyLogoSrc} className="icq-big-logo" alt="ICQ" />
+          <img src={process.env.PUBLIC_URL + '/icq-logo.png'} className="icq-big-logo" alt="ICQ" />
           <p>Select a conversation to start chatting</p>
         </div>
       </div>

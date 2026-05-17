@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useTheme } from '../ThemeContext';
 import './Sidebar.css';
 
 const STATUS_COLOR = {
@@ -89,7 +88,6 @@ export default function Sidebar({
   onDecreaseContactScale,
   onIncreaseContactScale,
 }) {
-  const { theme, toggleTheme } = useTheme();
   const [search, setSearch] = useState('');
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
@@ -123,11 +121,6 @@ export default function Sidebar({
             title={soundEnabled ? 'Sound aus' : 'Sound an'}
           >{soundEnabled ? '🔔' : '🔕'}</button>
         )}
-        <button
-          className="theme-btn"
-          onClick={toggleTheme}
-          title={theme === 'modern' ? 'Classic Theme' : 'Modern Theme'}
-        >{theme === 'modern' ? '🎨' : '🌟'}</button>
         <button className="scale-btn" title="Kontakte kleiner" onClick={onDecreaseContactScale}>A-</button>
         <button className="scale-btn" title="Kontakte größer" onClick={onIncreaseContactScale}>A+</button>
         {onLogout && (
