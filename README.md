@@ -25,7 +25,7 @@
 
 | Classic Design | Single Chat Window |
 |----------|----------|
-| ![Classic Design](public/Contacts.png) | ![Single Chat Windows](public/Chatwindow.webp) 
+| ![Classic Design](public/Contacts.png?v=2) | ![Single Chat Windows](public/Chatwindow.png?v=2) 
 
 > *Login screens — no personal data shown. Once connected, the sidebar fills with your contacts sorted by recency.*
 
