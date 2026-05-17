@@ -11,6 +11,17 @@ export default function ChatApp({ chatId, chatName, service }) {
   const [isTyping, setIsTyping] = useState(false);
   const typingTimer = React.useRef(null);
   const latestTgMsgIdRef = React.useRef(0);
+  const lastReadAtRef = React.useRef(0);
+
+  const markChatReadNow = React.useCallback(() => {
+    if (!api || !chatId || !service) return;
+    const now = Date.now();
+    if (now - lastReadAtRef.current < 600) return;
+    lastReadAtRef.current = now;
+    if (service === 'whatsapp') api.wa.markRead?.(chatId).catch(() => {});
+    else api.tg.markRead?.(chatId).catch(() => {});
+    api.notifyRead?.({ chatId: String(chatId), service, timestamp: Math.floor(now / 1000) });
+  }, [chatId, service]);
 
   const mergeById = React.useCallback((base, incoming) => {
     const merged = [...base];
@@ -62,6 +73,7 @@ export default function ChatApp({ chatId, chatName, service }) {
           ? await api.wa.getMessages(chatId, { refresh: true })
           : await api.tg.getMessages(chatId, { limit: 50 });
         setMessages(msgs || []);
+        markChatReadNow();
       } catch (e) { console.error('[ChatApp load]', e); }
     }
     loadMessages();
@@ -69,19 +81,32 @@ export default function ChatApp({ chatId, chatName, service }) {
     if (api?.getStoredAvatar && chatId) {
       api.getStoredAvatar(chatId).then(a => { if (a) setChatAvatar(a); }).catch(() => {});
     }
-  }, [chatId, service]);
+  }, [chatId, markChatReadNow, service]);
 
   useEffect(() => {
     if (service !== 'telegram' || !chatId) return undefined;
-    const onFocus = () => { refreshTelegramDelta(); };
+    const onFocus = () => { refreshTelegramDelta(); markChatReadNow(); };
     window.addEventListener('focus', onFocus);
     // Also do one quick delayed delta refresh after initial load.
-    const t = setTimeout(() => { refreshTelegramDelta(); }, 1200);
+    const t = setTimeout(() => { refreshTelegramDelta(); markChatReadNow(); }, 1200);
     return () => {
       window.removeEventListener('focus', onFocus);
       clearTimeout(t);
+      markChatReadNow();
     };
-  }, [chatId, refreshTelegramDelta, service]);
+  }, [chatId, markChatReadNow, refreshTelegramDelta, service]);
+
+  useEffect(() => {
+    const onFocus = () => markChatReadNow();
+    const onBeforeUnload = () => markChatReadNow();
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      markChatReadNow();
+    };
+  }, [markChatReadNow]);
 
   useEffect(() => {
     if (!api) return;
@@ -92,7 +117,10 @@ export default function ChatApp({ chatId, chatName, service }) {
       const sameChat = msg.fromMe
         ? String(msg.to) === String(chatId)
         : String(msg.from) === String(chatId);
-      if (sameChat) setMessages(prev => mergeById(prev, [msg]));
+      if (sameChat) {
+        setMessages(prev => mergeById(prev, [msg]));
+        if (!msg.fromMe) markChatReadNow();
+      }
     });
     const removeWaMedia = service === 'whatsapp' && api.wa.onMedia
       ? api.wa.onMedia(({ msgId, mediaData }) => {
@@ -103,8 +131,10 @@ export default function ChatApp({ chatId, chatName, service }) {
       : null;
     const removeTg = api.tg.onMessage(msg => {
       // fromMe-Nachrichten werden optimistisch beim Senden eingefügt → kein Duplikat
-      if (service === 'telegram' && String(msg.chatId) === String(chatId) && !msg.fromMe)
+      if (service === 'telegram' && String(msg.chatId) === String(chatId) && !msg.fromMe) {
         setMessages(prev => mergeById(prev, [msg]));
+        markChatReadNow();
+      }
     });
     const removeAck = service === 'whatsapp'
       ? api.wa.onAck(({ id, ack }) => {
@@ -122,7 +152,7 @@ export default function ChatApp({ chatId, chatName, service }) {
         })
       : null;
     return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
-  }, [chatId, mergeById, service]);
+  }, [chatId, markChatReadNow, mergeById, service]);
 
   const sendMessage = async (text) => {
     if (!text.trim() || !api) return;

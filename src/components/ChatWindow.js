@@ -122,7 +122,24 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   // ESC closes the current chat window.
   useEffect(() => {
     const onKeyDown = (e) => {
+      if (e.defaultPrevented) return;
+      if (clipboardImage) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendClipboardImage();
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setClipboardImage(null);
+          return;
+        }
+      }
       if (e.key === 'Escape') {
+        if (lightbox) {
+          setLightbox(null);
+          return;
+        }
         if (forwardDialog.open) {
           setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' });
           return;
@@ -141,7 +158,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [editDialog.open, forwardDialog.open, messageContext]);
+  }, [clipboardImage, editDialog.open, forwardDialog.open, lightbox, messageContext]);
 
   useEffect(() => {
     if (!messageContext) return undefined;
@@ -164,6 +181,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const handleKey = (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
+      if (clipboardImage) { setClipboardImage(null); return; }
+      if (lightbox) { setLightbox(null); return; }
+      if (forwardDialog.open) { setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' }); return; }
+      if (editDialog.open) { setEditDialog({ open: false, msg: null, text: '' }); return; }
+      if (messageContext) { setMessageContext(null); return; }
       window.api?.window?.close?.();
       return;
     }

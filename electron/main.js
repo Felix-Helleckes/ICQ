@@ -364,5 +364,13 @@ ipcMain.on('chat:sent', (e, msg) => {
   });
 });
 
+// Broadcast read state to all other windows (so unread badges are cleared immediately)
+ipcMain.on('chat:read', (e, msg) => {
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed() && w.webContents !== e.sender)
+      w.webContents.send('chat:read-broadcast', msg);
+  });
+});
+
 
 

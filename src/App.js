@@ -188,7 +188,12 @@ export default function App() {
       const service = msg.service || activeServiceRef.current;
       patchChat(service, msg.chatId, { lastMessage: msg.body, timestamp: msg.timestamp, unreadCount: 0 });
     });
-    return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); if (reloadTimer) clearTimeout(reloadTimer); };
+    const removeRead = api.onRead?.((msg) => {
+      const service = msg.service || activeServiceRef.current;
+      if (!msg?.chatId) return;
+      patchChat(service, String(msg.chatId), { unreadCount: 0 });
+    });
+    return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); if (reloadTimer) clearTimeout(reloadTimer); };
   }, []);
 
   // Load chats when service / status changes — use cache if available

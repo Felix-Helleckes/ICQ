@@ -83,10 +83,16 @@ contextBridge.exposeInMainWorld('api', {
   openChat: (params) => ipcRenderer.invoke('open-chat', params),
   getStoredAvatar: (id) => ipcRenderer.invoke('get-stored-avatar', id),
   notifySent: (msg) => ipcRenderer.send('chat:sent', msg),
+  notifyRead: (msg) => ipcRenderer.send('chat:read', msg),
   onSent: (cb) => {
     const handler = (_, d) => cb(d);
     ipcRenderer.on('chat:sent-broadcast', handler);
     return () => ipcRenderer.removeListener('chat:sent-broadcast', handler);
+  },
+  onRead: (cb) => {
+    const handler = (_, d) => cb(d);
+    ipcRenderer.on('chat:read-broadcast', handler);
+    return () => ipcRenderer.removeListener('chat:read-broadcast', handler);
   },
   // Window controls
   window: {
