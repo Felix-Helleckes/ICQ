@@ -74,7 +74,9 @@ export default function App() {
     if (bothReady && !startupSoundPlayedRef.current) {
       startupSoundPlayedRef.current = true;
       try {
-        new Audio(process.env.PUBLIC_URL + '/sounds/Startup.wav').play().catch(() => {});
+        const startupAudio = new Audio(process.env.PUBLIC_URL + '/sounds/Startup.wav');
+        startupAudio.volume = 0.6;
+        startupAudio.play().catch(() => {});
       } catch (e) {}
     }
   }, [waStatus, tgStatus]);

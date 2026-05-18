@@ -94,6 +94,7 @@ function shouldReconnectOnError(err) {
   const text = String(err?.message || err || '').toLowerCase();
   if (!text) return false;
   return (
+    text.includes('promise was collected') ||
     text.includes('target closed') ||
     text.includes('session closed') ||
     text.includes('execution context was destroyed') ||
@@ -122,6 +123,34 @@ function triggerRecovery(reason) {
   reconnect(lastDataDir);
 }
 
+async function waitForReady(timeoutMs = 30000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (status === 'ready' && client) {
+      const state = await getClientStateSafe();
+      if (!state || WA_CONNECTED_STATES.has(String(state))) return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 450));
+  }
+  return false;
+}
+
+async function runWithRecovery(opName, handler) {
+  await ensureOperationalForSend();
+  try {
+    return await handler();
+  } catch (e) {
+    if (!shouldReconnectOnError(e)) throw e;
+
+    triggerRecovery(`${opName} failed: ${e?.message || e}`);
+    const recovered = await waitForReady(35000);
+    if (!recovered) throw e;
+
+    await ensureOperationalForSend();
+    return await handler();
+  }
+}
+
 function getPlatformTag() {
   if (process.platform === 'win32') return 'win';
   if (process.platform === 'darwin') return 'mac';
@@ -145,6 +174,16 @@ function getDeviceIdentity() {
     browserName: `Retrogram (${platform})`,
     deviceName: `Retrogram ${platform.toUpperCase()} ${host}`,
   };
+}
+
+function getPlatformUserAgent(platform) {
+  if (platform === 'win') {
+    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
+  }
+  if (platform === 'mac') {
+    return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
+  }
+  return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
 }
 
 // Find a usable Chrome/Edge/Chromium on the host system.
@@ -247,8 +286,8 @@ function init(avatarCallback, dataDir, opts = {}) {
   }
 
   const isMac = process.platform === 'darwin';
-  const isLinux = process.platform === 'linux';
   const identity = getDeviceIdentity();
+  const userAgent = getPlatformUserAgent(getPlatformTag());
 
   client = new Client({
     authStrategy: new LocalAuth({
@@ -257,10 +296,12 @@ function init(avatarCallback, dataDir, opts = {}) {
     }),
     browserName: identity.browserName,
     deviceName: identity.deviceName,
+    userAgent,
     puppeteer: {
       ...(executablePath ? { executablePath } : {}),
       headless: true,
       args: [
+        `--user-agent=${userAgent}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -488,13 +529,10 @@ async function getMessages(chatId, opts = {}) {
 }
 
 async function sendMessage(chatId, text) {
-  await ensureOperationalForSend();
-  try {
+  return runWithRecovery('sendMessage', async () => {
     await client.sendMessage(chatId, text);
-  } catch (e) {
-    if (shouldReconnectOnError(e)) triggerRecovery(`sendMessage failed: ${e?.message || e}`);
-    throw e;
-  }
+    return true;
+  });
 }
 
 async function markChatRead(chatId) {
@@ -506,47 +544,43 @@ async function markChatRead(chatId) {
 }
 
 async function sendFile(chatId, filePath) {
-  await ensureOperationalForSend();
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  try {
+  return runWithRecovery('sendFile', async () => {
     await client.sendMessage(chatId, media);
-  } catch (e) {
-    if (shouldReconnectOnError(e)) triggerRecovery(`sendFile failed: ${e?.message || e}`);
-    throw e;
-  }
+    return true;
+  });
 }
 
 async function sendSticker(chatId, filePath) {
-  await ensureOperationalForSend();
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  try {
+  return runWithRecovery('sendSticker', async () => {
     await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
-  } catch (e) {
-    if (shouldReconnectOnError(e)) triggerRecovery(`sendSticker failed: ${e?.message || e}`);
-    throw e;
-  }
+    return true;
+  });
 }
 
 async function editMessage(chatId, messageId, newText) {
-  await ensureOperationalForSend();
-  if (!messageId) throw new Error('Missing message id');
-  const msg = await client.getMessageById(messageId);
-  if (!msg) throw new Error('Message not found');
-  if (!msg.fromMe) throw new Error('Only own messages can be edited');
-  await msg.edit(newText);
-  return true;
+  return runWithRecovery('editMessage', async () => {
+    if (!messageId) throw new Error('Missing message id');
+    const msg = await client.getMessageById(messageId);
+    if (!msg) throw new Error('Message not found');
+    if (!msg.fromMe) throw new Error('Only own messages can be edited');
+    await msg.edit(newText);
+    return true;
+  });
 }
 
 async function deleteMessage(chatId, messageId, forEveryone = true) {
-  await ensureOperationalForSend();
-  if (!messageId) throw new Error('Missing message id');
-  const msg = await client.getMessageById(messageId);
-  if (!msg) throw new Error('Message not found');
-  if (!msg.fromMe) throw new Error('Only own messages can be deleted');
-  await msg.delete(Boolean(forEveryone));
-  return true;
+  return runWithRecovery('deleteMessage', async () => {
+    if (!messageId) throw new Error('Missing message id');
+    const msg = await client.getMessageById(messageId);
+    if (!msg) throw new Error('Message not found');
+    if (!msg.fromMe) throw new Error('Only own messages can be deleted');
+    await msg.delete(Boolean(forEveryone));
+    return true;
+  });
 }
 
 async function getMyProfile() {
