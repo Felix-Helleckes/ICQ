@@ -6,6 +6,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 let client = null;
 let status = 'disconnected';
@@ -76,6 +77,74 @@ function cleanupStaleSessionLocks(dataDir) {
       }
     }
   } catch (e) {}
+}
+
+const WA_CONNECTED_STATES = new Set(['CONNECTED', 'OPENING', 'PAIRING']);
+
+async function getClientStateSafe() {
+  if (!client) return null;
+  try {
+    return await client.getState();
+  } catch (e) {
+    return null;
+  }
+}
+
+function shouldReconnectOnError(err) {
+  const text = String(err?.message || err || '').toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes('target closed') ||
+    text.includes('session closed') ||
+    text.includes('execution context was destroyed') ||
+    text.includes('protocol error') ||
+    text.includes('not connected') ||
+    text.includes('not ready') ||
+    text.includes('evaluation failed')
+  );
+}
+
+async function ensureOperationalForSend() {
+  if (!client || status !== 'ready') {
+    throw new Error('WhatsApp not ready');
+  }
+  const state = await getClientStateSafe();
+  if (state && !WA_CONNECTED_STATES.has(String(state))) {
+    throw new Error(`WhatsApp not connected (${state})`);
+  }
+}
+
+function triggerRecovery(reason) {
+  if (waManualLogout) return;
+  console.warn('[WA recovery]', reason);
+  status = 'loading';
+  broadcast('wa:status', 'loading');
+  reconnect(lastDataDir);
+}
+
+function getPlatformTag() {
+  if (process.platform === 'win32') return 'win';
+  if (process.platform === 'darwin') return 'mac';
+  return 'linux';
+}
+
+function sanitizeToken(input) {
+  return String(input || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40) || 'node';
+}
+
+function getDeviceIdentity() {
+  const platform = getPlatformTag();
+  const host = sanitizeToken(os.hostname());
+  return {
+    clientId: `retrogram-${platform}-${host}`,
+    browserName: `Retrogram (${platform})`,
+    deviceName: `Retrogram ${platform.toUpperCase()} ${host}`,
+  };
 }
 
 // Find a usable Chrome/Edge/Chromium on the host system.
@@ -179,9 +248,15 @@ function init(avatarCallback, dataDir, opts = {}) {
 
   const isMac = process.platform === 'darwin';
   const isLinux = process.platform === 'linux';
+  const identity = getDeviceIdentity();
 
   client = new Client({
-    authStrategy: new LocalAuth({ dataPath: path.join(dataDir, 'whatsapp') }),
+    authStrategy: new LocalAuth({
+      dataPath: path.join(dataDir, 'whatsapp'),
+      clientId: identity.clientId,
+    }),
+    browserName: identity.browserName,
+    deviceName: identity.deviceName,
     puppeteer: {
       ...(executablePath ? { executablePath } : {}),
       headless: true,
@@ -335,7 +410,18 @@ function init(avatarCallback, dataDir, opts = {}) {
 }
 
 async function getQR() { return currentQR; }
-function getStatus() { return status; }
+async function getStatus() {
+  if (status !== 'ready') return status;
+  if (!client) {
+    triggerRecovery('ready-without-client');
+    return status;
+  }
+  const state = await getClientStateSafe();
+  if (state && !WA_CONNECTED_STATES.has(String(state))) {
+    triggerRecovery(`state=${state}`);
+  }
+  return status;
+}
 
 async function getChats() {
   if (status !== 'ready') return [];
@@ -402,8 +488,13 @@ async function getMessages(chatId, opts = {}) {
 }
 
 async function sendMessage(chatId, text) {
-  if (status !== 'ready') throw new Error('WhatsApp not ready');
-  await client.sendMessage(chatId, text);
+  await ensureOperationalForSend();
+  try {
+    await client.sendMessage(chatId, text);
+  } catch (e) {
+    if (shouldReconnectOnError(e)) triggerRecovery(`sendMessage failed: ${e?.message || e}`);
+    throw e;
+  }
 }
 
 async function markChatRead(chatId) {
@@ -415,21 +506,31 @@ async function markChatRead(chatId) {
 }
 
 async function sendFile(chatId, filePath) {
-  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  await ensureOperationalForSend();
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  await client.sendMessage(chatId, media);
+  try {
+    await client.sendMessage(chatId, media);
+  } catch (e) {
+    if (shouldReconnectOnError(e)) triggerRecovery(`sendFile failed: ${e?.message || e}`);
+    throw e;
+  }
 }
 
 async function sendSticker(chatId, filePath) {
-  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  await ensureOperationalForSend();
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
+  try {
+    await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
+  } catch (e) {
+    if (shouldReconnectOnError(e)) triggerRecovery(`sendSticker failed: ${e?.message || e}`);
+    throw e;
+  }
 }
 
 async function editMessage(chatId, messageId, newText) {
-  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  await ensureOperationalForSend();
   if (!messageId) throw new Error('Missing message id');
   const msg = await client.getMessageById(messageId);
   if (!msg) throw new Error('Message not found');
@@ -439,7 +540,7 @@ async function editMessage(chatId, messageId, newText) {
 }
 
 async function deleteMessage(chatId, messageId, forEveryone = true) {
-  if (status !== 'ready') throw new Error('WhatsApp not ready');
+  await ensureOperationalForSend();
   if (!messageId) throw new Error('Missing message id');
   const msg = await client.getMessageById(messageId);
   if (!msg) throw new Error('Message not found');

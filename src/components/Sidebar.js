@@ -7,7 +7,14 @@ const STATUS_COLOR = {
 };
 
 function statusLabel(s) {
-  return { ready: 'Online', 'needs-auth': 'Login needed', 'no-credentials': 'No API key', disconnected: 'Offline', qr: 'Scan QR' }[s] || s;
+  return {
+    ready: 'Online',
+    loading: 'Reconnecting…',
+    'needs-auth': 'Login needed',
+    'no-credentials': 'No API key',
+    disconnected: 'Offline',
+    qr: 'Scan QR',
+  }[s] || s;
 }
 
 function ContactItem({ chat, onSelect }) {
@@ -166,6 +173,11 @@ export default function Sidebar({
 
           {/* Contact list */}
           <div className="contact-list">
+            {activeService === 'whatsapp' && currentStatus === 'loading' && (
+              <div className="service-reconnecting" role="status" aria-live="polite">
+                WhatsApp verbindet neu…
+              </div>
+            )}
             {chatsLoading && (
               <div className="no-contacts loading">Lädt Chats…</div>
             )}

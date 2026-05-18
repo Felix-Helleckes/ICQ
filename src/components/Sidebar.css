@@ -167,6 +167,17 @@
   background-image: var(--icq-list-bg);
 }
 
+.service-reconnecting {
+  margin: 8px 8px 2px 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(245, 196, 0, 0.7);
+  background: linear-gradient(90deg, rgba(245, 196, 0, 0.18), rgba(245, 196, 0, 0.06));
+  color: #f7e39a;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  letter-spacing: 0.2px;
+}
+
 .no-contacts {
   padding: 16px 12px;
   color: var(--icq-text-dim);

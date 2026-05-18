@@ -32,20 +32,6 @@ export default function App() {
   const activeServiceRef = React.useRef(activeService);
   useEffect(() => { activeServiceRef.current = activeService; }, [activeService]);
 
-  const withTimeout = async (promise, ms, fallback) => {
-    let timer;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise(resolve => {
-          timer = setTimeout(() => resolve(fallback), ms);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  };
-
   // Helper: write into the right cache and update visible list if active
   const setCacheAndChats = (service, list) => {
     const sorted = list.slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -218,37 +204,23 @@ export default function App() {
         // Restore cached profile
         if (waProfileRef.current) setMyProfile(waProfileRef.current);
         // Show cache immediately if available
-        if (waCacheRef.current) {
-          setChats(waCacheRef.current);
-          setChatsLoading(false);
-          // Silent refresh updates names/unreads after initial WA sync settles.
-          api.wa.getChats().then((fresh) => {
-            if (Array.isArray(fresh) && fresh.length) setCacheAndChats('whatsapp', fresh);
-          }).catch(() => {});
-          return;
-        }
+        if (waCacheRef.current) { setChats(waCacheRef.current); return; }
         setChatsLoading(true);
         const [chatsResult, profile] = await Promise.all([
-          withTimeout(api.wa.getChats().catch(() => []), 15000, []),
-          withTimeout(api.wa.getMyProfile().catch(() => null), 10000, null),
+          api.wa.getChats().catch(() => []),
+          api.wa.getMyProfile().catch(() => null),
         ]);
         if (profile) { waProfileRef.current = profile; setMyProfile(profile); }
         waCacheRef.current = (chatsResult || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
         setChats(waCacheRef.current);
         setChatsLoading(false);
-        // First WA connect: refresh names again shortly after startup (contacts resolve lazily).
-        setTimeout(() => {
-          api.wa.getChats().then((fresh) => {
-            if (Array.isArray(fresh) && fresh.length) setCacheAndChats('whatsapp', fresh);
-          }).catch(() => {});
-        }, 5000);
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
         if (tgProfileRef.current) setMyProfile(tgProfileRef.current);
-        if (tgCacheRef.current) { setChats(tgCacheRef.current); setChatsLoading(false); return; }
+        if (tgCacheRef.current) { setChats(tgCacheRef.current); return; }
         setChatsLoading(true);
         const [dialogs, me] = await Promise.all([
-          withTimeout(api.tg.getDialogs().catch(() => []), 12000, []),
-          withTimeout(api.tg.getMe().catch(() => null), 10000, null),
+          api.tg.getDialogs().catch(() => []),
+          api.tg.getMe().catch(() => null),
         ]);
         if (me) { tgProfileRef.current = me; setMyProfile(me); }
         tgCacheRef.current = (dialogs || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));

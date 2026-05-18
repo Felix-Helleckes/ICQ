@@ -287,7 +287,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     setMessageContext(null);
     const body = (msg?.body || '').trim();
     if (!body) return;
-    const quote = `> ${body.replace(/\n/g, '\n> ')}\n`;
+
+    // Include sender information for received messages
+    const senderInfo = msg.fromMe ? '' : `${msg.senderName || 'Unbekannt'}: `;
+    const quote = `> ${senderInfo}${body.replace(/\n/g, '\n> ')}\n`;
+
     setText(prev => (prev ? `${quote}${prev}` : quote));
     inputRef.current?.focus();
   };
