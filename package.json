@@ -18,9 +18,10 @@
     "react-start": "react-scripts start",
     "build": "react-scripts build",
     "electron": "electron .",
-    "dist": "npm run download-chrome && npm run build && electron-builder --publish never",
-    "dist:win": "npm run download-chrome && npm run build && electron-builder --win --publish never",
+    "dist": "npm run dist:portable",
+    "dist:win": "npm run dist:portable",
     "dist:portable": "npm run download-chrome && npm run build && electron-builder --win portable --publish never",
+    "dist:nsis": "npm run download-chrome && npm run build && electron-builder --win nsis --publish never",
     "dist:store": "npm run build && electron-builder --win appx --publish never",
     "download-chrome": "node scripts/download-chrome.js",
     "make-icon": "node scripts/make-icon.js"
@@ -78,12 +79,6 @@
     "extraResources": [],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
         {
           "target": "portable",
           "arch": [

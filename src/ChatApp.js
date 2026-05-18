@@ -33,7 +33,12 @@ export default function ChatApp({ chatId, chatName, service }) {
     for (const msg of incoming || []) {
       const id = msg?.id;
       if (id && indexById.has(String(id))) {
-        merged[indexById.get(String(id))] = { ...merged[indexById.get(String(id))], ...msg };
+        const idx = indexById.get(String(id));
+        const prev = merged[idx] || {};
+        const next = { ...prev, ...msg };
+        // Background refreshes may return mediaData=null; keep already loaded media.
+        if (prev.mediaData && (msg?.mediaData == null)) next.mediaData = prev.mediaData;
+        merged[idx] = next;
       } else {
         if (id) indexById.set(String(id), merged.length);
         merged.push(msg);
@@ -82,6 +87,28 @@ export default function ChatApp({ chatId, chatName, service }) {
       api.getStoredAvatar(chatId).then(a => { if (a) setChatAvatar(a); }).catch(() => {});
     }
   }, [chatId, markChatReadNow, service]);
+
+  useEffect(() => {
+    if (!api || !chatId || !service) return undefined;
+    let stopped = false;
+    const reconcile = async () => {
+      try {
+        const fresh = service === 'whatsapp'
+          ? await api.wa.getMessages(chatId, { limit: 40 })
+          : await api.tg.getMessages(chatId, { limit: 40 });
+        if (!stopped && Array.isArray(fresh) && fresh.length) {
+          setMessages(prev => mergeById(prev, fresh));
+        }
+      } catch (e) { /* keep UI responsive on transient bridge errors */ }
+    };
+    const warmup = setTimeout(reconcile, 2200);
+    const interval = setInterval(reconcile, 8000);
+    return () => {
+      stopped = true;
+      clearTimeout(warmup);
+      clearInterval(interval);
+    };
+  }, [chatId, mergeById, service]);
 
   useEffect(() => {
     if (service !== 'telegram' || !chatId) return undefined;
