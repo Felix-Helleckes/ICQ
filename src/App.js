@@ -75,7 +75,7 @@ export default function App() {
       startupSoundPlayedRef.current = true;
       try {
         const startupAudio = new Audio(process.env.PUBLIC_URL + '/sounds/Startup.wav');
-        startupAudio.volume = 0.6;
+        startupAudio.volume = 0.3;
         startupAudio.play().catch(() => {});
       } catch (e) {}
     }
