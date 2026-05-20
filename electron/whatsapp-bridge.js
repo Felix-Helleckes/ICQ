@@ -8,17 +8,26 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Logging helper: append to temp startup log for easier debugging across restarts
+const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
+function log(...args) {
+  const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`;
+  try { fs.appendFileSync(STARTUP_LOG, line + '\n'); } catch (e) {}
+  try { console.log(...args); } catch (e) {}
+}
+
 let client = null;
 let status = 'disconnected';
 let currentQR = null;
 let onAvatarCb = null;
 let lastDataDir = null;
+let lastClientId = null;
 let loadingWatchdog = null;
 let waRetryUsed = false;
 let waManualLogout = false; // true only when logout() was explicitly called — prevents auto-reconnect
 
-const WA_LOADING_TIMEOUT_MS = 90000;     // 90s startup budget (packaged app + Chrome cold start)
-const WA_POST_AUTH_TIMEOUT_MS = 45000;   // 45s post-auth: packaged apps need more time than dev
+const WA_LOADING_TIMEOUT_MS = 180000;     // 180s startup budget (packaged app + Chrome cold start)
+const WA_POST_AUTH_TIMEOUT_MS = 90000;   // 90s post-auth: packaged apps need more time than dev
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -61,22 +70,22 @@ function armLoadingWatchdog(reason) {
 }
 
 function cleanupStaleSessionLocks(dataDir) {
+  const lockNames = ['lockfile', 'SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'];
+  const waDir = path.join(dataDir, 'whatsapp');
+  // Clean all session-* subdirs (covers both default 'session' and clientId-based 'session-*')
+  const dirsToClean = [];
   try {
-    const sessionDir = path.join(dataDir, 'whatsapp', 'session');
-    const lockNames = [
-      'lockfile',
-      'SingletonLock',
-      'SingletonCookie',
-      'SingletonSocket',
-      'DevToolsActivePort',
-    ];
-    for (const name of lockNames) {
-      const fp = path.join(sessionDir, name);
-      if (fs.existsSync(fp)) {
-        try { fs.rmSync(fp, { force: true }); } catch (e) {}
-      }
+    const entries = fs.readdirSync(waDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (e.isDirectory() && e.name.startsWith('session')) dirsToClean.push(path.join(waDir, e.name));
     }
   } catch (e) {}
+  for (const sessionDir of dirsToClean) {
+    for (const name of lockNames) {
+      const fp = path.join(sessionDir, name);
+      if (fs.existsSync(fp)) { try { fs.rmSync(fp, { force: true }); } catch (e) {} }
+    }
+  }
 }
 
 const WA_CONNECTED_STATES = new Set(['CONNECTED', 'OPENING', 'PAIRING']);
@@ -171,19 +180,59 @@ function getDeviceIdentity() {
   const host = sanitizeToken(os.hostname());
   return {
     clientId: `retrogram-${platform}-${host}`,
-    browserName: `Retrogram (${platform})`,
-    deviceName: `Retrogram ${platform.toUpperCase()} ${host}`,
   };
 }
 
-function getPlatformUserAgent(platform) {
-  if (platform === 'win') {
-    return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
+function resolveClientIdForLocalAuth(dataDir) {
+  // If an existing session folder exists, reuse its clientId to preserve sessions across restarts.
+  try {
+    const waDir = path.join(dataDir, 'whatsapp');
+    const entries = fs.readdirSync(waDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name === 'session') return null; // legacy default session folder — no clientId
+      if (e.name.startsWith('session-')) return e.name.slice('session-'.length);
+    }
+  } catch (e) {
+    // ignore
   }
-  if (platform === 'mac') {
-    return 'Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
-  }
-  return 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Retrogram/1.0';
+  // No existing session found: return a stable id based on platform only (avoid hostname volatility)
+  return `retrogram-${getPlatformTag()}`;
+}
+
+function restoreFromBackups(dataDir) {
+  try {
+    const waDir = path.join(dataDir, 'whatsapp');
+    if (!fs.existsSync(waDir)) return;
+    const entries = fs.readdirSync(waDir, { withFileTypes: true });
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      const name = e.name;
+      const marker = '.corrupt-backup-';
+      if (!name.includes(marker)) continue;
+      // Original session folder name is the prefix before the marker
+      const sessionFolder = name.split(marker)[0];
+      const backupDir = path.join(waDir, name);
+      const targetDefault = path.join(waDir, sessionFolder, 'Default');
+      log('WA restore: found backup', backupDir, 'target', targetDefault);
+      try {
+        fs.mkdirSync(targetDefault, { recursive: true });
+        const files = fs.readdirSync(backupDir, { withFileTypes: true });
+        for (const f of files) {
+          const src = path.join(backupDir, f.name);
+          const dest = path.join(targetDefault, f.name.replace(/\s+/g, '_'));
+          if (fs.existsSync(dest)) {
+            log('WA restore: dest exists, skipping', dest);
+            continue;
+          }
+          try { fs.renameSync(src, dest); log('WA restore: moved', src, '->', dest); } catch (e) { try { fs.copyFileSync(src, dest); fs.rmSync(src, { force: true }); log('WA restore: copied then removed', src, '->', dest); } catch (err) { log('WA restore: failed to move/copy', src, String(err)); } }
+        }
+        // After moving files, remove backup dir if empty
+        try { const rem = fs.readdirSync(backupDir); if (rem.length === 0) fs.rmdirSync(backupDir); } catch (e) {}
+        broadcast('wa:backup-restored', { sessionFolder, path: targetDefault });
+      } catch (e) { log('WA restore error', String(e)); }
+    }
+  } catch (e) { log('WA restore scan error', String(e)); }
 }
 
 // Find a usable Chrome/Edge/Chromium on the host system.
@@ -267,6 +316,9 @@ function init(avatarCallback, dataDir, opts = {}) {
   lastDataDir = dataDir;
   if (!isRetry) waRetryUsed = false;
 
+  // Attempt to restore any previous corrupt-backup files before cleaning locks
+  restoreFromBackups(dataDir);
+
   // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
   cleanupStaleSessionLocks(dataDir);
 
@@ -286,22 +338,24 @@ function init(avatarCallback, dataDir, opts = {}) {
   }
 
   const isMac = process.platform === 'darwin';
-  const identity = getDeviceIdentity();
-  const userAgent = getPlatformUserAgent(getPlatformTag());
+  const resolvedClientId = resolveClientIdForLocalAuth(dataDir);
+  lastClientId = resolvedClientId;
+
+  const localAuthOpts = { dataPath: path.join(dataDir, 'whatsapp') };
+  if (resolvedClientId) localAuthOpts.clientId = resolvedClientId;
+
+  // Log init details for debugging session reuse issues
+  try {
+    const sessionFolder = resolvedClientId ? `session-${resolvedClientId}` : 'session';
+    log('WA init', { dataDir, resolvedClientId, sessionFolder, executablePath: executablePath || null });
+  } catch (e) { log('WA init log error', String(e)); }
 
   client = new Client({
-    authStrategy: new LocalAuth({
-      dataPath: path.join(dataDir, 'whatsapp'),
-      clientId: identity.clientId,
-    }),
-    browserName: identity.browserName,
-    deviceName: identity.deviceName,
-    userAgent,
+    authStrategy: new LocalAuth(localAuthOpts),
     puppeteer: {
       ...(executablePath ? { executablePath } : {}),
       headless: true,
       args: [
-        `--user-agent=${userAgent}`,
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
@@ -326,6 +380,7 @@ function init(avatarCallback, dataDir, opts = {}) {
     status = 'qr';
     clearLoadingWatchdog();
     broadcast('wa:qr', qr);
+    log('WA event', 'qr-generated');
   });
 
   client.on('authenticated', () => {
@@ -333,6 +388,7 @@ function init(avatarCallback, dataDir, opts = {}) {
     status = 'loading';
     broadcast('wa:status', 'loading');
     armLoadingWatchdog('post-auth');
+    log('WA event', 'authenticated');
   });
 
   client.on('ready', () => {
@@ -341,6 +397,8 @@ function init(avatarCallback, dataDir, opts = {}) {
     clearLoadingWatchdog();
     broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
+    startHealthCheck();
+    log('WA event', 'ready', { pushname: client.info?.pushname });
   });
 
   client.on('message', async (msg) => {
@@ -396,6 +454,7 @@ function init(avatarCallback, dataDir, opts = {}) {
   client.on('disconnected', (reason) => {
     clearLoadingWatchdog();
     console.warn('[WA disconnected]', reason);
+    log('WA event', 'disconnected', reason);
     if (waManualLogout) {
       // User explicitly logged out — don't reconnect
       status = 'disconnected';
@@ -420,18 +479,31 @@ function init(avatarCallback, dataDir, opts = {}) {
 
   client.on('auth_failure', (msg) => {
     console.error('[WA auth_failure]', msg);
+    log('WA event', 'auth_failure', msg);
     clearLoadingWatchdog();
-    // Clear corrupted session so user can scan QR again cleanly
+    // Attempt safe recovery: move suspicious storage files to a backup folder instead of deleting them.
     try {
-      const sessionDir = path.join(lastDataDir, 'whatsapp', 'session', 'Default');
+      const sessionBase = path.join(lastDataDir, 'whatsapp');
+      const sessionFolder = lastClientId ? `session-${lastClientId}` : 'session';
+      const sessionDir = path.join(sessionBase, sessionFolder, 'Default');
       if (fs.existsSync(sessionDir)) {
+        const backupDir = path.join(sessionBase, `${sessionFolder}.corrupt-backup-${Date.now()}`);
+        fs.mkdirSync(backupDir, { recursive: true });
         const files = ['Cookies', 'Local Storage', 'Session Storage', 'IndexedDB'];
         files.forEach(f => {
           const fp = path.join(sessionDir, f);
-          try { if (fs.existsSync(fp)) fs.rmSync(fp, { recursive: true, force: true }); } catch (e) {}
+          if (!fs.existsSync(fp)) return;
+          try {
+            const dest = path.join(backupDir, f.replace(/\s+/g, '_'));
+            fs.renameSync(fp, dest);
+            log('WA auth_failure: moved', fp, '->', dest);
+          } catch (e) {
+            try { fs.rmSync(fp, { recursive: true, force: true }); log('WA auth_failure: removed fallback', fp); } catch (err) { log('WA auth_failure: remove failed', fp, String(err)); }
+          }
         });
+        log('WA auth_failure: backup created', backupDir);
       }
-    } catch (e) {}
+    } catch (e) { log('WA auth_failure cleanup error', String(e)); }
     // Reinit to show QR again instead of stuck error screen
     client = null;
     currentQR = null;
@@ -451,17 +523,25 @@ function init(avatarCallback, dataDir, opts = {}) {
 }
 
 async function getQR() { return currentQR; }
-async function getStatus() {
-  if (status !== 'ready') return status;
-  if (!client) {
-    triggerRecovery('ready-without-client');
-    return status;
-  }
-  const state = await getClientStateSafe();
-  if (state && !WA_CONNECTED_STATES.has(String(state))) {
-    triggerRecovery(`state=${state}`);
-  }
+function getStatus() {
   return status;
+}
+
+// Background health check — runs every 30s, never blocks the poll path.
+let healthCheckTimer = null;
+function startHealthCheck() {
+  if (healthCheckTimer) return;
+  healthCheckTimer = setInterval(async () => {
+    if (status !== 'ready') return;
+    if (!client) { triggerRecovery('ready-without-client'); return; }
+    const state = await getClientStateSafe();
+    if (state && !WA_CONNECTED_STATES.has(String(state))) {
+      triggerRecovery(`health-check state=${state}`);
+    }
+  }, 30000);
+}
+function stopHealthCheck() {
+  if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
 }
 
 async function getChats() {
@@ -620,12 +700,14 @@ async function logout() {
 }
 
 async function shutdown() {
+  stopHealthCheck();
   clearLoadingWatchdog();
   try { if (client) await client.destroy(); } catch (e) {}
   status = 'disconnected';
 }
 
 function reconnect(dataDir) {
+  stopHealthCheck();
   clearLoadingWatchdog();
   const oldClient = client;
   client = null;

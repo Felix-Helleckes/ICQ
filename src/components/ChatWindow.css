@@ -399,7 +399,7 @@
   padding: 6px;
   display: flex;
   flex-wrap: wrap;
-  width: 220px;
+  width: 252px;
   gap: 2px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.6);
   z-index: 100;
@@ -408,10 +408,12 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
-  font-size: 1.3rem;
   cursor: pointer;
-  padding: 3px 4px;
+  padding: 3px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: background 0.1s;
 }
 .emoji-btn:hover { background: var(--icq-bg-light); border-color: var(--icq-border); }

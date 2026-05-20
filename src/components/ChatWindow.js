@@ -53,6 +53,31 @@ function AckIcon({ ack }) {
   return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
 }
 
+function emojiToTwemojiUrl(emoji) {
+  const cps = [];
+  for (const char of emoji) {
+    const cp = char.codePointAt(0);
+    if (cp !== undefined) cps.push(cp.toString(16));
+  }
+  return `https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/${cps.join('-')}.png`;
+}
+
+function TwemojiEmoji({ emoji, size = 22 }) {
+  const [err, setErr] = React.useState(false);
+  if (err) return <span style={{ fontSize: size * 0.85, lineHeight: 1 }}>{emoji}</span>;
+  return (
+    <img
+      src={emojiToTwemojiUrl(emoji)}
+      alt={emoji}
+      width={size}
+      height={size}
+      draggable={false}
+      style={{ verticalAlign: 'middle', display: 'inline-block' }}
+      onError={() => setErr(true)}
+    />
+  );
+}
+
 export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
   const [showEmoji, setShowEmoji] = useState(false);
@@ -68,6 +93,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const bottomRef = useRef(null);
   const inputRef  = useRef(null);
   const emojiRef  = useRef(null);
+  const emojiBtnRef = useRef(null);
 
   // Font-size (shared via localStorage with sidebar)
   const [fontSize, setFontSize] = useState(() => {
@@ -111,6 +137,8 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   useEffect(() => {
     if (!showEmoji) return;
     const onDown = (e) => {
+      // Don't close when clicking the toggle button itself — onClick handles that
+      if (emojiBtnRef.current?.contains(e.target)) return;
       if (emojiRef.current && !emojiRef.current.contains(e.target)) setShowEmoji(false);
     };
     document.addEventListener('mousedown', onDown);
@@ -241,7 +269,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const openMessageContext = (e, msg) => {
-    if (!msg?.fromMe) return;
     e.preventDefault();
     setMessageContext({ x: e.clientX, y: e.clientY, msg });
   };
@@ -442,16 +469,19 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
           <button className="toolbar-btn font-btn" title="Schrift größer" onClick={larger}>A+</button>
           <button className="toolbar-btn font-btn" title="Schrift kleiner" onClick={smaller}>A-</button>
           <button
+            ref={emojiBtnRef}
             className={`toolbar-btn${showEmoji ? ' active' : ''}`}
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
-          >😊</button>
+          ><TwemojiEmoji emoji="😊" size={18} /></button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
 
           {showEmoji && (
             <div className="emoji-picker" ref={emojiRef}>
               {EMOJIS.map(e => (
-                <button key={e} className="emoji-btn" onClick={() => insertEmoji(e)}>{e}</button>
+                <button key={e} className="emoji-btn" onClick={() => insertEmoji(e)} title={e}>
+                  <TwemojiEmoji emoji={e} size={24} />
+                </button>
               ))}
             </div>
           )}
