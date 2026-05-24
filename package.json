@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.32",
+  "version": "1.0.31",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
