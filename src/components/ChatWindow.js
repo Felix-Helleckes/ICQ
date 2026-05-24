@@ -83,6 +83,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
   const [messageContext, setMessageContext] = useState(null); // { x, y, msg }
   const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
@@ -227,6 +230,51 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const handleFileBtn = async () => {
     const filePath = await window.api?.openFileDialog?.();
     if (filePath) onSendFile?.(filePath);
+  };
+
+  const startRecording = async () => {
+    if (isRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mr = new MediaRecorder(stream);
+      const chunks = [];
+      mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      mr.onstop = async () => {
+        try {
+          const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/ogg' });
+          const array = await blob.arrayBuffer();
+          let base64 = '';
+          const bytes = new Uint8Array(array);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          base64 = btoa(binary);
+          const mime = blob.type || 'audio/ogg';
+          // Send to appropriate bridge based on chat.service
+          if (chat?.service === 'telegram') {
+            try { await window.api?.tg?.sendVoice?.(chat.id, base64, mime); } catch (e) { console.error('[tg sendVoice]', e); }
+          } else {
+            try { await window.api?.wa?.sendVoice?.(chat.id, base64, mime); } catch (e) { console.error('[wa sendVoice]', e); }
+          }
+        } catch (e) { console.error('[record stop]', e); }
+        // cleanup
+        try { streamRef.current?.getTracks()?.forEach(t => t.stop()); } catch (e) {}
+        streamRef.current = null;
+        recorderRef.current = null;
+        setIsRecording(false);
+      };
+      recorderRef.current = mr;
+      mr.start();
+      setIsRecording(true);
+    } catch (e) {
+      console.error('[startRecording]', e);
+      alert('Mikrofon-Zugriff benötigt');
+    }
+  };
+
+  const stopRecording = () => {
+    if (!isRecording) return;
+    try { recorderRef.current?.stop(); } catch (e) {}
   };
 
   const handlePaste = (e) => {
@@ -499,7 +547,14 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
             rows={2}
             style={{ fontSize: '0.80rem' }}
           />
-          <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <button
+              className={`win98-btn record-btn${isRecording ? ' active' : ''}`}
+              title={isRecording ? 'Stop Recording' : 'Voice Message'}
+              onClick={() => isRecording ? stopRecording() : startRecording()}
+            >{isRecording ? '■' : '🎤'}</button>
+            <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
+          </div>
         </div>
       </div>
 

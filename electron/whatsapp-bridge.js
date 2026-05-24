@@ -421,6 +421,23 @@ function init(avatarCallback, dataDir, opts = {}) {
       ack: msg.ack ?? 0,
       mediaData,
     });
+    // Also emit a chat-update so the UI can react immediately (ordering, lastMessage, archived)
+    try {
+      const chatId = msg.from || msg.to;
+        let archivedFlag = false;
+        try {
+          const ch = await client.getChatById(chatId);
+          archivedFlag = !!ch?.archived;
+        } catch (e) { /* ignore */ }
+        broadcast('wa:chat-update', {
+          id: chatId,
+          lastMessage: msg.body || '',
+          timestamp: msg.timestamp || Math.floor(Date.now()/1000),
+          unreadCount: undefined,
+          isGroup: msg.isGroup || false,
+          archived: archivedFlag,
+        });
+    } catch (e) {}
   });
 
   // Ausgehende Nachrichten (eigene) auch broadcasten für Badge-Update
@@ -437,6 +454,22 @@ function init(avatarCallback, dataDir, opts = {}) {
       ack: msg.ack ?? 0,
       mediaData: null,
     });
+    try {
+      const chatId = msg.to || msg.from;
+        let archivedFlag = false;
+        try {
+          const ch = await client.getChatById(chatId);
+          archivedFlag = !!ch?.archived;
+        } catch (e) { /* ignore */ }
+        broadcast('wa:chat-update', {
+          id: chatId,
+          lastMessage: msg.body || '',
+          timestamp: msg.timestamp || Math.floor(Date.now()/1000),
+          unreadCount: 0,
+          isGroup: msg.isGroup || false,
+          archived: archivedFlag,
+        });
+    } catch (e) {}
   });
 
   // Ack-Updates (gesendet/zugestellt/gelesen)
@@ -555,6 +588,7 @@ async function getChats() {
     timestamp: c.lastMessage?.timestamp || 0,
     unreadCount: c.unreadCount,
     isGroup: c.isGroup,
+    archived: !!c.archived,
     avatar: null,
   }));
   // Avatare im Hintergrund nachladen und einzeln broadcasten
@@ -610,7 +644,14 @@ async function getMessages(chatId, opts = {}) {
 
 async function sendMessage(chatId, text) {
   return runWithRecovery('sendMessage', async () => {
-    await client.sendMessage(chatId, text);
+    // If message contains a URL, disable automatic link preview generation
+    // to avoid waiting for preview fetching which can slow down send.
+    const URL_RE = /https?:\/\/[\S]+/i;
+    if (URL_RE.test(String(text || ''))) {
+      await client.sendMessage(chatId, text, { linkPreview: false });
+    } else {
+      await client.sendMessage(chatId, text);
+    }
     return true;
   });
 }
@@ -637,6 +678,17 @@ async function sendSticker(chatId, filePath) {
   const media = MessageMedia.fromFilePath(filePath);
   return runWithRecovery('sendSticker', async () => {
     await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
+    return true;
+  });
+}
+
+async function sendVoice(chatId, base64Data, mimeType) {
+  return runWithRecovery('sendVoice', async () => {
+    const { MessageMedia } = require('whatsapp-web.js');
+    const mt = mimeType || 'audio/ogg';
+    const filename = mt.includes('ogg') ? 'voice.ogg' : 'voice.webm';
+    const media = new MessageMedia(mt, String(base64Data || ''), filename);
+    await client.sendMessage(chatId, media, { sendAudioAsVoice: true });
     return true;
   });
 }
@@ -731,6 +783,7 @@ module.exports = {
   sendMessage,
   sendFile,
   sendSticker,
+  sendVoice,
   editMessage,
   deleteMessage,
   markChatRead,

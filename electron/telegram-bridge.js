@@ -197,6 +197,16 @@ function listenForMessages() {
       type,
       mediaData,
     });
+    try {
+      broadcast('tg:chat-update', {
+        id: chatId,
+        lastMessage: msg.message || '',
+        timestamp: msg.date || Math.floor(Date.now()/1000),
+        unreadCount: undefined,
+        isGroup: false,
+        archived: false,
+      });
+    } catch (e) {}
   }, new NewMessage({}));
 }
 
@@ -213,6 +223,7 @@ async function getDialogs() {
     timestamp: d.message?.date || 0,
     unreadCount: d.unreadCount,
     isGroup: d.isGroup || d.isChannel,
+    archived: Boolean(d.archived || d.isArchived || d.isHidden || false),
     avatar: null,
   }));
   // Avatare im Hintergrund nachladen
@@ -356,6 +367,20 @@ async function sendSticker(chatId, filePath) {
   }
 }
 
+async function sendVoice(chatId, base64Data, mimeType) {
+  if (status !== 'ready') throw new Error('Telegram not ready');
+  const buf = Buffer.from(base64Data || '', 'base64');
+  // GramJS sendFile supports voiceNote option
+  const msg = await tgClient.sendFile(toPeer(chatId), { file: buf, voiceNote: true });
+  return {
+    id: msg?.id?.toString?.() || null,
+    timestamp: msg?.date || Math.floor(Date.now() / 1000),
+    fromMe: true,
+    body: msg?.message || '',
+    type: 'ptt',
+  };
+}
+
 async function editMessage(chatId, messageId, newText) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   if (!messageId) throw new Error('Missing message id');
@@ -480,6 +505,7 @@ module.exports = {
   sendMessage,
   sendFile,
   sendSticker,
+  sendVoice,
   editMessage,
   deleteMessage,
   getRecentStickers,

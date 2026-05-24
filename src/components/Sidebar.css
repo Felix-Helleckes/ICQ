@@ -203,7 +203,7 @@
   gap: calc(7px * var(--contact-scale, 1));
   transition: background 0.1s;
 }
-.contact-item:hover   { background: var(--icq-bg-light); }
+.contact-item:hover { background: var(--icq-bg-light); }
 .contact-item.selected { background: linear-gradient(to right, var(--icq-teal-dark), var(--icq-bg-light)); }
 
 .contact-avatar {

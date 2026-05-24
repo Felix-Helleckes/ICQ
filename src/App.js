@@ -213,7 +213,8 @@ export default function App() {
           api.wa.getMyProfile().catch(() => null),
         ]);
         if (profile) { waProfileRef.current = profile; setMyProfile(profile); }
-        waCacheRef.current = (chatsResult || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        // Keep the order provided by the service (server-side ordering)
+        waCacheRef.current = (chatsResult || []).slice();
         setChats(waCacheRef.current);
         setChatsLoading(false);
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
@@ -225,7 +226,8 @@ export default function App() {
           api.tg.getMe().catch(() => null),
         ]);
         if (me) { tgProfileRef.current = me; setMyProfile(me); }
-        tgCacheRef.current = (dialogs || []).slice().sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        // Keep the order provided by the service (server-side ordering)
+        tgCacheRef.current = (dialogs || []).slice();
         setChats(tgCacheRef.current);
         setChatsLoading(false);
       } else {

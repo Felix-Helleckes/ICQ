@@ -37,6 +37,25 @@ function ContactItem({ chat, onSelect }) {
   );
 }
 
+function ArchivedSection({ archived, onSelect }) {
+  const [expanded, setExpanded] = useState(false);
+  const totalUnread = archived.reduce((s, c) => s + (c.unreadCount || 0), 0);
+  if (!archived || archived.length === 0) return null;
+  return (
+    <div className="group-section">
+      <div className="group-header" onClick={() => setExpanded(v => !v)}>
+        <span className="group-arrow">{expanded ? '▾' : '▸'}</span>
+        <span className="group-label">Archiviert</span>
+        {archived.length > 0 && <span className="group-count">({archived.length})</span>}
+        {totalUnread > 0 && <span className="group-unread-badge">{totalUnread}</span>}
+      </div>
+      {expanded && archived.map(chat => (
+        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+}
+
 function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead }) {
   const [expanded, setExpanded] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
@@ -104,7 +123,8 @@ export default function Sidebar({
     !search || (c.name || '').toLowerCase().includes(search.toLowerCase())
   );
   const groups   = filtered.filter(c => c.isGroup);
-  const contacts = filtered.filter(c => !c.isGroup);
+  const archived = filtered.filter(c => c.archived);
+  const contacts = filtered.filter(c => !c.isGroup && !c.archived);
 
   return (
     <div className="sidebar" style={{ '--contact-scale': contactScale ?? 1 }}>
@@ -195,6 +215,10 @@ export default function Sidebar({
                 onToggleGroupSound={onToggleGroupSound}
                 onMarkGroupsRead={onMarkGroupsRead}
               />
+            )}
+            {/* Collapsible archived section (like groups) */}
+            {!chatsLoading && archived.length > 0 && (
+              <ArchivedSection archived={archived} onSelect={onSelectChat} />
             )}
             {/* Direct chats */}
             {contacts.map(chat => (

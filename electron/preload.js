@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage: (chatId, text)  => ipcRenderer.invoke('wa:send-message', chatId, text),
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
     sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
+    sendVoice:   (chatId, base64, mime) => ipcRenderer.invoke('wa:send-voice', chatId, base64, mime),
     editMessage: (chatId, messageId, newText) => ipcRenderer.invoke('wa:edit-message', chatId, messageId, newText),
     deleteMessage: (chatId, messageId, forEveryone = true) => ipcRenderer.invoke('wa:delete-message', chatId, messageId, forEveryone),
     markRead:    (chatId)        => ipcRenderer.invoke('wa:mark-read', chatId),
@@ -28,6 +29,11 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_, data) => cb(data);
       ipcRenderer.on('wa:avatar', handler);
       return () => ipcRenderer.removeListener('wa:avatar', handler);
+    },
+    onChatUpdate: (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:chat-update', handler);
+      return () => ipcRenderer.removeListener('wa:chat-update', handler);
     },
     onMedia:     (cb)            => {
       const handler = (_, data) => cb(data);
@@ -56,6 +62,7 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage:  (chatId, text)     => ipcRenderer.invoke('tg:send-message', chatId, text),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
+    sendVoice:    (chatId, base64, mime) => ipcRenderer.invoke('tg:send-voice', chatId, base64, mime),
     editMessage:  (chatId, messageId, newText) => ipcRenderer.invoke('tg:edit-message', chatId, messageId, newText),
     deleteMessage:(chatId, messageId, revoke = true) => ipcRenderer.invoke('tg:delete-message', chatId, messageId, revoke),
     getRecentStickers: (limit)       => ipcRenderer.invoke('tg:get-recent-stickers', limit),
@@ -74,6 +81,11 @@ contextBridge.exposeInMainWorld('api', {
       const handler = (_, d) => cb(d);
       ipcRenderer.on('tg:avatar', handler);
       return () => ipcRenderer.removeListener('tg:avatar', handler);
+    },
+    onChatUpdate: (cb)               => {
+      const handler = (_, d) => cb(d);
+      ipcRenderer.on('tg:chat-update', handler);
+      return () => ipcRenderer.removeListener('tg:chat-update', handler);
     },
     onQR:         (cb)               => ipcRenderer.on('tg:qr',       (_, d) => cb(d)),
     onReady:      (cb)               => ipcRenderer.on('tg:ready',    (_, d) => cb(d)),
