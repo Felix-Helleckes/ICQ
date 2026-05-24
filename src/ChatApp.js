@@ -5,9 +5,10 @@ import './App.css';
 
 const api = window.api;
 
-export default function ChatApp({ chatId, chatName, service }) {
+export default function ChatApp({ chatId, chatName, service, isGroup }) {
   const [messages, setMessages] = useState([]);
   const [chatAvatar, setChatAvatar] = useState(null);
+  const [members, setMembers] = useState([]);
   const [isTyping, setIsTyping] = useState(false);
   const typingTimer = React.useRef(null);
   const latestTgMsgIdRef = React.useRef(0);
@@ -85,6 +86,25 @@ export default function ChatApp({ chatId, chatName, service }) {
     // Avatar aus Main-Process-Cache holen (wurde beim Öffnen des Chats gecacht)
     if (api?.getStoredAvatar && chatId) {
       api.getStoredAvatar(chatId).then(a => { if (a) setChatAvatar(a); }).catch(() => {});
+    }
+    // Load participants for groups
+    if (isGroup && api && chatId) {
+      (async () => {
+        try {
+          const list = service === 'whatsapp' ? await api.wa.getParticipants(chatId) : await api.tg.getParticipants(chatId);
+          const arr = Array.isArray(list) ? list : [];
+          // Fetch avatars for participants (cache-aware)
+          const withAvatars = await Promise.all(arr.map(async (m) => {
+            let avatar = null;
+            try {
+              if (service === 'whatsapp') avatar = await api.wa.getAvatar(m.id);
+              else avatar = await api.tg.getAvatar(m.id);
+            } catch (e) { avatar = null; }
+            return { ...m, avatar };
+          }));
+          setMembers(withAvatars);
+        } catch (e) { setMembers([]); }
+      })();
     }
   }, [chatId, markChatReadNow, service]);
 
@@ -294,7 +314,7 @@ export default function ChatApp({ chatId, chatName, service }) {
     <div className="app-root">
       <TitleBar title={`${service === 'whatsapp' ? 'WhatsApp' : 'Telegram'} — ${chatName || 'Chat'}`} />
       <ChatWindow
-        chat={{ id: chatId, name: chatName, service, avatar: chatAvatar }}
+        chat={{ id: chatId, name: chatName, service, avatar: chatAvatar, members, isGroup: !!isGroup }}
         messages={messages}
         onSend={sendMessage}
         onSendFile={sendFile}

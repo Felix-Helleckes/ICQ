@@ -693,6 +693,28 @@ async function sendVoice(chatId, base64Data, mimeType) {
   });
 }
 
+async function setArchive(chatId, archive) {
+  return runWithRecovery('setArchive', async () => {
+    try {
+      if (archive) await client.archiveChat(chatId);
+      else await client.unarchiveChat(chatId);
+      // Broadcast updated chat state
+      try {
+        const ch = await client.getChatById(chatId);
+        broadcast('wa:chat-update', {
+          id: chatId,
+          lastMessage: ch?.lastMessage?.body || '',
+          timestamp: ch?.lastMessage?.timestamp || Math.floor(Date.now()/1000),
+          unreadCount: ch?.unreadCount,
+          isGroup: ch?.isGroup || false,
+          archived: !!ch?.archived,
+        });
+      } catch (e) {}
+    } catch (e) { throw e; }
+    return true;
+  });
+}
+
 async function editMessage(chatId, messageId, newText) {
   return runWithRecovery('editMessage', async () => {
     if (!messageId) throw new Error('Missing message id');
@@ -725,6 +747,36 @@ async function getMyProfile() {
   } catch (e) {
     return { name: client.info?.pushname || 'Me', avatar: null };
   }
+}
+
+async function getParticipants(chatId) {
+  if (status !== 'ready') return [];
+  try {
+    const ch = await client.getChatById(chatId);
+    const parts = [];
+    // whatsapp-web.js may expose participants in several ways
+    const list = ch?.participants || ch?.groupMetadata?.participants || [];
+    for (const p of list) {
+      try {
+        // p can be Contact objects or IDs
+        let id = null;
+        if (p?.id) id = p.id?._serialized || p.id;
+        else if (typeof p === 'string') id = p;
+        else if (p?._serialized) id = p._serialized;
+        if (!id) continue;
+        const contact = await client.getContactById(id).catch(() => null);
+        const isOnline = !!(contact?.isOnline || contact?.presence === 'online' || contact?.presence?.lastKnownPresence === 'online');
+        parts.push({
+          id: id,
+          name: contact?.pushname || contact?.name || (contact ? `${contact?.number || ''}` : id),
+          pushname: contact?.pushname || null,
+          isAdmin: !!(p?.isAdmin || (p?.admin === true)),
+          online: isOnline,
+        });
+      } catch (e) {}
+    }
+    return parts;
+  } catch (e) { return []; }
 }
 
 async function getContactAvatar(id) {
@@ -784,11 +836,13 @@ module.exports = {
   sendFile,
   sendSticker,
   sendVoice,
+  setArchive,
   editMessage,
   deleteMessage,
   markChatRead,
   getMyProfile,
   getContactAvatar,
+  getParticipants,
   logout,
   reconnect,
   shutdown,

@@ -381,6 +381,60 @@ async function sendVoice(chatId, base64Data, mimeType) {
   };
 }
 
+async function setArchive(chatId, archive) {
+  if (status !== 'ready') return false;
+  const { Api } = require('telegram');
+  try {
+    // Try to obtain an InputPeer for the target chat
+    let inputPeer = null;
+    try {
+      if (typeof tgClient.getInputEntity === 'function') {
+        inputPeer = await tgClient.getInputEntity(toPeer(chatId));
+      } else if (typeof tgClient.getEntity === 'function') {
+        const ent = await tgClient.getEntity(toPeer(chatId));
+        // GramJS entities are acceptable as peer in many API calls
+        inputPeer = ent;
+      }
+    } catch (e) {
+      inputPeer = null;
+    }
+
+    // Fallback: try to build a simple InputPeerUser/Channel/Chat where possible
+    if (!inputPeer) {
+      const idNum = Number(chatId);
+      if (idNum < 0) {
+        // channel/group (negative ids in our mapping are already stringified)
+        try { inputPeer = new Api.InputPeerChannel({ channelId: BigInt(Math.abs(idNum)), accessHash: BigInt(0) }); } catch (e) { inputPeer = null; }
+      } else {
+        try { inputPeer = new Api.InputPeerUser({ userId: BigInt(idNum), accessHash: BigInt(0) }); } catch (e) { inputPeer = null; }
+      }
+    }
+
+    if (!inputPeer) {
+      console.warn('[tg setArchive] could not resolve input peer for', chatId);
+      return false;
+    }
+
+    // Folder id 1 is the Archive folder in Telegram's UI; 0 removes from folders
+    const folderId = archive ? 1 : 0;
+    // Construct folderPeers parameter. Use plain object form which GramJS can accept.
+    const folderPeers = [{ folderId, peer: inputPeer }];
+    try {
+      await tgClient.invoke(new Api.folders.EditPeerFolders({ folderPeers }));
+      // Broadcast an updated chat state so UI can refresh
+      broadcast('tg:chat-update', { id: String(chatId), archived: !!archive });
+      return true;
+    } catch (e) {
+      // Some servers or client setups might reject EditPeerFolders; log and return false
+      console.error('[tg setArchive invoke EditPeerFolders]', e?.message || e);
+      return false;
+    }
+  } catch (err) {
+    console.error('[tg setArchive]', err?.message || err);
+    return false;
+  }
+}
+
 async function editMessage(chatId, messageId, newText) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   if (!messageId) throw new Error('Missing message id');
@@ -452,6 +506,39 @@ async function getRecentStickers(limit = 24) {
   return out;
 }
 
+async function getParticipants(chatId) {
+  if (status !== 'ready') return [];
+  const { Api } = require('telegram');
+  try {
+    // Try high-level helper if available
+    if (typeof tgClient.getParticipants === 'function') {
+      const list = await tgClient.getParticipants(toPeer(chatId), { limit: 200 });
+      return (list || []).map(p => ({
+        id: p.userId?.toString?.() || String(p.user?.id || ''),
+        name: `${p.user?.firstName || ''} ${p.user?.lastName || ''}`.trim(),
+        isAdmin: !!p.rank,
+        online: !!(p.user?.status && String((p.user.status && p.user.status.className) || '').includes('UserStatusOnline')),
+      }));
+    }
+    // Fallback: try messages.GetFullChat for small groups
+    try {
+      const full = await tgClient.invoke(new Api.messages.GetFullChat({ chatId: Number(chatId) }));
+      const users = (full?.users || []).map(u => ({
+        id: String(u.id),
+        name: `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+        isAdmin: false,
+        online: !!(u.status && String((u.status && u.status.className) || '').includes('UserStatusOnline')),
+      }));
+      return users;
+    } catch (e) {
+      return [];
+    }
+  } catch (err) {
+    console.error('[tg getParticipants]', err?.message || err);
+    return [];
+  }
+}
+
 async function markChatRead(chatId) {
   if (status !== 'ready') return;
   try {
@@ -506,6 +593,8 @@ module.exports = {
   sendFile,
   sendSticker,
   sendVoice,
+  setArchive,
+  getParticipants,
   editMessage,
   deleteMessage,
   getRecentStickers,

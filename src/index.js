@@ -15,6 +15,7 @@ if (params.get('mode') === 'chat') {
         chatId={params.get('chatId')}
         chatName={params.get('chatName')}
         service={params.get('service')}
+        isGroup={params.get('isGroup') === '1'}
       />
     </React.StrictMode>
   );

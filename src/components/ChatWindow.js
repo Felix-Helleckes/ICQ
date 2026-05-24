@@ -80,6 +80,11 @@ function TwemojiEmoji({ emoji, size = 22 }) {
 
 export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
+  const [groupWidth, setGroupWidth] = useState(() => {
+    const v = parseInt(localStorage.getItem('group-members-width') || '220', 10);
+    return Number.isFinite(v) ? v : 220;
+  });
+  const resizingRef = useRef(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -87,7 +92,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
-  const [messageContext, setMessageContext] = useState(null); // { x, y, msg }
+  // messageContext removed: use native context menu via main process
   const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
   const [forwardDialog, setForwardDialog] = useState({ open: false, msg: null, chats: [], loading: false, query: '' });
   // Resizable split: inputHeight in px (min 80, max 400)
@@ -113,6 +118,13 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   // Resizable divider drag
   useEffect(() => {
     const onMouseMove = (e) => {
+      if (resizingRef.current) {
+        const win = document.querySelector('.chat-window')?.getBoundingClientRect();
+        if (!win) return;
+        const newW = Math.max(140, Math.min(420, e.clientX - win.left));
+        setGroupWidth(newW);
+        return;
+      }
       if (!dividerDragRef.current) return;
       const container = dividerDragRef.current.closest('.chat-window');
       if (!container) return;
@@ -125,6 +137,42 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     window.addEventListener('mouseup', onMouseUp);
     return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp); };
   }, []);
+
+  useEffect(() => {
+    const onMouseUp = () => { if (resizingRef.current) { resizingRef.current = false; localStorage.setItem('group-members-width', String(groupWidth)); } };
+    const onMouseMove = (e) => {
+      if (!resizingRef.current) return;
+      const win = document.querySelector('.chat-window')?.getBoundingClientRect();
+      if (!win) return;
+      const newW = Math.max(140, Math.min(420, e.clientX - win.left));
+      setGroupWidth(newW);
+    };
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('mousemove', onMouseMove);
+    return () => { window.removeEventListener('mouseup', onMouseUp); window.removeEventListener('mousemove', onMouseMove); };
+  }, [groupWidth]);
+
+  const startResizing = (e) => { e.preventDefault(); resizingRef.current = true; };
+
+  const handleMemberClick = (member) => {
+    // open a chat/profile for this user
+    if (!member || !member.id) return;
+    const svc = chat?.service || 'whatsapp';
+    api.openChat({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null });
+  };
+
+  const getSenderName = (msg) => {
+    if (!msg) return 'Unbekannt';
+    if (msg.fromMe) return 'Du';
+    if (msg.senderName) return msg.senderName;
+    if (msg.author) return msg.author;
+    const fromId = String(msg.from || msg.sender || msg.participant || msg.author || '');
+    if (chat?.members && fromId) {
+      const found = chat.members.find(m => String(m.id) === fromId || String(m.id) === String(msg.participant) || String(m.id) === String(msg.sender));
+      if (found) return found.name || found.pushname || found.id;
+    }
+    return msg.pushName || msg.pushname || fromId || 'Unbekannt';
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -177,28 +225,29 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
           setEditDialog({ open: false, msg: null, text: '' });
           return;
         }
-        if (messageContext) {
-          setMessageContext(null);
-          return;
-        }
         e.preventDefault();
         window.api?.window?.close?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [clipboardImage, editDialog.open, forwardDialog.open, lightbox, messageContext]);
+  }, [clipboardImage, editDialog.open, forwardDialog.open, lightbox]);
 
+  // Listen for native message context actions from main process
   useEffect(() => {
-    if (!messageContext) return undefined;
-    const close = () => setMessageContext(null);
-    window.addEventListener('mousedown', close);
-    window.addEventListener('scroll', close, true);
-    return () => {
-      window.removeEventListener('mousedown', close);
-      window.removeEventListener('scroll', close, true);
+    const handler = (d) => {
+      if (!d || !d.action) return;
+      const msg = messages.find(m => String(m.id) === String(d.msgId));
+      if (!msg) return;
+      if (d.action === 'copy') handleCopyMessage(msg);
+      if (d.action === 'reply') handleReplyMessage(msg);
+      if (d.action === 'forward') handleForwardMessage(msg);
+      if (d.action === 'edit') handleEditMessage(msg);
+      if (d.action === 'delete') handleDeleteMessage(msg, true);
     };
-  }, [messageContext]);
+    const off = window.api?.onMessageContextAction?.((d) => handler(d));
+    return () => { if (off) off(); };
+  }, [messages]);
 
   const handleSend = () => {
     if (!text.trim()) return;
@@ -214,7 +263,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       if (lightbox) { setLightbox(null); return; }
       if (forwardDialog.open) { setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' }); return; }
       if (editDialog.open) { setEditDialog({ open: false, msg: null, text: '' }); return; }
-      if (messageContext) { setMessageContext(null); return; }
       window.api?.window?.close?.();
       return;
     }
@@ -318,13 +366,13 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
 
   const openMessageContext = (e, msg) => {
     e.preventDefault();
-    setMessageContext({ x: e.clientX, y: e.clientY, msg });
+    e.stopPropagation();
+    if (window.api?.showMessageContext) window.api.showMessageContext({ chatId: chat.id, msg, service: chat.service });
   };
 
   const canEditMessage = (msg) => Boolean(msg?.id && msg?.fromMe && msg?.type === 'text' && (msg?.body || '').trim());
 
   const handleEditMessage = (msg) => {
-    setMessageContext(null);
     if (!canEditMessage(msg)) return;
     const initial = msg.body || '';
     setEditDialog({ open: true, msg, text: initial });
@@ -343,7 +391,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const handleDeleteMessage = async (msg, forEveryone) => {
-    setMessageContext(null);
     if (!msg?.fromMe || !msg?.id) return;
     const text = forEveryone ? 'Diese Nachricht fuer alle loeschen?' : 'Diese Nachricht nur fuer dich loeschen?';
     if (!window.confirm(text)) return;
@@ -351,7 +398,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const handleCopyMessage = async (msg) => {
-    setMessageContext(null);
     const value = (msg?.body || '').trim() || `[${msg?.type || 'message'}]`;
     try {
       await navigator.clipboard.writeText(value);
@@ -359,7 +405,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const handleReplyMessage = (msg) => {
-    setMessageContext(null);
     const body = (msg?.body || '').trim();
     if (!body) return;
 
@@ -372,7 +417,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const handleForwardMessage = async (msg) => {
-    setMessageContext(null);
     if (!msg?.body?.trim()) return;
     setForwardDialog({ open: true, msg, chats: [], loading: true, query: '' });
     try {
@@ -423,12 +467,27 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   }
 
   return (
-    <div
-      className={`chat-window${isDragging ? ' drag-over' : ''}`}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <div className={`chat-window${isDragging ? ' drag-over' : ''}`}>
+      <div className="chat-layout">
+        {chat?.isGroup && Array.isArray(chat?.members) && (
+          <div className="group-members" style={{ width: groupWidth }}>
+            <div className="group-members-title">Mitglieder</div>
+            <div className="group-members-list">
+              {chat.members.map(m => (
+                <div key={m.id} className="member-item" onClick={() => handleMemberClick(m)} title={m.name || m.id}>
+                  <div className="member-avatar">{m.avatar ? <img src={m.avatar} alt="" /> : (m.name||'?')[0]}</div>
+                  <div className="member-name">{m.name || m.pushname || m.id}</div>
+                  <div className="member-badges">
+                    {m.isAdmin && <span className="badge admin" title="Admin">★</span>}
+                    {m.online && <span className="badge online" title="Online">●</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="members-resizer" onMouseDown={startResizing} />
+          </div>
+        )}
+        <div className="chat-main" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
       {/* Drag overlay */}
       {isDragging && (
         <div className="drag-overlay">
@@ -450,7 +509,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
           </div>
         </div>
       </div>
-
       {/* Message area */}
       <div className="message-area win98-sunken">
         {messages.map((msg, i) => {
@@ -465,6 +523,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
               </div>
             )}
           <div className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
+            {chat?.isGroup && !msg.fromMe && (
+              <div className="message-author">{getSenderName(msg)}</div>
+            )}
             <div className="message-bubble" onContextMenu={(e) => openMessageContext(e, msg)}>
               {msg.mediaData
                 ? (msg.type === 'ptt' || msg.type === 'audio')
@@ -503,6 +564,8 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
         })}
         <div ref={bottomRef} />
       </div>
+      </div>
+    </div>
 
       {/* Resizable divider */}
       <div
@@ -572,38 +635,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
         </div>
       )}
 
-      {messageContext && (
-        <div
-          className="message-context-menu"
-          style={{ left: messageContext.x, top: messageContext.y }}
-          onMouseDown={e => e.stopPropagation()}
-        >
-          <button className="message-context-item" onClick={() => handleCopyMessage(messageContext.msg)}>
-            Copy
-          </button>
-          {!!(messageContext.msg?.body || '').trim() && (
-            <button className="message-context-item" onClick={() => handleReplyMessage(messageContext.msg)}>
-              Reply
-            </button>
-          )}
-          {!!(messageContext.msg?.body || '').trim() && (
-            <button className="message-context-item" onClick={() => handleForwardMessage(messageContext.msg)}>
-              Forward
-            </button>
-          )}
-          {canEditMessage(messageContext.msg) && (
-            <button className="message-context-item" onClick={() => handleEditMessage(messageContext.msg)}>
-              Edit Message
-            </button>
-          )}
-          <button className="message-context-item danger" onClick={() => handleDeleteMessage(messageContext.msg, true)}>
-            {deleteForAllLabel}
-          </button>
-          <button className="message-context-item" onClick={() => handleDeleteMessage(messageContext.msg, false)}>
-            {deleteForMeLabel}
-          </button>
-        </div>
-      )}
+      {/* native context menu is used instead of in-UI menu */}
 
       {editDialog.open && (
         <div className="lightbox-overlay" onClick={() => setEditDialog({ open: false, msg: null, text: '' })}>

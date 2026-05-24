@@ -140,9 +140,9 @@ function createContactListWindow() {
 }
 
 // Chat window logic
-function createChatWindow(chatId, chatName, service, avatar) {
+function createChatWindow(chatId, chatName, service, avatar, isGroup) {
   const chatWin = new BrowserWindow({
-    width:    520,
+    width:    isGroup ? 900 : 520,
     height:   440,
     minWidth: 380,
     minHeight: 300,
@@ -157,7 +157,7 @@ function createChatWindow(chatId, chatName, service, avatar) {
     },
     title: chatName || 'Chat',
   });
-  const params = new URLSearchParams({ mode: 'chat', chatId, chatName: chatName || '', service }).toString();
+  const params = new URLSearchParams({ mode: 'chat', chatId, chatName: chatName || '', service, isGroup: isGroup ? '1' : '0' }).toString();
   chatWin.loadURL(devUrl(params));
   wireWindowDiagnostics(chatWin, `chat-${chatId}`);
   wireExternalLinks(chatWin);
@@ -212,14 +212,14 @@ app.on('second-instance', () => {
   }
 });
 
-ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar }) => {
+ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar, isGroup }) => {
   if (avatar) avatarStore.set(chatId, avatar);
   // Focus existing window if already open
   if (chatWindows.has(chatId)) {
     const existing = chatWindows.get(chatId);
     if (!existing.isDestroyed()) { existing.focus(); return; }
   }
-  createChatWindow(chatId, chatName, service, avatar);
+  createChatWindow(chatId, chatName, service, avatar, !!isGroup);
 });
 
 // ── IPC: WhatsApp ─────────────────────────────────────────────
@@ -255,12 +255,14 @@ ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMes
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));
 ipcMain.handle('wa:send-voice',   async (e, id, base64, mime) => whatsappBridge.sendVoice(id, base64, mime));
+ipcMain.handle('wa:set-archive',  async (e, id, archive) => whatsappBridge.setArchive(id, archive));
 ipcMain.handle('wa:edit-message', async (e, chatId, messageId, newText) => whatsappBridge.editMessage(chatId, messageId, newText));
 ipcMain.handle('wa:delete-message', async (e, chatId, messageId, forEveryone) => whatsappBridge.deleteMessage(chatId, messageId, forEveryone));
 ipcMain.handle('wa:mark-read',    async (e, id)        => whatsappBridge.markChatRead(id));
 ipcMain.handle('wa:status',       async ()             => whatsappBridge.getStatus());
 ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyProfile());
 ipcMain.handle('wa:get-avatar',   async (e, id)        => whatsappBridge.getContactAvatar(id));
+ipcMain.handle('wa:get-participants', async (e, id)     => whatsappBridge.getParticipants(id));
 ipcMain.handle('wa:logout',       async ()             => whatsappBridge.logout());
 
 // ── IPC: Telegram ─────────────────────────────────────────────
@@ -274,6 +276,46 @@ ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridg
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
 ipcMain.handle('tg:send-voice',     async (e, chatId, base64, mime) => telegramBridge.sendVoice(chatId, base64, mime));
+ipcMain.handle('tg:set-archive',   async (e, chatId, archive) => telegramBridge.setArchive(chatId, archive));
+
+ipcMain.handle('tg:get-participants', async (e, chatId) => telegramBridge.getParticipants(chatId));
+
+ipcMain.handle('show-contact-context', async (e, { id, service, archived, name }) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const { Menu, MenuItem } = require('electron');
+  const menu = new Menu();
+  menu.append(new MenuItem({ label: name || id, enabled: false }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({
+    label: archived ? 'Archivierung rückgängig' : 'Archivieren',
+    click: async () => {
+      try {
+        if (service === 'whatsapp') await whatsappBridge.setArchive(id, !archived);
+        else if (service === 'telegram') await telegramBridge.setArchive(id, !archived);
+      } catch (err) { console.error('[setArchive]', err); }
+    }
+  }));
+  menu.popup({ window: win });
+});
+
+ipcMain.handle('show-message-context', async (e, { chatId, msg, service }) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  const { Menu, MenuItem } = require('electron');
+  const menu = new Menu();
+  menu.append(new MenuItem({ label: (msg?.body || '').slice(0, 80) || (msg?.type || 'Message'), enabled: false }));
+  menu.append(new MenuItem({ type: 'separator' }));
+  menu.append(new MenuItem({ label: 'Kopieren', click: () => e.sender.send('message-context-action', { action: 'copy', msgId: msg?.id, chatId, service }) }));
+  if ((msg?.body || '').trim()) {
+    menu.append(new MenuItem({ label: 'Antworten', click: () => e.sender.send('message-context-action', { action: 'reply', msgId: msg?.id, chatId, service }) }));
+    menu.append(new MenuItem({ label: 'Weiterleiten', click: () => e.sender.send('message-context-action', { action: 'forward', msgId: msg?.id, chatId, service }) }));
+  }
+  if (msg?.fromMe) {
+    menu.append(new MenuItem({ type: 'separator' }));
+    menu.append(new MenuItem({ label: 'Bearbeiten', click: () => e.sender.send('message-context-action', { action: 'edit', msgId: msg?.id, chatId, service }) }));
+    menu.append(new MenuItem({ label: 'Löschen', click: () => e.sender.send('message-context-action', { action: 'delete', msgId: msg?.id, chatId, service }) }));
+  }
+  menu.popup({ window: win });
+});
 ipcMain.handle('tg:edit-message',   async (e, chatId, messageId, newText) => telegramBridge.editMessage(chatId, messageId, newText));
 ipcMain.handle('tg:delete-message', async (e, chatId, messageId, revoke)  => telegramBridge.deleteMessage(chatId, messageId, revoke));
 ipcMain.handle('tg:get-recent-stickers', async (e, limit)       => telegramBridge.getRecentStickers(limit));

@@ -17,9 +17,14 @@ function statusLabel(s) {
   }[s] || s;
 }
 
-function ContactItem({ chat, onSelect }) {
+function ContactItem({ chat, onSelect, service }) {
+  const handleContext = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (window.api?.showContactContext) window.api.showContactContext({ id: chat.id, service, archived: !!chat.archived, name: chat.name });
+  };
   return (
-    <div className="contact-item" onClick={() => onSelect(chat)}>
+    <div className="contact-item" onClick={() => onSelect(chat)} onContextMenu={handleContext}>
       <div className="contact-avatar">
         {chat.avatar
           ? <img src={chat.avatar} alt={chat.name} className="contact-avatar-img" />
@@ -37,7 +42,7 @@ function ContactItem({ chat, onSelect }) {
   );
 }
 
-function ArchivedSection({ archived, onSelect }) {
+function ArchivedSection({ archived, onSelect, service }) {
   const [expanded, setExpanded] = useState(false);
   const totalUnread = archived.reduce((s, c) => s + (c.unreadCount || 0), 0);
   if (!archived || archived.length === 0) return null;
@@ -50,13 +55,13 @@ function ArchivedSection({ archived, onSelect }) {
         {totalUnread > 0 && <span className="group-unread-badge">{totalUnread}</span>}
       </div>
       {expanded && archived.map(chat => (
-        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} />
+        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} />
       ))}
     </div>
   );
 }
 
-function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead }) {
+function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead, service }) {
   const [expanded, setExpanded] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
   const totalUnread = groups.reduce((s, c) => s + (c.unreadCount || 0), 0);
@@ -83,7 +88,7 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMark
         >{groupSound ? '🔔' : '🔕'}</button>
       </div>
       {expanded && groups.map(chat => (
-        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} />
+        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} />
       ))}
       {ctxMenu && (
         <>
@@ -122,7 +127,7 @@ export default function Sidebar({
   const filtered = chats.filter(c =>
     !search || (c.name || '').toLowerCase().includes(search.toLowerCase())
   );
-  const groups   = filtered.filter(c => c.isGroup);
+  const groups   = filtered.filter(c => c.isGroup && !c.archived);
   const archived = filtered.filter(c => c.archived);
   const contacts = filtered.filter(c => !c.isGroup && !c.archived);
 
@@ -214,15 +219,16 @@ export default function Sidebar({
                 groupSound={groupSound}
                 onToggleGroupSound={onToggleGroupSound}
                 onMarkGroupsRead={onMarkGroupsRead}
+                service={activeService}
               />
             )}
             {/* Collapsible archived section (like groups) */}
             {!chatsLoading && archived.length > 0 && (
-              <ArchivedSection archived={archived} onSelect={onSelectChat} />
+              <ArchivedSection archived={archived} onSelect={onSelectChat} service={activeService} />
             )}
             {/* Direct chats */}
             {contacts.map(chat => (
-              <ContactItem key={chat.id} chat={chat} onSelect={onSelectChat} />
+              <ContactItem key={chat.id} chat={chat} onSelect={onSelectChat} service={activeService} />
             ))}
           </div>
         </>

@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
     sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
     sendVoice:   (chatId, base64, mime) => ipcRenderer.invoke('wa:send-voice', chatId, base64, mime),
+    getParticipants: (chatId) => ipcRenderer.invoke('wa:get-participants', chatId),
     editMessage: (chatId, messageId, newText) => ipcRenderer.invoke('wa:edit-message', chatId, messageId, newText),
     deleteMessage: (chatId, messageId, forEveryone = true) => ipcRenderer.invoke('wa:delete-message', chatId, messageId, forEveryone),
     markRead:    (chatId)        => ipcRenderer.invoke('wa:mark-read', chatId),
@@ -40,6 +41,13 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('wa:media', handler);
       return () => ipcRenderer.removeListener('wa:media', handler);
     },
+    showContactContext: (info) => ipcRenderer.invoke('show-contact-context', info),
+    showMessageContext: (info) => ipcRenderer.invoke('show-message-context', info),
+    onMessageContextAction: (cb) => {
+      const handler = (_, d) => cb(d);
+      ipcRenderer.on('message-context-action', handler);
+      return () => ipcRenderer.removeListener('message-context-action', handler);
+    },
     onAck:       (cb)            => {
       const handler = (_, data) => cb(data);
       ipcRenderer.on('wa:ack', handler);
@@ -63,6 +71,7 @@ contextBridge.exposeInMainWorld('api', {
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
     sendVoice:    (chatId, base64, mime) => ipcRenderer.invoke('tg:send-voice', chatId, base64, mime),
+    getParticipants: (chatId) => ipcRenderer.invoke('tg:get-participants', chatId),
     editMessage:  (chatId, messageId, newText) => ipcRenderer.invoke('tg:edit-message', chatId, messageId, newText),
     deleteMessage:(chatId, messageId, revoke = true) => ipcRenderer.invoke('tg:delete-message', chatId, messageId, revoke),
     getRecentStickers: (limit)       => ipcRenderer.invoke('tg:get-recent-stickers', limit),
@@ -105,6 +114,14 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_, d) => cb(d);
     ipcRenderer.on('chat:read-broadcast', handler);
     return () => ipcRenderer.removeListener('chat:read-broadcast', handler);
+  },
+  // Native context menu helpers (top-level for convenience)
+  showContactContext: (info) => ipcRenderer.invoke('show-contact-context', info),
+  showMessageContext: (info) => ipcRenderer.invoke('show-message-context', info),
+  onMessageContextAction: (cb) => {
+    const handler = (_, d) => cb(d);
+    ipcRenderer.on('message-context-action', handler);
+    return () => ipcRenderer.removeListener('message-context-action', handler);
   },
   // Window controls
   window: {

@@ -243,7 +243,7 @@ export default function App() {
     patchChat(activeService, chat.id, { unreadCount: 0 });
     if (activeService === 'whatsapp') api?.wa.markRead?.(chat.id).catch(() => {});
     else api?.tg.markRead?.(chat.id).catch(() => {});
-    api?.openChat({ chatId: chat.id, chatName: chat.name || chat.id, service: activeService, avatar: chat.avatar || null });
+    api?.openChat({ chatId: chat.id, chatName: chat.name || chat.id, service: activeService, avatar: chat.avatar || null, isGroup: !!chat.isGroup });
   };
 
   const sendFromSidebar = (chatId, text) => {

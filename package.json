@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -58,7 +58,7 @@
   "build": {
     "appId": "com.icqmessenger.app",
     "productName": "ICQ Messenger",
-    "copyright": "Copyright © 2026",
+    "copyright": "Copyright © Felix Helleckes2026",
     "publish": null,
     "asar": true,
     "asarUnpack": [
