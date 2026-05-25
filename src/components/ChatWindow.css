@@ -152,6 +152,11 @@
   font-weight: 600;
 }
 
+.message-author-row { display:flex; align-items:center; gap:8px; margin: 0 6px 4px 6px; }
+.message-author-avatar { width:28px; height:28px; border-radius:4px; overflow:hidden; background:linear-gradient(135deg,var(--icq-teal),var(--icq-teal-dark)); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; }
+.message-author-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
+.author-initial { font-size:12px; padding: 2px 4px; }
+
 .message-bubble {
   max-width: 78%;
   padding: 5px 9px;

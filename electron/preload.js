@@ -132,6 +132,10 @@ contextBridge.exposeInMainWorld('api', {
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
+  readFileDataUrl: (filePath) => ipcRenderer.invoke('app:read-file-dataurl', filePath),
+  setStoredAvatar: (id, dataUrl) => ipcRenderer.invoke('set-stored-avatar', id, dataUrl),
+  setStoredParticipants: (chatId, participants) => ipcRenderer.invoke('set-stored-participants', chatId, participants),
+  getStoredParticipants: (chatId) => ipcRenderer.invoke('get-stored-participants', chatId),
   appVersion: process.env.npm_package_version || require('../package.json').version,
   // Get real file system path from a dropped File object (Electron 29+)
   getFilePath: (file) => {

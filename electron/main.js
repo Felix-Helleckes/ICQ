@@ -60,6 +60,7 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
 let contactListWindow = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
+const participantsStore = new Map(); // chatId → participants array
 const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CACHE_SIZE = 5;
@@ -142,9 +143,11 @@ function createContactListWindow() {
 // Chat window logic
 function createChatWindow(chatId, chatName, service, avatar, isGroup) {
   const chatWin = new BrowserWindow({
-    width:    isGroup ? 900 : 520,
+    width:    isGroup ? 1000 : 520,
     height:   440,
-    minWidth: 380,
+    // Enforce stricter widths: narrow for 1:1, wide for groups (IRC style)
+    minWidth: isGroup ? 760 : 480,
+    maxWidth: isGroup ? 1400 : 720,
     minHeight: 300,
     frame: false,
     resizable: true,
@@ -225,7 +228,22 @@ ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar, isGro
 // ── IPC: WhatsApp ─────────────────────────────────────────────
 ipcMain.handle('get-stored-avatar', async (e, id) => {
   if (!id) return null;
-  return avatarStore.get(String(id)) || null;
+  const key = String(id);
+  if (avatarStore.has(key)) return avatarStore.get(key);
+  try {
+    const userData = app.getPath('userData');
+    const dir = path.join(userData, 'avatars');
+    const fname = path.join(dir, `${key}.img`);
+    if (fs.existsSync(fname)) {
+      const buf = fs.readFileSync(fname);
+      const ext = path.extname(fname).replace('.', '') || 'png';
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+      avatarStore.set(key, dataUrl);
+      return dataUrl;
+    }
+  } catch (e) { console.error('[get-stored-avatar read]', e); }
+  return null;
 });
 ipcMain.handle('wa:get-qr',       async ()             => whatsappBridge.getQR());
 ipcMain.handle('wa:reconnect',    async ()             => {
@@ -354,6 +372,63 @@ ipcMain.handle('app:save-temp-image', async (e, base64, ext) => {
   const fpath = path.join(os.tmpdir(), fname);
   fs.writeFileSync(fpath, Buffer.from(base64, 'base64'));
   return fpath;
+});
+
+// Read a local file and return a data URL (used to show previews for sent images)
+ipcMain.handle('app:read-file-dataurl', async (e, filePath) => {
+  try {
+    if (!filePath) return null;
+    const buf = fs.readFileSync(filePath);
+    const ext = (path.extname(filePath) || '').toLowerCase().replace('.', '');
+    const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml' };
+    const mime = map[ext] || 'application/octet-stream';
+    const b64 = buf.toString('base64');
+    return `data:${mime};base64,${b64}`;
+  } catch (err) {
+    console.error('[read-file-dataurl]', err);
+    return null;
+  }
+});
+
+ipcMain.handle('set-stored-avatar', async (e, id, dataUrl) => {
+  try {
+    if (!id || !dataUrl) return false;
+    const key = String(id);
+    avatarStore.set(key, dataUrl);
+    try {
+      const userData = app.getPath('userData');
+      const dir = path.join(userData, 'avatars');
+      fs.mkdirSync(dir, { recursive: true });
+      // strip data url prefix
+      const m = /^data:(.+?);base64,(.+)$/.exec(dataUrl);
+      const b64 = m ? m[2] : dataUrl.split(',')[1] || '';
+      const buf = Buffer.from(b64, 'base64');
+      // try to infer extension from mime
+      const mime = m ? m[1] : 'image/png';
+      const ext = mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : mime.includes('png') ? 'png' : 'png';
+      const fname = path.join(dir, `${key}.img`);
+      fs.writeFileSync(fname, buf);
+    } catch (e) { console.error('[set-stored-avatar write]', e); }
+    return true;
+  } catch (err) {
+    console.error('[set-stored-avatar]', err);
+    return false;
+  }
+});
+
+ipcMain.handle('set-stored-participants', async (e, chatId, participants) => {
+  try {
+    if (!chatId || !participants) return false;
+    participantsStore.set(String(chatId), Array.isArray(participants) ? participants : []);
+    return true;
+  } catch (err) { console.error('[set-stored-participants]', err); return false; }
+});
+
+ipcMain.handle('get-stored-participants', async (e, chatId) => {
+  try {
+    if (!chatId) return null;
+    return participantsStore.get(String(chatId)) || null;
+  } catch (err) { console.error('[get-stored-participants]', err); return null; }
 });
 
 // ── IPC: Open URL in default browser ────────────────────────

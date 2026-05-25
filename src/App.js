@@ -236,6 +236,30 @@ export default function App() {
       }
     }
     load();
+    // Background: prefetch participants for top groups so names resolve without opening chats
+    (async () => {
+      try {
+        const cache = activeService === 'whatsapp' ? waCacheRef.current : tgCacheRef.current;
+        if (!cache || cache.length === 0) return;
+        // Pick top N group chats to limit load
+        const groups = cache.filter(c => c.isGroup).slice(0, 12);
+        for (const g of groups) {
+          try {
+            const existing = await api.getStoredParticipants?.(g.id);
+            if (existing && existing.length) continue;
+            const list = activeService === 'whatsapp' ? await api.wa.getParticipants(g.id) : await api.tg.getParticipants(g.id);
+            const arr = Array.isArray(list) ? list : [];
+            // fetch and attach avatars where possible
+            const withAvatars = await Promise.all(arr.map(async (m) => {
+              let avatar = null;
+              try { avatar = activeService === 'whatsapp' ? await api.wa.getAvatar(m.id) : await api.tg.getAvatar(m.id); } catch (e) { avatar = null; }
+              return { ...m, avatar };
+            }));
+            if (withAvatars && withAvatars.length) await api.setStoredParticipants?.(g.id, withAvatars);
+          } catch (e) { /* ignore individual failures */ }
+        }
+      } catch (e) {}
+    })();
   }, [activeService, waStatus, tgStatus]);
 
   // Open a separate chat window (ICQ 5 style) + clear unread badge

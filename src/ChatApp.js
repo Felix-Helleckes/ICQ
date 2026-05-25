@@ -91,6 +91,28 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     if (isGroup && api && chatId) {
       (async () => {
         try {
+          // Try stored participants from main process cache first
+          let stored = null;
+          try { stored = await api.getStoredParticipants?.(chatId); } catch (e) { stored = null; }
+          if (stored && Array.isArray(stored) && stored.length) {
+            setMembers(stored);
+            // Still refresh in background
+            (async () => {
+              try {
+                const list = service === 'whatsapp' ? await api.wa.getParticipants(chatId) : await api.tg.getParticipants(chatId);
+                const arr = Array.isArray(list) ? list : [];
+                const withAvatars = await Promise.all(arr.map(async (m) => {
+                  let avatar = null;
+                  try { avatar = service === 'whatsapp' ? await api.wa.getAvatar(m.id) : await api.tg.getAvatar(m.id); } catch (e) { avatar = null; }
+                  return { ...m, avatar };
+                }));
+                setMembers(withAvatars);
+                try { await api.setStoredParticipants?.(chatId, withAvatars); } catch (e) {}
+              } catch (e) {}
+            })();
+            return;
+          }
+
           const list = service === 'whatsapp' ? await api.wa.getParticipants(chatId) : await api.tg.getParticipants(chatId);
           const arr = Array.isArray(list) ? list : [];
           // Fetch avatars for participants (cache-aware)
@@ -103,6 +125,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
             return { ...m, avatar };
           }));
           setMembers(withAvatars);
+          try { await api.setStoredParticipants?.(chatId, withAvatars); } catch (e) {}
         } catch (e) { setMembers([]); }
       })();
     }
@@ -226,8 +249,17 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
   const sendFile = async (filePath) => {
     if (!filePath || !api) return;
     try {
-      if (service === 'whatsapp') await api.wa.sendFile(chatId, filePath);
-      else {
+      // Create a local preview for image files so sent photos show a preview immediately
+      const ext = (filePath.split('.').pop() || '').toLowerCase();
+      const isImage = ['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext);
+      let preview = null;
+      if (isImage && api.readFileDataUrl) {
+        try { preview = await api.readFileDataUrl(filePath); } catch (e) { preview = null; }
+      }
+
+      if (service === 'whatsapp') {
+        await api.wa.sendFile(chatId, filePath);
+      } else {
         const sent = await api.tg.sendFile(chatId, filePath);
         const ts = sent?.timestamp || Math.floor(Date.now() / 1000);
         const name = filePath.split(/[\\/]/).pop();
@@ -236,7 +268,9 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           body: sent?.body || `📎 ${name}`,
           fromMe: true,
           timestamp: ts,
-          type: 'file',
+          type: isImage ? 'image' : 'file',
+          mediaData: preview,
+          isGif: ext === 'gif',
         };
         setMessages(prev => [...prev, localMsg]);
       }

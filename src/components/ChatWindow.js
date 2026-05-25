@@ -158,7 +158,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     // open a chat/profile for this user
     if (!member || !member.id) return;
     const svc = chat?.service || 'whatsapp';
-    api.openChat({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null });
+    api.openChat({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null, isGroup: false });
   };
 
   const getSenderName = (msg) => {
@@ -173,6 +173,32 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     }
     return msg.pushName || msg.pushname || fromId || 'Unbekannt';
   };
+
+  // Header avatar: ensure we show stored/fetched avatar for the chat (works for 1:1 chats)
+  const [headerAvatar, setHeaderAvatar] = useState(chat?.avatar || null);
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        if (!chat?.id) return;
+        if (chat?.avatar) { setHeaderAvatar(chat.avatar); return; }
+        const stored = await window.api.getStoredAvatar?.(chat.id).catch(() => null);
+        if (mounted && stored) { setHeaderAvatar(stored); return; }
+        // fetch from bridge
+        let fetched = null;
+        try {
+          if (chat?.service === 'whatsapp') fetched = await window.api.wa.getAvatar(chat.id);
+          else fetched = await window.api.tg.getAvatar(chat.id);
+        } catch (e) { fetched = null; }
+        if (mounted && fetched) {
+          setHeaderAvatar(fetched);
+          try { await window.api.setStoredAvatar?.(chat.id, fetched); } catch (e) {}
+        }
+      } catch (e) {}
+    };
+    load();
+    return () => { mounted = false; };
+  }, [chat?.id, chat?.avatar, chat?.service]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -498,8 +524,8 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       {/* Chat header */}
       <div className="chat-header">
         <div className="chat-header-avatar">
-          {chat.avatar
-            ? <img src={chat.avatar} alt="" className="chat-header-avatar-img" />
+          {headerAvatar
+            ? <img src={headerAvatar} alt="" className="chat-header-avatar-img" />
             : (chat.name || '?')[0].toUpperCase()}
         </div>
         <div className="chat-header-info">
@@ -523,8 +549,22 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
               </div>
             )}
           <div className={`message-row ${msg.fromMe ? 'me' : 'them'}`}>
-            {chat?.isGroup && !msg.fromMe && (
-              <div className="message-author">{getSenderName(msg)}</div>
+            {chat?.isGroup && (
+              <div className="message-author-row">
+                {!msg.fromMe && (
+                  <div className="message-author-avatar">
+                    {
+                      ((): any => {
+                        const fromId = String(msg.from || msg.sender || msg.participant || msg.author || '');
+                        const found = chat?.members?.find(m => String(m.id) === fromId || String(m.id) === String(msg.participant) || String(m.id) === String(msg.sender));
+                        if (found && found.avatar) return <img src={found.avatar} alt={found.name || ''} />;
+                        return <span className="author-initial">{(getSenderName(msg)||'?')[0]}</span>;
+                      })()
+                    }
+                  </div>
+                )}
+                <div className="message-author">{getSenderName(msg)}</div>
+              </div>
             )}
             <div className="message-bubble" onContextMenu={(e) => openMessageContext(e, msg)}>
               {msg.mediaData

@@ -18,16 +18,41 @@ function statusLabel(s) {
 }
 
 function ContactItem({ chat, onSelect, service }) {
+  const [avatar, setAvatar] = React.useState(chat.avatar || null);
+
   const handleContext = (e) => {
     e.preventDefault();
     e.stopPropagation();
     if (window.api?.showContactContext) window.api.showContactContext({ id: chat.id, service, archived: !!chat.archived, name: chat.name });
   };
+
+  React.useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      if (avatar) return;
+      try {
+        const stored = await window.api.getStoredAvatar?.(chat.id);
+        if (mounted && stored) { setAvatar(stored); return; }
+        // fetch from bridge
+        let fetched = null;
+        try {
+          if (service === 'whatsapp') fetched = await window.api.wa.getAvatar(chat.id);
+          else fetched = await window.api.tg.getAvatar(chat.id);
+        } catch (e) { fetched = null; }
+        if (mounted && fetched) {
+          setAvatar(fetched);
+          try { await window.api.setStoredAvatar?.(chat.id, fetched); } catch (e) {}
+        }
+      } catch (e) {}
+    };
+    load();
+    return () => { mounted = false; };
+  }, [chat.id, service, avatar]);
   return (
     <div className="contact-item" onClick={() => onSelect(chat)} onContextMenu={handleContext}>
       <div className="contact-avatar">
-        {chat.avatar
-          ? <img src={chat.avatar} alt={chat.name} className="contact-avatar-img" />
+        {avatar
+          ? <img src={avatar} alt={chat.name} className="contact-avatar-img" />
           : (chat.name || '?')[0].toUpperCase()
         }
       </div>
