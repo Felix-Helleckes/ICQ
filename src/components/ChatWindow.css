@@ -52,6 +52,13 @@
   border-bottom: 1px solid var(--icq-teal-dark);
 }
 
+/* Keep header visible and above group-members when layout changes */
+.chat-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+}
+
 .chat-header-avatar {
   width: 32px;
   height: 32px;
