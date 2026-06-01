@@ -88,6 +88,8 @@ export default function App() {
     if (chatId) {
       const cache = service === 'telegram' ? tgCacheRef.current : waCacheRef.current;
       const chat = cache?.find(c => c.id === String(chatId));
+      // If the chat is archived, always stay silent
+      if (chat?.archived) return;
       if (chat?.isGroup) {
         const groupSoundOn = service === 'telegram' ? tgGroupSoundRef.current : waGroupSoundRef.current;
         if (!groupSoundOn) return;

@@ -33,6 +33,9 @@ process.on('unhandledRejection', (err) => logStartup('unhandledRejection', err))
 
 logStartup('app bootstrap start');
 
+// Save original userData path (before any portable redirect) so we can migrate
+const ORIGINAL_USER_DATA = app.getPath('userData');
+
 const singleInstanceLock = app.requestSingleInstanceLock();
 if (!singleInstanceLock) {
   logStartup('second instance blocked: quitting new process');
@@ -53,6 +56,44 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
   } catch (e) {
     // Keep Electron default userData when portable dir is not writable.
     logStartup('Portable path setup failed, using default userData', e);
+  }
+}
+
+// Fallback portable support: if the app is packaged and there's an `ICQ-Data`
+// folder next to the executable (or ICQ_PORTABLE=1), use it for portable mode.
+if (!process.env.PORTABLE_EXECUTABLE_DIR && app.isPackaged) {
+  try {
+    const execDir = path.dirname(process.execPath || process.cwd());
+    const candidate = path.join(execDir, 'ICQ-Data');
+    if (process.env.ICQ_PORTABLE === '1' || fs.existsSync(candidate)) {
+      const portableUserData = candidate;
+      const portableSessionData = path.join(portableUserData, 'session');
+      fs.mkdirSync(portableUserData, { recursive: true });
+      fs.mkdirSync(portableSessionData, { recursive: true });
+      fs.accessSync(portableUserData, fs.constants.W_OK);
+      app.setPath('userData', portableUserData);
+      app.setPath('sessionData', portableSessionData);
+      logStartup(`Portable fallback active: userData=${portableUserData}`);
+      // Migrate avatars from original userData to portable folder if present
+      try {
+        const srcAv = path.join(ORIGINAL_USER_DATA, 'avatars');
+        const dstAv = path.join(portableUserData, 'avatars');
+        if (fs.existsSync(srcAv)) {
+          fs.mkdirSync(dstAv, { recursive: true });
+          const files = fs.readdirSync(srcAv, { withFileTypes: true });
+          for (const f of files) {
+            if (!f.isFile()) continue;
+            const src = path.join(srcAv, f.name);
+            const dst = path.join(dstAv, f.name);
+            if (!fs.existsSync(dst)) {
+              try { fs.copyFileSync(src, dst); logStartup(`Migrated avatar ${f.name}`); } catch (e) { logStartup(`Avatar migrate failed ${f.name}`, e); }
+            }
+          }
+        }
+      } catch (e) { logStartup('Avatar migration failed', e); }
+    }
+  } catch (e) {
+    logStartup('Portable fallback setup failed, using default userData', e);
   }
 }
 
@@ -477,6 +518,9 @@ function wireExternalLinks(win) {
 
 // Broadcast a sent message to all other windows (so sidebar updates immediately)
 ipcMain.on('chat:sent', (e, msg) => {
+  try {
+    if (msg && msg.chatId != null) msg.chatId = String(msg.chatId);
+  } catch (e) {}
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed() && w.webContents !== e.sender)
       w.webContents.send('chat:sent-broadcast', msg);
@@ -485,6 +529,9 @@ ipcMain.on('chat:sent', (e, msg) => {
 
 // Broadcast read state to all other windows (so unread badges are cleared immediately)
 ipcMain.on('chat:read', (e, msg) => {
+  try {
+    if (msg && msg.chatId != null) msg.chatId = String(msg.chatId);
+  } catch (e) {}
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed() && w.webContents !== e.sender)
       w.webContents.send('chat:read-broadcast', msg);
