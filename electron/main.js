@@ -312,6 +312,7 @@ ipcMain.handle('open-game', async (e, url, title) => {
     return { action: 'deny' };
   });
 
+  gameWin.removeMenu();
   gameWin.loadURL(url);
   wireWindowDiagnostics(gameWin, `game-${url}`);
   gameWindows.set(url, gameWin);
