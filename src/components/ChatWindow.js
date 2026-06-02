@@ -22,6 +22,12 @@ function dayKey(ts) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
+// ── Games ──────────────────────────────────────────────────
+const GAMES = [
+  { id: '8ball', name: '8 Ball Pool',   icon: '🎱', url: 'https://bloob.io/de/8ballpool' },
+  { id: 'lama',  name: 'Slide-A-Lama',  icon: '🦙', url: 'https://slidealama.eu/' },
+];
+
 const EMOJIS = [
   '😀','😂','😍','😎','😭','😅','🥺','😊','😇','🤔','😴','😜','🥳','😬','🤩',
   '👍','👎','👋','🙏','💪','🤝','👀','❤️','💔','🔥','✨','🎉','💯','🌹','🎶',
@@ -78,6 +84,73 @@ function TwemojiEmoji({ emoji, size = 22 }) {
   );
 }
 
+function VoicePlayer({ src }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const fmt = (s) => {
+    const t = isFinite(s) ? Math.floor(s) : 0;
+    const m = Math.floor(t / 60);
+    const sec = t % 60;
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const toggle = () => {
+    const el = audioRef.current;
+    if (!el) return;
+    if (playing) { el.pause(); } else { el.play(); }
+  };
+
+  const seek = (e) => {
+    const el = audioRef.current;
+    if (!el || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    el.currentTime = ratio * duration;
+    setCurrentTime(el.currentTime);
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className="voice-player">
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={e => setDuration(e.target.duration)}
+        onTimeUpdate={e => setCurrentTime(e.target.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setCurrentTime(0); if (audioRef.current) audioRef.current.currentTime = 0; }}
+      />
+      <button className="voice-play-btn" onClick={toggle} title={playing ? 'Pause' : 'Play'}>
+        {playing ? '⏸' : '▶'}
+      </button>
+      <div className="voice-progress-wrap" onClick={seek}>
+        <div className="voice-progress-bg">
+          <div className="voice-progress-fill" style={{ width: `${progress}%` }} />
+        </div>
+        <div className="voice-bubbles">
+          {Array.from({ length: 28 }, (_, i) => (
+            <div
+              key={i}
+              className="voice-bubble"
+              style={{
+                height: `${18 + Math.sin(i * 1.3) * 9 + Math.cos(i * 0.7) * 5}px`,
+                opacity: (i / 28) * 100 < progress ? 1 : 0.35,
+              }}
+            />
+          ))}
+        </div>
+      </div>
+      <span className="voice-time">{playing || currentTime > 0 ? fmt(currentTime) : fmt(duration)}</span>
+    </div>
+  );
+}
+
 export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
   const [groupWidth, setGroupWidth] = useState(() => {
@@ -86,6 +159,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   });
   const resizingRef = useRef(false);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [showGameMenu, setShowGameMenu] = useState(false);
+  const gameBtnRef = useRef(null);
+  const gameMenuRef = useRef(null);
   const [lightbox, setLightbox] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -222,6 +298,17 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     return () => document.removeEventListener('mousedown', onDown);
   }, [showEmoji]);
 
+  // Close game menu when clicking outside
+  useEffect(() => {
+    if (!showGameMenu) return;
+    const onDown = (e) => {
+      if (gameBtnRef.current?.contains(e.target)) return;
+      if (gameMenuRef.current && !gameMenuRef.current.contains(e.target)) setShowGameMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showGameMenu]);
+
   // ESC closes the current chat window.
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -309,9 +396,30 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const startRecording = async () => {
     if (isRecording) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Try to pick a stable default microphone explicitly so recordings
+      // always come from the expected input device (helps portable setups)
+      let constraints = { audio: true };
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const firstAudio = devices.find(d => d.kind === 'audioinput');
+          if (firstAudio && firstAudio.deviceId) {
+            constraints = { audio: { deviceId: { exact: firstAudio.deviceId } } };
+          }
+        }
+      } catch (e) { /* ignore enumerate errors and fallback to default */ }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
-      const mr = new MediaRecorder(stream);
+      // Choose best available mime type for voice notes (prefer opus/webm or ogg)
+      let mime = '';
+      try {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mime = 'audio/webm;codecs=opus';
+        else if (MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')) mime = 'audio/ogg;codecs=opus';
+        else if (MediaRecorder.isTypeSupported('audio/ogg')) mime = 'audio/ogg';
+        else if (MediaRecorder.isTypeSupported('audio/webm')) mime = 'audio/webm';
+      } catch (e) {}
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       mr.onstop = async () => {
@@ -569,12 +677,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
             <div className="message-bubble" onContextMenu={(e) => openMessageContext(e, msg)}>
               {msg.mediaData
                 ? (msg.type === 'ptt' || msg.type === 'audio')
-                  ? <audio
-                      controls
-                      src={msg.mediaData}
-                      className="msg-audio"
-                      preload="metadata"
-                    />
+                  ? <VoicePlayer src={msg.mediaData} />
                 : (msg.type === 'video' || msg.isGif)
                   ? <video
                       src={msg.mediaData}
@@ -626,6 +729,28 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
             onClick={() => setShowEmoji(v => !v)}
           ><TwemojiEmoji emoji="😊" size={18} /></button>
           <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
+          <button
+            ref={gameBtnRef}
+            className={`toolbar-btn${showGameMenu ? ' active' : ''}`}
+            title="Spiele"
+            onClick={() => setShowGameMenu(v => !v)}
+          >🎮</button>
+
+          {showGameMenu && (
+            <div className="game-menu" ref={gameMenuRef}>
+              <div className="game-menu-title">🎮 ICQ Spiele</div>
+              {GAMES.map(g => (
+                <button
+                  key={g.id}
+                  className="game-menu-item"
+                  onClick={() => { window.api?.openGame?.(g.url, g.name); setShowGameMenu(false); }}
+                >
+                  <span className="game-menu-icon">{g.icon}</span>
+                  <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {showEmoji && (
             <div className="emoji-picker" ref={emojiRef}>

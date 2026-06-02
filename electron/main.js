@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem, net } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
@@ -33,6 +33,9 @@ process.on('unhandledRejection', (err) => logStartup('unhandledRejection', err))
 
 logStartup('app bootstrap start');
 
+// Declare appDataDir early so portable blocks can assign it without TDZ errors
+let appDataDir = null;
+
 // Save original userData path (before any portable redirect) so we can migrate
 const ORIGINAL_USER_DATA = app.getPath('userData');
 
@@ -51,6 +54,7 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
     fs.mkdirSync(portableSessionData, { recursive: true });
     fs.accessSync(portableUserData, fs.constants.W_OK);
     app.setPath('userData', portableUserData);
+    appDataDir = portableUserData;
     app.setPath('sessionData', portableSessionData);
     logStartup(`Portable paths active: userData=${portableUserData}`);
   } catch (e) {
@@ -59,21 +63,22 @@ if (process.env.PORTABLE_EXECUTABLE_DIR) {
   }
 }
 
-// Fallback portable support: if the app is packaged and there's an `ICQ-Data`
-// folder next to the executable (or ICQ_PORTABLE=1), use it for portable mode.
+// Fallback portable support: when packaged, prefer an `ICQ-Data` folder next to the executable
+// and use it as `userData` (create it if missing). This ensures portable builds persist avatars/sessions.
 if (!process.env.PORTABLE_EXECUTABLE_DIR && app.isPackaged) {
   try {
     const execDir = path.dirname(process.execPath || process.cwd());
-    const candidate = path.join(execDir, 'ICQ-Data');
-    if (process.env.ICQ_PORTABLE === '1' || fs.existsSync(candidate)) {
-      const portableUserData = candidate;
-      const portableSessionData = path.join(portableUserData, 'session');
+    const portableUserData = path.join(execDir, 'ICQ-Data');
+    const portableSessionData = path.join(portableUserData, 'session');
+    try {
       fs.mkdirSync(portableUserData, { recursive: true });
       fs.mkdirSync(portableSessionData, { recursive: true });
       fs.accessSync(portableUserData, fs.constants.W_OK);
       app.setPath('userData', portableUserData);
       app.setPath('sessionData', portableSessionData);
+      appDataDir = portableUserData;
       logStartup(`Portable fallback active: userData=${portableUserData}`);
+
       // Migrate avatars from original userData to portable folder if present
       try {
         const srcAv = path.join(ORIGINAL_USER_DATA, 'avatars');
@@ -91,9 +96,11 @@ if (!process.env.PORTABLE_EXECUTABLE_DIR && app.isPackaged) {
           }
         }
       } catch (e) { logStartup('Avatar migration failed', e); }
+    } catch (e) {
+      logStartup('Portable fallback setup failed (cannot write ICQ-Data), using default userData', e);
     }
   } catch (e) {
-    logStartup('Portable fallback setup failed, using default userData', e);
+    logStartup('Portable fallback setup failed', e);
   }
 }
 
@@ -105,7 +112,7 @@ const participantsStore = new Map(); // chatId → participants array
 const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CACHE_SIZE = 5;
-let appDataDir = null; // set in app.on('ready'), used for reconnect
+// appDataDir declared early at top of file (before portable blocks)
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
 let whatsappBridge, telegramBridge;
@@ -256,6 +263,61 @@ app.on('second-instance', () => {
   }
 });
 
+// ── Game windows ──────────────────────────────────────────────
+const gameWindows = new Map(); // url → BrowserWindow
+
+ipcMain.handle('open-game', async (e, url, title) => {
+  // Focus existing window for same URL if already open
+  if (gameWindows.has(url)) {
+    const existing = gameWindows.get(url);
+    if (!existing.isDestroyed()) { existing.focus(); return; }
+    gameWindows.delete(url);
+  }
+
+  const gameWin = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    minWidth: 800,
+    minHeight: 600,
+    frame: true,
+    resizable: true,
+    title: title || 'ICQ Spiele',
+    icon: getWindowIconPath(),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+    },
+  });
+
+  // Allow the game site to open popups inside new Electron windows
+  gameWin.webContents.setWindowOpenHandler(({ url: popUrl }) => {
+    const allowed = ['bloob.io', 'slidealama.eu', 'robinko2.eu'];
+    try {
+      const host = new URL(popUrl).hostname;
+      if (allowed.some(d => host === d || host.endsWith('.' + d))) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 1000, height: 700, frame: true,
+            webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true },
+          },
+        };
+      }
+    } catch (_) {}
+    // Open anything else in the real browser
+    shell.openExternal(popUrl);
+    return { action: 'deny' };
+  });
+
+  gameWin.loadURL(url);
+  wireWindowDiagnostics(gameWin, `game-${url}`);
+  gameWindows.set(url, gameWin);
+  gameWin.on('closed', () => gameWindows.delete(url));
+});
+
 ipcMain.handle('open-chat', async (e, { chatId, chatName, service, avatar, isGroup }) => {
   if (avatar) avatarStore.set(chatId, avatar);
   // Focus existing window if already open
@@ -272,13 +334,17 @@ ipcMain.handle('get-stored-avatar', async (e, id) => {
   const key = String(id);
   if (avatarStore.has(key)) return avatarStore.get(key);
   try {
-    const userData = app.getPath('userData');
+    const userData = appDataDir || app.getPath('userData');
     const dir = path.join(userData, 'avatars');
     const fname = path.join(dir, `${key}.img`);
     if (fs.existsSync(fname)) {
       const buf = fs.readFileSync(fname);
-      const ext = path.extname(fname).replace('.', '') || 'png';
-      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/png';
+      // Skip broken/empty files written by old bug (HTTP URL stored as empty bytes)
+      if (buf.length === 0) {
+        try { fs.unlinkSync(fname); } catch (_) {}
+        return null;
+      }
+      const mime = 'image/jpeg'; // all avatar images stored as jpeg
       const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
       avatarStore.set(key, dataUrl);
       return dataUrl;
@@ -437,16 +503,40 @@ ipcMain.handle('set-stored-avatar', async (e, id, dataUrl) => {
     const key = String(id);
     avatarStore.set(key, dataUrl);
     try {
-      const userData = app.getPath('userData');
+      // Resolve HTTP(S) avatar URLs to actual image data before persisting.
+      // WhatsApp returns expiring CDN URLs — we fetch them in the main process
+      // (bypasses CORS) and convert to a base64 data URL for durable disk storage.
+      let persistUrl = dataUrl;
+      if (dataUrl.startsWith('http://') || dataUrl.startsWith('https://')) {
+        try {
+          const resp = await net.fetch(dataUrl);
+          if (resp.ok) {
+            const arrBuf = await resp.arrayBuffer();
+            const buf = Buffer.from(arrBuf);
+            if (buf.length > 0) {
+              const ct = (resp.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+              persistUrl = `data:${ct};base64,${buf.toString('base64')}`;
+              avatarStore.set(key, persistUrl); // update in-memory store with data URL
+            } else {
+              return true; // empty response — in-memory URL only, skip disk
+            }
+          } else {
+            return true; // fetch failed — in-memory URL only, skip disk
+          }
+        } catch (fetchErr) {
+          logStartup(`Avatar fetch failed for ${key}`, fetchErr);
+          return true; // in-memory URL only, skip disk
+        }
+      }
+
+      const m = /^data:(.+?);base64,(.+)$/.exec(persistUrl);
+      if (!m || !m[2]) return true; // still not a data URL — skip disk
+      const buf = Buffer.from(m[2], 'base64');
+      if (buf.length === 0) return true; // empty data — skip disk
+
+      const userData = appDataDir || app.getPath('userData');
       const dir = path.join(userData, 'avatars');
       fs.mkdirSync(dir, { recursive: true });
-      // strip data url prefix
-      const m = /^data:(.+?);base64,(.+)$/.exec(dataUrl);
-      const b64 = m ? m[2] : dataUrl.split(',')[1] || '';
-      const buf = Buffer.from(b64, 'base64');
-      // try to infer extension from mime
-      const mime = m ? m[1] : 'image/png';
-      const ext = mime.includes('jpeg') ? 'jpg' : mime.includes('webp') ? 'webp' : mime.includes('png') ? 'png' : 'png';
       const fname = path.join(dir, `${key}.img`);
       fs.writeFileSync(fname, buf);
     } catch (e) { console.error('[set-stored-avatar write]', e); }

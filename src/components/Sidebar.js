@@ -1,5 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import './Sidebar.css';
+
+const GAMES = [
+  { id: '8ball', name: '8 Ball Pool',  icon: '🎱', url: 'https://bloob.io/de/8ballpool' },
+  { id: 'lama',  name: 'Slide-A-Lama', icon: '🦙', url: 'https://slidealama.eu/' },
+];
 
 const STATUS_COLOR = {
   ready: '#44DD44', 'needs-auth': '#F5C400', 'no-credentials': '#F5C400',
@@ -18,7 +23,12 @@ function statusLabel(s) {
 }
 
 function ContactItem({ chat, onSelect, service }) {
-  const [avatar, setAvatar] = React.useState(chat.avatar || null);
+  // Only use chat.avatar as initial state if it's already a data URL (Telegram).
+  // HTTP(S) URLs from WhatsApp expire and are written as broken files — always
+  // prefer the persisted disk cache; fall back to bridge fetch if nothing stored.
+  const [avatar, setAvatar] = React.useState(
+    chat.avatar && chat.avatar.startsWith('data:') ? chat.avatar : null
+  );
 
   const handleContext = (e) => {
     e.preventDefault();
@@ -145,6 +155,20 @@ export default function Sidebar({
   onIncreaseContactScale,
 }) {
   const [search, setSearch] = useState('');
+  const [showGameMenu, setShowGameMenu] = useState(false);
+  const gameBtnRef = useRef(null);
+  const gameMenuRef = useRef(null);
+
+  useEffect(() => {
+    if (!showGameMenu) return;
+    const onDown = (e) => {
+      if (gameBtnRef.current?.contains(e.target)) return;
+      if (gameMenuRef.current && !gameMenuRef.current.contains(e.target)) setShowGameMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showGameMenu]);
+
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
   const onToggleGroupSound = activeService === 'whatsapp' ? onToggleWaGroupSound : onToggleTgGroupSound;
@@ -178,6 +202,29 @@ export default function Sidebar({
             title={soundEnabled ? 'Sound aus' : 'Sound an'}
           >{soundEnabled ? '🔔' : '🔕'}</button>
         )}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            ref={gameBtnRef}
+            className={`sound-btn${showGameMenu ? ' active' : ''}`}
+            title="Spiele"
+            onClick={() => setShowGameMenu(v => !v)}
+          >🎮</button>
+          {showGameMenu && (
+            <div className="sidebar-game-menu" ref={gameMenuRef}>
+              <div className="sidebar-game-menu-title">🎮 ICQ Spiele</div>
+              {GAMES.map(g => (
+                <button
+                  key={g.id}
+                  className="sidebar-game-menu-item"
+                  onClick={() => { window.api?.openGame?.(g.url, g.name); setShowGameMenu(false); }}
+                >
+                  <span>{g.icon}</span>
+                  <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <button className="scale-btn" title="Kontakte kleiner" onClick={onDecreaseContactScale}>A-</button>
         <button className="scale-btn" title="Kontakte größer" onClick={onIncreaseContactScale}>A+</button>
         {onLogout && (

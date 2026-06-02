@@ -130,6 +130,7 @@ contextBridge.exposeInMainWorld('api', {
     close:    () => ipcRenderer.send('window:close'),
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
+  openGame: (url, title) => ipcRenderer.invoke('open-game', url, title),
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
   readFileDataUrl: (filePath) => ipcRenderer.invoke('app:read-file-dataurl', filePath),

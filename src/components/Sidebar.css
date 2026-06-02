@@ -93,6 +93,47 @@
   border-color: rgba(255,255,255,0.35);
 }
 
+/* ── Sidebar game menu ── */
+.sidebar-game-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--icq-bg-mid);
+  border: 1px solid var(--icq-teal-dark);
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 150px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  z-index: 200;
+}
+.sidebar-game-menu-title {
+  font-size: 0.70rem;
+  font-weight: 600;
+  color: var(--icq-teal);
+  padding: 3px 8px 5px;
+  border-bottom: 1px solid var(--icq-border);
+  margin-bottom: 3px;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.sidebar-game-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 5px 8px;
+  cursor: pointer;
+  color: var(--icq-text);
+  font-size: 0.78rem;
+  text-align: left;
+  transition: background 0.1s;
+  white-space: nowrap;
+}
+.sidebar-game-menu-item:hover { background: var(--icq-bg-light); border-color: var(--icq-border); }
+
 /* ── Service Tabs ── */
 .service-tabs {
   display: flex;
