@@ -379,7 +379,14 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       window.api?.window?.close?.();
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (clipboardImage) {
+        sendClipboardImage();
+        return;
+      }
+      handleSend();
+    }
   };
 
   const insertEmoji = (emoji) => {
