@@ -52,6 +52,7 @@
 | 🔄 | **Live contact list** | Unread badges · last message preview · auto-sort by recency |
 | 📦 | **Portable build** | Single `.exe` — no installation required |
 | 🛫 | **File Transfer** | Drag and Drop and File Dialog Window included|
+| 🎮 | **Games** | Slide a Lama and Pool included for free|
 
 
 ---

@@ -195,7 +195,6 @@ function createChatWindow(chatId, chatName, service, avatar, isGroup) {
     height:   440,
     // Enforce stricter widths: narrow for 1:1, wide for groups (IRC style)
     minWidth: isGroup ? 760 : 480,
-    maxWidth: isGroup ? 1400 : 720,
     minHeight: 300,
     frame: false,
     resizable: true,
