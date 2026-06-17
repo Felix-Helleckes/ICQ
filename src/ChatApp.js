@@ -224,18 +224,19 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
   }, [chatId, markChatReadNow, mergeById, service]);
 
-  const sendMessage = async (text) => {
+  const sendMessage = async (text, replyToMsgId = null) => {
     if (!text.trim() || !api) return;
     try {
-      if (service === 'whatsapp') await api.wa.sendMessage(chatId, text);
-      else {
-        const sent = await api.tg.sendMessage(chatId, text);
-        const ts = sent?.timestamp || Math.floor(Date.now() / 1000);
+      let sent;
+      if (service === 'whatsapp') {
+        await api.wa.sendMessage(chatId, text, replyToMsgId);
+      } else {
+        sent = await api.tg.sendMessage(chatId, text, replyToMsgId);
         const localMsg = {
           id: sent?.id || Date.now().toString(),
           body: sent?.body || text,
           fromMe: true,
-          timestamp: ts,
+          timestamp: sent?.timestamp || Math.floor(Date.now() / 1000),
           type: 'text',
         };
         setMessages(prev => [...prev, localMsg]);

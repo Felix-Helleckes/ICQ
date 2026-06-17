@@ -168,7 +168,8 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const recorderRef = useRef(null);
   const streamRef = useRef(null);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
-  // messageContext removed: use native context menu via main process
+  const [replyToMsgId, setReplyToMsgId] = useState(null);
+// messageContext removed: use native context menu via main process
   const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
   const [forwardDialog, setForwardDialog] = useState({ open: false, msg: null, chats: [], loading: false, query: '' });
   // Resizable split: inputHeight in px (min 80, max 400)
@@ -364,8 +365,9 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
 
   const handleSend = () => {
     if (!text.trim()) return;
-    onSend(text);
+    onSend(text, replyToMsgId);
     setText('');
+    setReplyToMsgId(null);
     inputRef.current?.focus();
   };
 
@@ -551,9 +553,10 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
 
     // Include sender information for received messages
     const senderInfo = msg.fromMe ? '' : `${msg.senderName || 'Unbekannt'}: `;
-    const quote = `> ${senderInfo}${body.replace(/\n/g, '\n> ')}\n`;
+    const quote = `> ${senderInfo}${body.replace(/\\n/g, '\\n> ')}\\n`;
 
     setText(prev => (prev ? `${quote}${prev}` : quote));
+    setReplyToMsgId(msg.id);
     inputRef.current?.focus();
   };
 

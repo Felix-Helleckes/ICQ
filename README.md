@@ -1,6 +1,6 @@
 <div align="center">
   <img src="public/icq-logo.png" width="88" alt="ICQ Logo" />
-  <h1>Retrogram - Multi Messenger</h1>
+  <h1>Retrogram - Multi Messenger</h1> 
   <p>
     Retro <strong>ICQ 5</strong>-style multi-messenger — built with <strong>Electron + React</strong>.<br/>
     Manage <strong>WhatsApp</strong> and <strong>Telegram</strong> from one classic dark-teal desktop app.
@@ -14,17 +14,13 @@
 
   <br/><br/>
 
-  [![Download](https://img.shields.io/badge/⬇_Download-Releases-teal?style=flat-square)](https://github.com/Felix-Helleckes/ICQ/releases/latest)
   [![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=flat-square&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
   [![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=flat-square&logo=github)](https://felix-helleckes.github.io/)
 </div>
 
----
 
-## Screenshots
+# ICQ - Retrogram
 
-| Classic Design | Single Chat Window |
-|----------|----------|
 
 
 
@@ -54,10 +50,16 @@
 | 🛫 | **File Transfer** | Drag and Drop and File Dialog Window included|
 | 🎮 | **Games** | Slide a Lama and Pool included for free|
 
+# First-run warnings
 
+**Windows — SmartScreen:** Click **"More info"** → **"Run anyway"**
+
+**macOS — Gatekeeper:** Right-click the `.app` → **"Open"** → **"Open"**  
+
+Or in Terminal:  `xattr -cr /Applications/ICQ\ Messenger.app`
 ---
 
-## Quick Start
+# Quick Start
 
 ### Requirements
 
@@ -156,10 +158,5 @@ Output goes to the `dist/` folder.
 
 ---
 
-## First-run warnings
 
-**Windows — SmartScreen:** Click **"More info"** → **"Run anyway"**
-
-**macOS — Gatekeeper:** Right-click the `.app` → **"Open"** → **"Open"**  
-Or in Terminal: `xattr -cr /Applications/ICQ\ Messenger.app`
 

@@ -309,9 +309,13 @@ async function getMessages(chatId, opts = {}) {
   return results;
 }
 
-async function sendMessage(chatId, text) {
+async function sendMessage(chatId, text, quotedMessageId = null) {
   if (status !== 'ready') throw new Error('Telegram not ready');
-  const msg = await tgClient.sendMessage(toPeer(chatId), { message: text });
+  const options = { message: text };
+  if (quotedMessageId) {
+    options.replyTo = quotedMessageId;
+  }
+  const msg = await tgClient.sendMessage(toPeer(chatId), options);
   return {
     id: msg?.id?.toString?.() || null,
     timestamp: msg?.date || Math.floor(Date.now() / 1000),

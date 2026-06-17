@@ -642,16 +642,19 @@ async function getMessages(chatId, opts = {}) {
   return result;
 }
 
-async function sendMessage(chatId, text) {
+async function sendMessage(chatId, text, quotedMessageId = null) {
   return runWithRecovery('sendMessage', async () => {
     // If message contains a URL, disable automatic link preview generation
     // to avoid waiting for preview fetching which can slow down send.
-    const URL_RE = /https?:\/\/[\S]+/i;
+    const URL_RE = /https?:\/\/\S+/i;
+    const options = {};
     if (URL_RE.test(String(text || ''))) {
-      await client.sendMessage(chatId, text, { linkPreview: false });
-    } else {
-      await client.sendMessage(chatId, text);
+      options.linkPreview = false;
     }
+    if (quotedMessageId) {
+      options.quotedMessageId = quotedMessageId;
+    }
+    await client.sendMessage(chatId, text, options);
     return true;
   });
 }

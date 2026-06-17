@@ -374,9 +374,8 @@ ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
   }
   waMessageCache.set(chatId, { messages, timestamp: Date.now() });
   
-  return messages;
 });
-ipcMain.handle('wa:send-message', async (e, id, text)  => whatsappBridge.sendMessage(id, text));
+ipcMain.handle('wa:send-message', async (e, id, text, quotedMessageId)  => whatsappBridge.sendMessage(id, text, quotedMessageId));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));
 ipcMain.handle('wa:send-voice',   async (e, id, base64, mime) => whatsappBridge.sendVoice(id, base64, mime));
@@ -397,7 +396,7 @@ ipcMain.handle('tg:start-qr-login', async ()                    => telegramBridg
 ipcMain.handle('tg:2fa-password',   async (e, password)         => telegramBridge.submit2FA(password));
 ipcMain.handle('tg:get-dialogs',    async ()                    => telegramBridge.getDialogs());
 ipcMain.handle('tg:get-messages',   async (e, chatId, opts)     => telegramBridge.getMessages(chatId, opts));
-ipcMain.handle('tg:send-message',   async (e, chatId, text)     => telegramBridge.sendMessage(chatId, text));
+ipcMain.handle('tg:send-message',   async (e, chatId, text, quotedMessageId)     => telegramBridge.sendMessage(chatId, text, quotedMessageId));
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
 ipcMain.handle('tg:send-voice',     async (e, chatId, base64, mime) => telegramBridge.sendVoice(chatId, base64, mime));
