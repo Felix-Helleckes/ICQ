@@ -1,0 +1,11 @@
+# Netlify hosts the static landing page in /site.
+# No build step — the page is plain HTML/CSS/JS (do NOT run the CRA build).
+[build]
+  publish = "site"
+  command = "echo 'static site — no build'"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    Referrer-Policy = "strict-origin-when-cross-origin"

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICQ Retrogram — WhatsApp &amp; Telegram, ICQ style</title>
+  <meta name="description" content="Your WhatsApp and Telegram as a retro ICQ 5 messenger. Separate chat windows, the classic uh-oh sound, switchable skins. Free for Windows, macOS & Linux." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="ICQ Retrogram — your WhatsApp, like it's 2003" />
+  <meta property="og:description" content="WhatsApp + Telegram in a retro ICQ messenger. uh-oh! 🌼" />
+  <meta property="og:image" content="icq-logo.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" href="icq-logo.png" />
+  <link rel="stylesheet" href="reel.css" />
+  <script>
+    // Resolve language before anything renders so the reel inits correctly.
+    (function () {
+      var q = null; try { q = new URLSearchParams(location.search).get('lang'); } catch (e) {}
+      var saved = null; try { saved = localStorage.getItem('icq-lang'); } catch (e) {}
+      var l = /^de/i.test(q || saved || 'en') ? 'de' : 'en';
+      window.__ICQ_LANG = l;
+      document.documentElement.lang = l;
+    })();
+  </script>
+  <style>
+    :root {
+      --t1:#0D6B6B; --t2:#0A3A3A; --teal:#1A8A8A; --teal-l:#2BBFBF;
+      --ink:#0c1218; --panel:#161e29; --panel2:#1d2735; --line:#2a3647;
+      --fg:#e6eef6; --dim:#8da3ba; --yellow:#F5C400;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html { scroll-behavior:smooth; }
+    body { font-family:Tahoma,'Segoe UI',Arial,sans-serif; background:var(--ink); color:var(--fg);
+      line-height:1.55; -webkit-font-smoothing:antialiased; }
+    a { color:var(--teal-l); text-decoration:none; }
+    .wrap { max-width:1080px; margin:0 auto; padding:0 22px; }
+
+    nav { display:flex; align-items:center; gap:10px; padding:16px 0; }
+    nav .brand { font-weight:bold; font-size:18px; letter-spacing:.4px; display:flex; align-items:center; gap:8px; }
+    nav .brand .f { color:var(--yellow); font-size:20px; }
+    nav .sp { flex:1; }
+    nav a.ghost { color:var(--dim); font-size:14px; padding:7px 13px; border:1px solid var(--line); border-radius:7px; }
+    nav a.ghost:hover { color:#fff; border-color:var(--teal); }
+    .lang { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+    .lang button { background:transparent; color:var(--dim); border:0; padding:7px 11px; font:inherit; font-size:13px; cursor:pointer; }
+    .lang button.on { background:var(--teal); color:#04201f; font-weight:bold; }
+
+    .hero { display:grid; grid-template-columns:1fr 1fr; gap:34px; align-items:center; padding:34px 0 48px; }
+    .hero h1 { font-size:44px; line-height:1.1; letter-spacing:.3px; margin-bottom:16px; }
+    .hero h1 .hl { color:var(--teal-l); }
+    .hero p.sub { font-size:18px; color:var(--dim); margin-bottom:24px; max-width:36ch; }
+    .cta { display:flex; flex-wrap:wrap; gap:11px; margin-bottom:14px; }
+    .btn { display:inline-flex; align-items:center; gap:9px; padding:12px 18px; border-radius:9px;
+      font-size:15px; font-weight:bold; border:1px solid var(--t1); }
+    .btn.primary { color:#04201f; background:linear-gradient(180deg,var(--teal-l),var(--teal)); }
+    .btn.primary:hover { filter:brightness(1.08); }
+    .btn.alt { color:var(--fg); background:var(--panel2); border-color:var(--line); }
+    .btn.alt:hover { border-color:var(--teal); color:#fff; }
+    .hero .note { font-size:13px; color:var(--dim); }
+
+    .hero-reel { width:100%; aspect-ratio:16/9; background:#0b1422; border:1px solid var(--line);
+      border-radius:14px; overflow:hidden; box-shadow:0 24px 60px rgba(0,0,0,.5); }
+
+    .section { padding:46px 0; border-top:1px solid var(--line); }
+    .section h2 { font-size:28px; margin-bottom:6px; }
+    .section .lead { color:var(--dim); margin-bottom:28px; font-size:16px; }
+
+    .features { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px; }
+    .card .ic { font-size:26px; margin-bottom:10px; }
+    .card h3 { font-size:17px; margin-bottom:6px; }
+    .card p { font-size:14px; color:var(--dim); }
+
+    .skins { display:flex; flex-wrap:wrap; gap:14px; }
+    .skinchip { flex:1; min-width:190px; background:var(--panel); border:1px solid var(--line);
+      border-radius:12px; padding:16px; display:flex; align-items:center; gap:13px; }
+    .skinchip .sw { width:38px; height:38px; border-radius:9px; flex-shrink:0; border:1px solid rgba(0,0,0,.4);
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.18); }
+    .skinchip b { display:block; font-size:15px; }
+    .skinchip span { font-size:13px; color:var(--dim); }
+
+    .download-band { background:linear-gradient(180deg,var(--t1),var(--t2)); border-radius:16px; padding:34px; text-align:center; }
+    .download-band h2 { font-size:26px; margin-bottom:8px; }
+    .download-band p { color:#cdece9; margin-bottom:20px; }
+
+    footer { padding:40px 0 56px; color:var(--dim); font-size:13px; border-top:1px solid var(--line); }
+    footer .disc { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-top:16px; line-height:1.6; }
+
+    @media (max-width:860px) {
+      .hero { grid-template-columns:1fr; gap:24px; padding:18px 0 34px; }
+      .hero .copy { order:1; } .hero .visual { order:2; }
+      .hero h1 { font-size:34px; } .hero p.sub { max-width:none; }
+      .hero-reel { aspect-ratio:9/16; max-width:380px; margin:0 auto; }
+      .features { grid-template-columns:1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <nav>
+      <div class="brand"><span class="f">✿</span> ICQ Retrogram</div>
+      <div class="sp"></div>
+      <a href="#features" class="ghost" data-i18n="nav.features">Features</a>
+      <a href="https://github.com/Felix-Helleckes/ICQ" class="ghost">GitHub</a>
+      <div class="lang">
+        <button data-lang="en">EN</button><button data-lang="de">DE</button>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <div class="copy">
+        <h1 data-i18n-html="hero.h1">Your WhatsApp. <span class="hl">Like it’s 2003.</span></h1>
+        <p class="sub" data-i18n="hero.sub">WhatsApp and Telegram in one retro ICQ messenger — separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.</p>
+        <div class="cta">
+          <a class="btn primary" id="dl-win" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">▼ Windows</a>
+          <a class="btn alt" id="dl-mac" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">macOS</a>
+          <a class="btn alt" id="dl-linux" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">Linux</a>
+        </div>
+        <p class="note" data-i18n="hero.note">Free &amp; open source · Windows · macOS · Linux · no sign-up needed</p>
+      </div>
+      <div class="visual">
+        <div class="hero-reel icq-reel" data-format="auto" data-sound="icq-message.mp3"></div>
+      </div>
+    </header>
+  </div>
+
+  <div class="wrap">
+    <section class="section" id="features">
+      <h2 data-i18n="feat.h2">One messenger. Two services. A 2003 feeling.</h2>
+      <p class="lead" data-i18n="feat.lead">Everything modern messengers do — wrapped in the look you miss.</p>
+      <div class="features">
+        <div class="card"><div class="ic">💬</div><h3 data-i18n="f1t">WhatsApp + Telegram</h3><p data-i18n="f1d">Both accounts in one app, cleanly split by tab. QR login, your real chats.</p></div>
+        <div class="card"><div class="ic">🪟</div><h3 data-i18n="f2t">Separate chat windows</h3><p data-i18n="f2d">Every contact gets its own floating window — true ICQ 5 style.</p></div>
+        <div class="card"><div class="ic">🎨</div><h3 data-i18n="f3t">Skins</h3><p data-i18n="f3d">ICQ Retro, ICQ Classic Green and MSN Messenger. One click re-skins everything.</p></div>
+        <div class="card"><div class="ic">🔔</div><h3 data-i18n="f4t">uh-oh!</h3><p data-i18n="f4d">The legendary ICQ notification sound on every new message.</p></div>
+        <div class="card"><div class="ic">🎤</div><h3 data-i18n="f5t">Voice, media &amp; stickers</h3><p data-i18n="f5d">Voice messages, images, videos, GIFs, stickers, read receipts, typing indicator.</p></div>
+        <div class="card"><div class="ic">📦</div><h3 data-i18n="f6t">Portable</h3><p data-i18n="f6d">A single .exe, no install needed. Your login stays — even from a USB stick.</p></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 data-i18n="skins.h2">Pick your era</h2>
+      <p class="lead" data-i18n="skins.lead">Three skins, built from pure CSS — the look of back then, not the old files.</p>
+      <div class="skins">
+        <div class="skinchip"><span class="sw" style="background:linear-gradient(135deg,#0D6B6B,#0A3A3A)"></span><div><b>ICQ Retro</b><span data-i18n="s1">Dark Teal</span></div></div>
+        <div class="skinchip"><span class="sw" style="background:linear-gradient(135deg,#6FB52E,#2F5E12)"></span><div><b>ICQ Classic</b><span data-i18n="s2">Light Green</span></div></div>
+        <div class="skinchip"><span class="sw" style="background:linear-gradient(135deg,#4A9AE8,#1E5FB0)"></span><div><b>MSN Messenger</b><span data-i18n="s3">Blue / White</span></div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="download-band">
+        <h2 data-i18n="band.h2">Ready for the time travel?</h2>
+        <p data-i18n="band.p">Download ICQ Retrogram for free and connect your WhatsApp in 60 seconds.</p>
+        <a class="btn primary" id="dl-cta" href="https://github.com/Felix-Helleckes/ICQ/releases/latest" data-i18n="band.btn">▼ Download free now</a>
+      </div>
+    </section>
+
+    <footer>
+      <div>© <span id="yr"></span> Felix Helleckes · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · MIT license</div>
+      <div class="disc" data-i18n="footer.disc">Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses the unofficial WhatsApp Web interface — this may violate WhatsApp's Terms of Service; use at your own risk.</div>
+    </footer>
+  </div>
+
+  <script>
+    var I18N = {
+      en: {
+        'nav.features':'Features',
+        'hero.h1':'Your WhatsApp. <span class="hl">Like it’s 2003.</span>',
+        'hero.sub':'WhatsApp and Telegram in one retro ICQ messenger — separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.',
+        'hero.note':'Free &amp; open source · Windows · macOS · Linux · no sign-up needed',
+        'feat.h2':'One messenger. Two services. A 2003 feeling.',
+        'feat.lead':'Everything modern messengers do — wrapped in the look you miss.',
+        'f1t':'WhatsApp + Telegram','f1d':'Both accounts in one app, cleanly split by tab. QR login, your real chats.',
+        'f2t':'Separate chat windows','f2d':'Every contact gets its own floating window — true ICQ 5 style.',
+        'f3t':'Skins','f3d':'ICQ Retro, ICQ Classic Green and MSN Messenger. One click re-skins everything.',
+        'f4t':'uh-oh!','f4d':'The legendary ICQ notification sound on every new message.',
+        'f5t':'Voice, media & stickers','f5d':'Voice messages, images, videos, GIFs, stickers, read receipts, typing indicator.',
+        'f6t':'Portable','f6d':'A single .exe, no install needed. Your login stays — even from a USB stick.',
+        'skins.h2':'Pick your era','skins.lead':'Three skins, built from pure CSS — the look of back then, not the old files.',
+        's1':'Dark Teal','s2':'Light Green','s3':'Blue / White',
+        'band.h2':'Ready for the time travel?','band.p':'Download ICQ Retrogram for free and connect your WhatsApp in 60 seconds.','band.btn':'▼ Download free now',
+        'footer.disc':"Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses the unofficial WhatsApp Web interface — this may violate WhatsApp's Terms of Service; use at your own risk."
+      },
+      de: {
+        'nav.features':'Features',
+        'hero.h1':'Dein WhatsApp. <span class="hl">Als wäre es 2003.</span>',
+        'hero.sub':'WhatsApp und Telegram in einem Retro-ICQ-Messenger — eigene Chat-Fenster, der klassische <b>uh-oh!</b>-Sound und umschaltbare Skins.',
+        'hero.note':'Kostenlos &amp; Open Source · Windows · macOS · Linux · keine Anmeldung nötig',
+        'feat.h2':'Ein Messenger. Zwei Dienste. 2003er Gefühl.',
+        'feat.lead':'Alles was moderne Messenger können — verpackt im Look, den du vermisst.',
+        'f1t':'WhatsApp + Telegram','f1d':'Beide Konten in einer App, sauber getrennt per Tab. QR-Login, deine echten Chats.',
+        'f2t':'Eigene Chat-Fenster','f2d':'Jeder Kontakt bekommt sein eigenes schwebendes Fenster — echter ICQ-5-Stil.',
+        'f3t':'Skins','f3d':'ICQ Retro, ICQ Classic Green und MSN Messenger. Ein Klick, alles färbt um.',
+        'f4t':'uh-oh!','f4d':'Der legendäre ICQ-Benachrichtigungssound bei jeder neuen Nachricht.',
+        'f5t':'Voice, Medien & Sticker','f5d':'Sprachnachrichten, Bilder, Videos, GIFs, Sticker, Read-Receipts, Tippt-Anzeige.',
+        'f6t':'Portable','f6d':'Eine .exe, keine Installation nötig. Login bleibt erhalten — auch vom USB-Stick.',
+        'skins.h2':'Such dir deine Ära aus','skins.lead':'Drei Skins, gebaut aus reinem CSS — der Look von damals, nicht die alten Dateien.',
+        's1':'Dunkles Teal','s2':'Helles Grün','s3':'Blau / Weiß',
+        'band.h2':'Bereit für die Zeitreise?','band.p':'Lade ICQ Retrogram kostenlos und verbinde in 60 Sekunden dein WhatsApp.','band.btn':'▼ Jetzt kostenlos laden',
+        'footer.disc':'Hinweis: ICQ Retrogram ist ein unabhängiges Hobby-Projekt und steht in keiner Verbindung zu ICQ, AOL, WhatsApp/Meta oder Telegram. Die WhatsApp-Anbindung nutzt die inoffizielle WhatsApp-Web-Schnittstelle — das kann gegen die WhatsApp-Nutzungsbedingungen verstoßen; Nutzung auf eigenes Risiko.'
+      }
+    };
+
+    function applyLang(l) {
+      var d = I18N[l] || I18N.en;
+      document.querySelectorAll('[data-i18n]').forEach(function (el) {
+        var k = el.getAttribute('data-i18n'); if (d[k] != null) el.textContent = d[k];
+      });
+      document.querySelectorAll('[data-i18n-html]').forEach(function (el) {
+        var k = el.getAttribute('data-i18n-html'); if (d[k] != null) el.innerHTML = d[k];
+      });
+      document.documentElement.lang = l;
+      try { localStorage.setItem('icq-lang', l); } catch (e) {}
+      document.querySelectorAll('.lang button').forEach(function (b) {
+        b.classList.toggle('on', b.getAttribute('data-lang') === l);
+      });
+      if (window.ICQReel) window.ICQReel.setLang(l);
+    }
+
+    document.querySelectorAll('.lang button').forEach(function (b) {
+      b.addEventListener('click', function () { applyLang(b.getAttribute('data-lang')); });
+    });
+
+    document.getElementById('yr').textContent = new Date().getFullYear();
+
+    // Wire download buttons to the latest release asset per platform.
+    (function () {
+      var repo = 'Felix-Helleckes/ICQ';
+      var page = 'https://github.com/' + repo + '/releases/latest';
+      fetch('https://api.github.com/repos/' + repo + '/releases/latest', { headers: { 'Accept': 'application/vnd.github+json' } })
+        .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+        .then(function (data) {
+          var assets = data.assets || [];
+          function pick() {
+            for (var i = 0; i < arguments.length; i++) {
+              var re = arguments[i];
+              for (var j = 0; j < assets.length; j++) if (re.test(assets[j].name)) return assets[j].browser_download_url;
+            }
+            return page;
+          }
+          var win = pick(/Setup.*\.exe$/i, /\.exe$/i);
+          var mac = pick(/\.dmg$/i);
+          var linux = pick(/\.AppImage$/i, /\.deb$/i);
+          var set = function (id, url) { var e = document.getElementById(id); if (e) e.href = url; };
+          set('dl-win', win); set('dl-mac', mac); set('dl-linux', linux);
+          var ua = navigator.userAgent;
+          set('dl-cta', /Win/.test(ua) ? win : /Mac/.test(ua) ? mac : /Linux/.test(ua) ? linux : page);
+        })
+        .catch(function () { /* keep the releases-page fallback hrefs */ });
+    })();
+
+    // Apply the resolved language (set in <head>) to the static markup.
+    applyLang(window.__ICQ_LANG || 'en');
+  </script>
+  <script src="reel.js"></script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Tahoma, Segoe UI, Arial, sans-serif" role="img" aria-label="ICQ Retrogram — WhatsApp and Telegram in a retro ICQ messenger (animated demo)">
+  <title>ICQ Retrogram — animated demo</title>
+  <desc>A looping demo of the retro ICQ-style messenger: contacts load, a message arrives, a reply is sent, the skin switches colour, then a download call-to-action.</desc>
+  <style>
+    .cl, .cw, .badge, .cap1, .cap2, .cap3, .r0, .r1, .r2, .r3, .b1, .b2, .b3, .endcard,
+    .titlemorph, .bubblemorph { animation-duration: 16s; animation-iteration-count: infinite; animation-timing-function: ease; }
+    .cl { animation-name: clin; }
+    .cw { animation-name: cwin; }
+    .r0 { animation-name: r0; } .r1 { animation-name: r1; } .r2 { animation-name: r2; } .r3 { animation-name: r3; }
+    .b1 { animation-name: b1; } .b2 { animation-name: b2; } .b3 { animation-name: b3; }
+    .cap1 { animation-name: cap1; } .cap2 { animation-name: cap2; } .cap3 { animation-name: cap3; }
+    .badge { animation-name: badge; transform-box: fill-box; transform-origin: center; }
+    .endcard { animation-name: endcard; }
+    .titlemorph { animation-name: titlemorph; }
+    .bubblemorph { animation-name: bubblemorph; }
+
+    @keyframes clin { 0%,1%{opacity:0} 9%{opacity:1} 70%{opacity:1} 74%{opacity:0} 100%{opacity:0} }
+    @keyframes cwin { 0%,22%{opacity:0} 26%{opacity:1} 70%{opacity:1} 73%{opacity:0} 100%{opacity:0} }
+    @keyframes r0 { 0%,6%{opacity:0} 9%{opacity:1} 100%{opacity:1} }
+    @keyframes r1 { 0%,8%{opacity:0} 11%{opacity:1} 100%{opacity:1} }
+    @keyframes r2 { 0%,10%{opacity:0} 13%{opacity:1} 100%{opacity:1} }
+    @keyframes r3 { 0%,12%{opacity:0} 15%{opacity:1} 100%{opacity:1} }
+    @keyframes b1 { 0%,27%{opacity:0} 30%{opacity:1} 100%{opacity:1} }
+    @keyframes b2 { 0%,33%{opacity:0} 36%{opacity:1} 100%{opacity:1} }
+    @keyframes b3 { 0%,39%{opacity:0} 42%{opacity:1} 100%{opacity:1} }
+    @keyframes badge { 0%,15%{opacity:0;transform:scale(0)} 18%{opacity:1;transform:scale(1)} 70%{opacity:1;transform:scale(1)} 74%{opacity:0} 100%{opacity:0} }
+    @keyframes cap1 { 0%,9%{opacity:0} 12%{opacity:1} 19%{opacity:1} 22%{opacity:0} 100%{opacity:0} }
+    @keyframes cap2 { 0%,26%{opacity:0} 29%{opacity:1} 42%{opacity:1} 45%{opacity:0} 100%{opacity:0} }
+    @keyframes cap3 { 0%,55%{opacity:0} 58%{opacity:1} 67%{opacity:1} 70%{opacity:0} 100%{opacity:0} }
+    @keyframes titlemorph { 0%{fill:#0D6B6B} 47%{fill:#0D6B6B} 56%{fill:#3E7C18} 99%{fill:#3E7C18} 100%{fill:#0D6B6B} }
+    @keyframes bubblemorph { 0%{fill:#0D5C5C} 47%{fill:#0D5C5C} 56%{fill:#3E7C18} 99%{fill:#3E7C18} 100%{fill:#0D5C5C} }
+    @keyframes endcard { 0%{opacity:1} 4%{opacity:0} 73%{opacity:0} 78%{opacity:1} 100%{opacity:1} }
+    text { fill:#E0E8F0; }
+  </style>
+
+  <rect width="1280" height="720" fill="#0e1f38"/>
+  <rect width="1280" height="720" fill="#13294a" opacity="0.5"/>
+
+  <!-- Contact list window -->
+  <g class="cl">
+    <rect x="120" y="105" width="330" height="510" rx="10" fill="#1F2530" stroke="#4A5E78"/>
+    <rect class="titlemorph" x="120" y="105" width="330" height="34" rx="10" fill="#0D6B6B"/>
+    <text x="138" y="127" font-size="14" font-weight="bold" fill="#ffffff">✿ ICQ — Retrogram</text>
+    <rect x="120" y="139" width="330" height="50" fill="#0c4f4f"/>
+    <circle cx="150" cy="164" r="17" fill="#2A4060" stroke="#3A4A5E"/>
+    <text x="143" y="170" font-size="16" fill="#ffffff">✿</text>
+    <text x="178" y="160" font-size="14" font-weight="bold" fill="#ffffff">Felix</text>
+    <text x="178" y="178" font-size="12" fill="#44DD44">● Online</text>
+    <rect x="120" y="189" width="165" height="30" fill="#2E3748"/>
+    <text x="150" y="209" font-size="13" font-weight="bold" fill="#ffffff">WhatsApp</text>
+    <rect x="285" y="189" width="165" height="30" fill="#252D3A"/>
+    <text x="320" y="209" font-size="13" fill="#7A90A8">Telegram</text>
+
+    <g class="r0">
+      <circle cx="152" cy="252" r="19" fill="#9c5a1e"/><text x="145" y="258" font-size="15" fill="#fff" font-weight="bold">A</text>
+      <circle cx="166" cy="266" r="6" fill="#44DD44" stroke="#1F2530" stroke-width="2"/>
+      <text x="182" y="248" font-size="14" font-weight="bold">Anna</text>
+      <text x="182" y="266" font-size="12" fill="#7A90A8">So — who is online? 😎</text>
+      <g class="badge"><circle cx="430" cy="254" r="11" fill="#F5C400"/><text x="426" y="259" font-size="13" font-weight="bold" fill="#3a2c00">1</text></g>
+    </g>
+    <g class="r1">
+      <circle cx="152" cy="312" r="19" fill="#2f7a4a"/><text x="145" y="318" font-size="15" fill="#fff" font-weight="bold">M</text>
+      <circle cx="166" cy="326" r="6" fill="#44DD44" stroke="#1F2530" stroke-width="2"/>
+      <text x="182" y="308" font-size="14" font-weight="bold">Mom</text>
+      <text x="182" y="326" font-size="12" fill="#7A90A8">Coming over on Sunday?</text>
+    </g>
+    <g class="r2">
+      <circle cx="152" cy="372" r="19" fill="#6b4a99"/><text x="145" y="378" font-size="15" fill="#fff" font-weight="bold">T</text>
+      <circle cx="166" cy="386" r="6" fill="#44DD44" stroke="#1F2530" stroke-width="2"/>
+      <text x="182" y="368" font-size="14" font-weight="bold">Team Retro 🦙</text>
+      <text x="182" y="386" font-size="12" fill="#7A90A8">Ben: build is out</text>
+    </g>
+    <g class="r3">
+      <circle cx="152" cy="432" r="19" fill="#9c4a6e"/><text x="145" y="438" font-size="15" fill="#fff" font-weight="bold">L</text>
+      <circle cx="166" cy="446" r="6" fill="#44DD44" stroke="#1F2530" stroke-width="2"/>
+      <text x="182" y="428" font-size="14" font-weight="bold">Lukas</text>
+      <text x="182" y="446" font-size="12" fill="#7A90A8">hahaha insane</text>
+    </g>
+  </g>
+
+  <!-- Chat window -->
+  <g class="cw">
+    <rect x="620" y="175" width="520" height="430" rx="10" fill="#1F2530" stroke="#4A5E78"/>
+    <rect class="titlemorph" x="620" y="175" width="520" height="34" rx="10" fill="#0D6B6B"/>
+    <text x="638" y="197" font-size="14" font-weight="bold" fill="#ffffff">✿ WhatsApp — Anna</text>
+    <rect x="620" y="209" width="520" height="46" fill="#0c4f4f"/>
+    <circle cx="648" cy="232" r="16" fill="#9c5a1e"/><text x="641" y="238" font-size="14" fill="#fff" font-weight="bold">A</text>
+    <text x="674" y="228" font-size="14" font-weight="bold" fill="#ffffff">Anna</text>
+    <text x="674" y="246" font-size="11" fill="#cfeae8">typing…</text>
+
+    <g class="b1">
+      <rect x="644" y="280" width="300" height="46" rx="10" fill="#252D3A" stroke="#3A4A5E"/>
+      <text x="660" y="308" font-size="14">So — who is online? 😎</text>
+    </g>
+    <g class="b2">
+      <rect class="bubblemorph" x="820" y="338" width="298" height="46" rx="10" fill="#0D5C5C"/>
+      <text x="836" y="366" font-size="14">Me. Feels like 2003 🌼</text>
+    </g>
+    <g class="b3">
+      <rect x="644" y="396" width="320" height="46" rx="10" fill="#252D3A" stroke="#3A4A5E"/>
+      <text x="660" y="424" font-size="14">WAIT — is that ICQ?! 😂</text>
+    </g>
+
+    <rect x="644" y="540" width="380" height="40" rx="5" fill="#151B24" stroke="#3A4A5E"/>
+    <text x="660" y="565" font-size="13" fill="#7A90A8">Type a message…</text>
+    <rect class="titlemorph" x="1036" y="540" width="84" height="40" rx="5" fill="#0D6B6B"/>
+    <text x="1058" y="565" font-size="13" font-weight="bold" fill="#ffffff">Send</text>
+  </g>
+
+  <!-- Captions -->
+  <g class="cap1" opacity="0">
+    <text x="640" y="652" font-size="34" font-weight="bold" fill="#ffffff" text-anchor="middle">Your WhatsApp. Like it’s 2003.</text>
+    <text x="640" y="686" font-size="20" fill="#cfe6ff" text-anchor="middle">uh-oh! 🌼</text>
+  </g>
+  <g class="cap2" opacity="0">
+    <text x="640" y="652" font-size="32" font-weight="bold" fill="#ffffff" text-anchor="middle">WhatsApp + Telegram — in one window.</text>
+    <text x="640" y="686" font-size="19" fill="#cfe6ff" text-anchor="middle">Separate chat windows. True ICQ style.</text>
+  </g>
+  <g class="cap3" opacity="0">
+    <text x="640" y="652" font-size="34" font-weight="bold" fill="#ffffff" text-anchor="middle">Skins: ICQ · MSN · Telegram.</text>
+    <text x="640" y="686" font-size="19" fill="#cfe6ff" text-anchor="middle">One click. Fully re-skinned.</text>
+  </g>
+
+  <!-- End card -->
+  <g class="endcard">
+    <rect width="1280" height="720" fill="#081422" opacity="0.93"/>
+    <text x="640" y="300" font-size="86" fill="#F5C400" text-anchor="middle">✿</text>
+    <text x="640" y="392" font-size="52" font-weight="bold" fill="#ffffff" text-anchor="middle">ICQ · Retrogram</text>
+    <text x="640" y="436" font-size="22" fill="#9fe8e0" text-anchor="middle">WhatsApp &amp; Telegram — ICQ style</text>
+    <rect x="520" y="474" width="240" height="56" rx="9" fill="#1A8A8A" stroke="#0E5F5F"/>
+    <text x="640" y="510" font-size="22" font-weight="bold" fill="#04201f" text-anchor="middle">▼ Download free</text>
+  </g>
+</svg>

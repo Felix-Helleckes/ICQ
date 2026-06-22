@@ -131,6 +131,14 @@ contextBridge.exposeInMainWorld('api', {
   },
   openExternal: (url) => ipcRenderer.send('open-external', url),
   openGame: (url, title) => ipcRenderer.invoke('open-game', url, title),
+  // Skins — broadcast a chosen skin to every other window so all
+  // open chat windows + the contact list re-theme together.
+  setSkin: (id) => ipcRenderer.send('skin:set', id),
+  onSkinChange: (cb) => {
+    const handler = (_, id) => cb(id);
+    ipcRenderer.on('skin:changed', handler);
+    return () => ipcRenderer.removeListener('skin:changed', handler);
+  },
   openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
   saveTempImage: (base64, ext) => ipcRenderer.invoke('app:save-temp-image', base64, ext),
   readFileDataUrl: (filePath) => ipcRenderer.invoke('app:read-file-dataurl', filePath),

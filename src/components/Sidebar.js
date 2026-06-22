@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Sidebar.css';
+import { SKINS, setSkin, getSavedSkinId } from '../skins';
 
 const GAMES = [
   { id: '8ball', name: '8 Ball Pool',  icon: '🎱', url: 'https://bloob.io/de/8ballpool' },
@@ -158,6 +159,10 @@ export default function Sidebar({
   const [showGameMenu, setShowGameMenu] = useState(false);
   const gameBtnRef = useRef(null);
   const gameMenuRef = useRef(null);
+  const [showSkinMenu, setShowSkinMenu] = useState(false);
+  const [skinId, setSkinId] = useState(() => getSavedSkinId());
+  const skinBtnRef = useRef(null);
+  const skinMenuRef = useRef(null);
 
   useEffect(() => {
     if (!showGameMenu) return;
@@ -168,6 +173,22 @@ export default function Sidebar({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [showGameMenu]);
+
+  useEffect(() => {
+    if (!showSkinMenu) return;
+    const onDown = (e) => {
+      if (skinBtnRef.current?.contains(e.target)) return;
+      if (skinMenuRef.current && !skinMenuRef.current.contains(e.target)) setShowSkinMenu(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showSkinMenu]);
+
+  const chooseSkin = (id) => {
+    setSkin(id);
+    setSkinId(id);
+    setShowSkinMenu(false);
+  };
 
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
@@ -220,6 +241,30 @@ export default function Sidebar({
                 >
                   <span>{g.icon}</span>
                   <span>{g.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <button
+            ref={skinBtnRef}
+            className={`sound-btn${showSkinMenu ? ' active' : ''}`}
+            title="Skin wählen"
+            onClick={() => setShowSkinMenu(v => !v)}
+          >🎨</button>
+          {showSkinMenu && (
+            <div className="sidebar-game-menu" ref={skinMenuRef}>
+              <div className="sidebar-game-menu-title">🎨 Skin</div>
+              {SKINS.map(s => (
+                <button
+                  key={s.id}
+                  className={`sidebar-game-menu-item${s.id === skinId ? ' active' : ''}`}
+                  onClick={() => chooseSkin(s.id)}
+                >
+                  <span className="skin-swatch" style={{ background: s.swatch }} />
+                  <span>{s.name}</span>
+                  {s.id === skinId && <span style={{ marginLeft: 'auto' }}>✓</span>}
                 </button>
               ))}
             </div>

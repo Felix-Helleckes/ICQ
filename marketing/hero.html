@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICQ Retrogram — Hero Reel (16:9)</title>
+  <link rel="stylesheet" href="../site/reel.css" />
+  <style>
+    html, body { height:100%; margin:0; background:#070b10; overflow:hidden; }
+    /* Full-viewport 16:9 reel for screen-recording to MP4 (English by default).
+       Open with ?lang=de for German, ?format=portrait for the 9:16 cut. */
+    #reel { position:fixed; inset:0; }
+  </style>
+</head>
+<body>
+  <div id="reel" class="icq-reel" data-format="landscape" data-sound="../site/icq-message.mp3"></div>
+  <script>
+    var f = new URLSearchParams(location.search).get('format');
+    if (f === 'landscape' || f === 'portrait') document.getElementById('reel').setAttribute('data-format', f);
+  </script>
+  <script src="../site/reel.js"></script>
+</body>
+</html>

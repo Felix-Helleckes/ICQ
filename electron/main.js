@@ -605,6 +605,15 @@ function wireExternalLinks(win) {
   });
 }
 
+// Broadcast a skin change to all other windows so every open chat
+// window + the contact list re-theme together instantly.
+ipcMain.on('skin:set', (e, id) => {
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed() && w.webContents !== e.sender)
+      w.webContents.send('skin:changed', id);
+  });
+});
+
 // Broadcast a sent message to all other windows (so sidebar updates immediately)
 ipcMain.on('chat:sent', (e, msg) => {
   try {

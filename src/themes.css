@@ -22,6 +22,12 @@
   --icq-btn-hover:    #3A4A5E;
   --icq-btn-active:   #1A8A8A;
 
+  /* Skinnable surfaces — overridden per skin in skins.js */
+  --icq-input-bg:         #151B24;
+  --icq-bubble-me:        linear-gradient(135deg, #0D5C5C, #0A3A3A);
+  --icq-bubble-me-border: #0E5F5F;
+  --icq-avatar-bg:        linear-gradient(135deg, #2A4060, #1A2A40);
+
   --icq-titlebar-bg: linear-gradient(180deg, var(--icq-header-grad1) 0%, var(--icq-header-grad2) 100%);
   --icq-header-bg: linear-gradient(180deg, var(--icq-header-grad1) 0%, #0A3A3A 100%);
   --icq-panel-bg: none;

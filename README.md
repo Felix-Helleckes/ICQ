@@ -16,6 +16,10 @@
 
   [![Watch Live](https://img.shields.io/badge/▶_Watch_Live-YouTube-red?style=flat-square&logo=youtube)](https://www.youtube.com/@TheEfficientDev)
   [![Portfolio](https://img.shields.io/badge/Portfolio-felix--helleckes.github.io-0a66c2?style=flat-square&logo=github)](https://felix-helleckes.github.io/)
+
+  <br/><br/>
+
+  <img src="marketing/hero-en.svg" width="100%" alt="ICQ Retrogram — animated demo: contacts load, a message arrives, a reply is sent, the skin switches colour" />
 </div>
 
 
@@ -101,6 +105,8 @@ npm start
 ---
 
 ## Build
+
+npm run build
 
 ```bash
 # Windows — NSIS installer + Portable

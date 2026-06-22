@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICQ Retrogram — Reel</title>
+  <link rel="stylesheet" href="reel.css" />
+  <style>
+    html, body { height:100%; margin:0; background:#070b10; overflow:hidden; }
+    /* Fills the whole viewport. Default = portrait (9:16) for TikTok/Reels.
+       Open with ?format=landscape for a 16:9 stage instead. */
+    #reel { position:fixed; inset:0; }
+  </style>
+</head>
+<body>
+  <div id="reel" class="icq-reel" data-format="portrait" data-sound="icq-message.mp3"></div>
+  <script>
+    // Allow ?format=landscape|portrait to override the forced portrait.
+    var f = new URLSearchParams(location.search).get('format');
+    if (f === 'landscape' || f === 'portrait') document.getElementById('reel').setAttribute('data-format', f);
+  </script>
+  <script src="reel.js"></script>
+</body>
+</html>

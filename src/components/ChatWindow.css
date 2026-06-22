@@ -176,8 +176,8 @@
 }
 
 .message-row.me .message-bubble {
-  background: linear-gradient(135deg, #0D5C5C, #0A3A3A);
-  border: 1px solid var(--icq-teal-dark);
+  background: var(--icq-bubble-me);
+  border: 1px solid var(--icq-bubble-me-border);
   border-radius: 8px 8px 2px 8px;
   align-items: flex-end;
 }
@@ -381,7 +381,7 @@
 .msg-input {
   flex: 1;
   resize: none;
-  background: #151B24;
+  background: var(--icq-input-bg);
   border: 1px solid var(--icq-border);
   border-radius: 3px;
   padding: 5px 7px;
