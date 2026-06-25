@@ -264,7 +264,10 @@
   border-radius: 50%;
   background: var(--icq-avatar-bg);
   color: var(--icq-teal-light);
-  display: flex;
+  /* Hidden in the contact list by default (ICQ-authentic). Per-skin toggle
+     via --icq-list-avatar-display (see themes.css / skins.js). The chat
+     window avatars are separate classes and are unaffected. */
+  display: var(--icq-list-avatar-display, flex);
   align-items: center;
   justify-content: center;
   font-weight: bold;

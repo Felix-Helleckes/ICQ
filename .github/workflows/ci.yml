@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-build:
+    name: Unit & build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          # whatsapp-web.js pulls in Puppeteer; we don't run the WA bridge in
+          # CI, so skip the Chromium download to keep installs fast.
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+
+      - name: Syntax-check Electron main process
+        run: npm run check:electron
+
+      - name: Unit tests
+        run: npm run test:unit
+        env:
+          CI: "true"
+
+      - name: Production build (renderer)
+        run: npm run build
+        env:
+          CI: "false"
+
+  e2e:
+    name: E2E smoke (${{ matrix.os }})
+    needs: unit-build
+    runs-on: ${{ matrix.os }}
+    # Non-blocking until validated on real runners — flip to false once green.
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Linux Electron runtime deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xvfb libnss3 libatk-bridge2.0-0 libdrm2 libgbm1 \
+            libasound2t64 libxss1 libxtst6 libxrandr2 libx11-xcb1 libgtk-3-0 || true
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+
+      - name: Build renderer (E2E loads the built files)
+        run: npm run build
+        env:
+          CI: "false"
+
+      - name: E2E smoke (Linux, headless via Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:e2e
+
+      - name: E2E smoke (Windows / macOS)
+        if: runner.os != 'Linux'
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

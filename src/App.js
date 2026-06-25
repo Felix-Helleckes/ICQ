@@ -286,6 +286,16 @@ export default function App() {
     });
   };
 
+  // Mark every archived chat as read — really hits the WhatsApp/Telegram servers.
+  const markArchivedRead = () => {
+    const archived = chats.filter(c => c.archived && (c.unreadCount || 0) > 0);
+    archived.forEach(c => {
+      patchChat(activeService, c.id, { unreadCount: 0 });
+      if (activeService === 'whatsapp') api?.wa.markRead?.(c.id).catch(() => {});
+      else api?.tg.markRead?.(c.id).catch(() => {});
+    });
+  };
+
   const handleLogout = async () => {
     if (activeService === 'whatsapp') {
       await api?.wa.logout().catch(() => {});
@@ -354,6 +364,7 @@ export default function App() {
           onToggleWaGroupSound={() => setWaGroupSound(v => !v)}
           onToggleTgGroupSound={() => setTgGroupSound(v => !v)}
           onMarkGroupsRead={markGroupsRead}
+          onMarkArchivedRead={markArchivedRead}
           contactScale={contactScale}
           onDecreaseContactScale={() => setContactScale(v => Math.max(0.85, Number((v - 0.05).toFixed(2))))}
           onIncreaseContactScale={() => setContactScale(v => Math.min(1.45, Number((v + 0.05).toFixed(2))))}

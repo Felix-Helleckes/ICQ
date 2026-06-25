@@ -3,6 +3,10 @@ const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
+// E2E smoke mode (set by the Playwright CI test): load the built renderer
+// and skip messenger bridge init so the app boots deterministically with
+// no network / Puppeteer dependency.
+const isE2E = process.env.ICQ_E2E === '1';
 
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
 function logStartup(msg, err) {
@@ -127,7 +131,7 @@ try { telegramBridge = require('./telegram-bridge'); } catch (e) {
 
 // ── Dev URL helper ────────────────────────────────────────────
 function devUrl(params = '') {
-  return isDev
+  return (isDev && !isE2E)
     ? `http://localhost:3000${params ? '?' + params : ''}`
     : `file://${path.join(__dirname, '../build/index.html')}${params ? '?' + params : ''}`;
 }
@@ -219,6 +223,9 @@ function createChatWindow(chatId, chatName, service, avatar, isGroup) {
 app.on('ready', async () => {
   const win = createContactListWindow();
   win.show();
+  // E2E smoke: the window + renderer are all we assert on. Skip bridge init
+  // so the test is deterministic and needs no WhatsApp/Telegram session.
+  if (isE2E) { logStartup('E2E mode — skipping messenger bridge init'); return; }
   // Dev: use local ./data dir. Packaged: use userData (installer → %APPDATA%, portable → next to exe)
   const dataDir = isDev
     ? path.join(__dirname, '../data')
@@ -366,14 +373,17 @@ ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
   }
   
   const messages = await whatsappBridge.getMessages(chatId, opts);
-  
+
   // Maintain cache size limit
   if (waMessageCache.size >= CACHE_SIZE) {
     const firstKey = waMessageCache.keys().next().value;
     waMessageCache.delete(firstKey);
   }
   waMessageCache.set(chatId, { messages, timestamp: Date.now() });
-  
+  // Return the freshly loaded messages — without this the chat window
+  // opened empty and only filled ~2s later via the background reconcile,
+  // which also dropped sticker/media (wa:media fired into an empty list).
+  return messages;
 });
 ipcMain.handle('wa:send-message', async (e, id, text, quotedMessageId)  => whatsappBridge.sendMessage(id, text, quotedMessageId));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
@@ -404,21 +414,49 @@ ipcMain.handle('tg:set-archive',   async (e, chatId, archive) => telegramBridge.
 
 ipcMain.handle('tg:get-participants', async (e, chatId) => telegramBridge.getParticipants(chatId));
 
-ipcMain.handle('show-contact-context', async (e, { id, service, archived, name }) => {
+ipcMain.handle('show-contact-context', async (e, { id, service, archived, name, isGroup }) => {
   const win = BrowserWindow.fromWebContents(e.sender);
+  const bridge = service === 'whatsapp' ? whatsappBridge : telegramBridge;
   const { Menu, MenuItem } = require('electron');
   const menu = new Menu();
   menu.append(new MenuItem({ label: name || id, enabled: false }));
   menu.append(new MenuItem({ type: 'separator' }));
+
+  // Mark this single chat as read on the server, then clear its badge everywhere.
+  menu.append(new MenuItem({
+    label: 'Als gelesen markieren',
+    click: async () => {
+      try {
+        await bridge.markChatRead?.(id);
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) w.webContents.send('chat:read-broadcast', { chatId: String(id), service });
+        });
+      } catch (err) { console.error('[ctx markRead]', err); }
+    }
+  }));
+
   menu.append(new MenuItem({
     label: archived ? 'Archivierung rückgängig' : 'Archivieren',
     click: async () => {
-      try {
-        if (service === 'whatsapp') await whatsappBridge.setArchive(id, !archived);
-        else if (service === 'telegram') await telegramBridge.setArchive(id, !archived);
-      } catch (err) { console.error('[setArchive]', err); }
+      try { await bridge.setArchive?.(id, !archived); }
+      catch (err) { console.error('[setArchive]', err); }
     }
   }));
+
+  // Block / unblock — 1:1 contacts only (groups can't be blocked).
+  if (!isGroup) {
+    let blocked = false;
+    try { blocked = await bridge.isContactBlocked?.(id); } catch (err) {}
+    menu.append(new MenuItem({ type: 'separator' }));
+    menu.append(new MenuItem({
+      label: blocked ? 'Entsperren' : 'Blockieren',
+      click: async () => {
+        try { await bridge.setBlocked?.(id, !blocked); }
+        catch (err) { console.error('[setBlocked]', err); }
+      }
+    }));
+  }
+
   menu.popup({ window: win });
 });
 

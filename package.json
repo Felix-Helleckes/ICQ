@@ -17,6 +17,10 @@
     "start": "concurrently \"npm run react-start\" \"wait-on http://localhost:3000 && electron .\"",
     "react-start": "react-scripts start",
     "build": "react-scripts build",
+    "test": "react-scripts test",
+    "test:unit": "react-scripts test --watchAll=false",
+    "test:e2e": "playwright test",
+    "check:electron": "node scripts/check-electron.js",
     "electron": "electron .",
     "dist": "npm run dist:portable",
     "dist:win": "npm run dist:portable",
@@ -36,6 +40,7 @@
     "whatsapp-web.js": "^1.23.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "concurrently": "^8.2.2",
     "electron": "^29.0.0",
     "electron-builder": "^24.9.1",

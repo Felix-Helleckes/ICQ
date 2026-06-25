@@ -439,6 +439,35 @@ async function setArchive(chatId, archive) {
   }
 }
 
+// Block / unblock a user — propagates to Telegram servers (contacts.Block).
+async function setBlocked(chatId, blocked) {
+  if (status !== 'ready') return false;
+  const { Api } = require('telegram');
+  try {
+    let inputPeer = null;
+    try { inputPeer = await tgClient.getInputEntity(toPeer(chatId)); } catch (e) { inputPeer = null; }
+    if (!inputPeer) { console.warn('[tg setBlocked] could not resolve peer for', chatId); return false; }
+    if (blocked) await tgClient.invoke(new Api.contacts.Block({ id: inputPeer }));
+    else await tgClient.invoke(new Api.contacts.Unblock({ id: inputPeer }));
+    broadcast('tg:chat-update', { id: String(chatId), blocked: !!blocked });
+    return true;
+  } catch (err) {
+    console.error('[tg setBlocked]', err?.message || err);
+    return false;
+  }
+}
+
+async function isContactBlocked(chatId) {
+  if (status !== 'ready') return false;
+  const { Api } = require('telegram');
+  try {
+    const inputPeer = await tgClient.getInputEntity(toPeer(chatId)).catch(() => null);
+    if (!inputPeer) return false;
+    const full = await tgClient.invoke(new Api.users.GetFullUser({ id: inputPeer }));
+    return !!(full && full.fullUser && full.fullUser.blocked);
+  } catch (e) { return false; }
+}
+
 async function editMessage(chatId, messageId, newText) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   if (!messageId) throw new Error('Missing message id');
@@ -598,6 +627,8 @@ module.exports = {
   sendSticker,
   sendVoice,
   setArchive,
+  setBlocked,
+  isContactBlocked,
   getParticipants,
   editMessage,
   deleteMessage,

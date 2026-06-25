@@ -34,7 +34,7 @@ function ContactItem({ chat, onSelect, service }) {
   const handleContext = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (window.api?.showContactContext) window.api.showContactContext({ id: chat.id, service, archived: !!chat.archived, name: chat.name });
+    if (window.api?.showContactContext) window.api.showContactContext({ id: chat.id, service, archived: !!chat.archived, name: chat.name, isGroup: !!chat.isGroup });
   };
 
   React.useEffect(() => {
@@ -78,13 +78,22 @@ function ContactItem({ chat, onSelect, service }) {
   );
 }
 
-function ArchivedSection({ archived, onSelect, service }) {
+function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service }) {
   const [expanded, setExpanded] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState(null);
   const totalUnread = archived.reduce((s, c) => s + (c.unreadCount || 0), 0);
+
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+  const closeMenu = () => setCtxMenu(null);
+
   if (!archived || archived.length === 0) return null;
   return (
     <div className="group-section">
-      <div className="group-header" onClick={() => setExpanded(v => !v)}>
+      <div className="group-header" onClick={() => setExpanded(v => !v)} onContextMenu={handleContextMenu}>
         <span className="group-arrow">{expanded ? '▾' : '▸'}</span>
         <span className="group-label">Archiviert</span>
         {archived.length > 0 && <span className="group-count">({archived.length})</span>}
@@ -93,6 +102,16 @@ function ArchivedSection({ archived, onSelect, service }) {
       {expanded && archived.map(chat => (
         <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} />
       ))}
+      {ctxMenu && (
+        <>
+          <div className="ctx-overlay" onClick={closeMenu} />
+          <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
+            <button className="ctx-item" onClick={() => { onMarkArchivedRead?.(); closeMenu(); }}>
+              ✓ Alle als gelesen markieren
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -151,6 +170,7 @@ export default function Sidebar({
   waGroupSound, tgGroupSound,
   onToggleWaGroupSound, onToggleTgGroupSound,
   onMarkGroupsRead,
+  onMarkArchivedRead,
   contactScale,
   onDecreaseContactScale,
   onIncreaseContactScale,
@@ -341,7 +361,7 @@ export default function Sidebar({
             )}
             {/* Collapsible archived section (like groups) */}
             {!chatsLoading && archived.length > 0 && (
-              <ArchivedSection archived={archived} onSelect={onSelectChat} service={activeService} />
+              <ArchivedSection archived={archived} onSelect={onSelectChat} onMarkArchivedRead={onMarkArchivedRead} service={activeService} />
             )}
             {/* Direct chats */}
             {contacts.map(chat => (

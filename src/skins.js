@@ -5,6 +5,10 @@
 //
 // applySkin() always writes the COMPLETE variable set, so switching
 // skins never leaves a stale value behind from the previous one.
+//
+// Contact-list avatars: each skin sets '--icq-list-avatar-display'.
+// Default skins use 'none' (authentic ICQ — avatars only in the chat
+// window). A custom skin can set 'flex' to show them in the list again.
 
 const STORAGE_KEY = 'icq-skin';
 
@@ -40,6 +44,7 @@ export const SKINS = [
       '--icq-bubble-me': 'linear-gradient(135deg, #0D5C5C, #0A3A3A)',
       '--icq-bubble-me-border': '#0E5F5F',
       '--icq-avatar-bg': 'linear-gradient(135deg, #2A4060, #1A2A40)',
+      '--icq-list-avatar-display': 'none',
     },
   },
   {
@@ -75,6 +80,7 @@ export const SKINS = [
       '--icq-bubble-me': 'linear-gradient(135deg, #DCEFC4, #C9E5A6)',
       '--icq-bubble-me-border': '#A9CE7A',
       '--icq-avatar-bg': 'linear-gradient(135deg, #8FC85E, #5CA52E)',
+      '--icq-list-avatar-display': 'none',
     },
   },
   {
@@ -109,6 +115,7 @@ export const SKINS = [
       '--icq-bubble-me': 'linear-gradient(135deg, #DCEAFB, #C2DBF7)',
       '--icq-bubble-me-border': '#93BEEC',
       '--icq-avatar-bg': 'linear-gradient(135deg, #7FB4EE, #2E86DE)',
+      '--icq-list-avatar-display': 'none',
     },
   },
 ];

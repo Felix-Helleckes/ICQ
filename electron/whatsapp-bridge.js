@@ -718,6 +718,26 @@ async function setArchive(chatId, archive) {
   });
 }
 
+// Block / unblock a contact — propagates to WhatsApp servers via the
+// linked-device protocol (the contact really gets blocked on your account).
+async function setBlocked(contactId, blocked) {
+  return runWithRecovery('setBlocked', async () => {
+    const contact = await client.getContactById(contactId);
+    if (!contact) throw new Error('Contact not found');
+    if (blocked) await contact.block();
+    else await contact.unblock();
+    return true;
+  });
+}
+
+async function isContactBlocked(contactId) {
+  if (status !== 'ready') return false;
+  try {
+    const contact = await client.getContactById(contactId);
+    return !!contact?.isBlocked;
+  } catch (e) { return false; }
+}
+
 async function editMessage(chatId, messageId, newText) {
   return runWithRecovery('editMessage', async () => {
     if (!messageId) throw new Error('Missing message id');
@@ -840,6 +860,8 @@ module.exports = {
   sendSticker,
   sendVoice,
   setArchive,
+  setBlocked,
+  isContactBlocked,
   editMessage,
   deleteMessage,
   markChatRead,

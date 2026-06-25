@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1920" width="1080" height="1920" font-family="Tahoma, Segoe UI, Arial, sans-serif" role="img" aria-label="ICQ Retrogram — WhatsApp and Telegram in a retro ICQ messenger">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="6%" r="120%">
+      <stop offset="0%" stop-color="#3a6ea5"/><stop offset="42%" stop-color="#1c3a63"/><stop offset="100%" stop-color="#0e1f38"/>
+    </radialGradient>
+    <linearGradient id="tb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0D6B6B"/><stop offset="1" stop-color="#0A3A3A"/></linearGradient>
+    <linearGradient id="cta" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#46d1c0"/><stop offset="1" stop-color="#1A8A8A"/></linearGradient>
+  </defs>
+
+  <rect width="1080" height="1920" fill="url(#bg)"/>
+  <rect width="1080" height="1920" fill="black" opacity="0.12"/>
+
+  <!-- brand -->
+  <text x="540" y="150" font-size="40" font-weight="bold" fill="#F5C400" text-anchor="middle">✿ <tspan fill="#ffffff">ICQ Retrogram</tspan></text>
+
+  <!-- headline -->
+  <text x="540" y="285" font-size="86" font-weight="bold" fill="#ffffff" text-anchor="middle">Your WhatsApp.</text>
+  <text x="540" y="385" font-size="86" font-weight="bold" fill="#2BBFBF" text-anchor="middle">Like it’s 2003.</text>
+  <text x="540" y="465" font-size="48" font-weight="bold" fill="#F5C400" text-anchor="middle">uh-oh! 🌼</text>
+
+  <!-- ── window mock-up (centred) ── -->
+  <g transform="translate(150,560)">
+    <!-- contact list -->
+    <rect x="0" y="0" width="500" height="540" rx="14" fill="#1F2530" stroke="#4A5E78" stroke-width="2"/>
+    <rect x="0" y="0" width="500" height="48" rx="14" fill="url(#tb)"/>
+    <text x="22" y="32" font-size="20" font-weight="bold" fill="#fff">✿ ICQ — Retrogram</text>
+    <rect x="0" y="48" width="500" height="68" fill="#0c4f4f"/>
+    <circle cx="44" cy="82" r="24" fill="#2A4060"/><text x="34" y="91" font-size="22" fill="#fff">✿</text>
+    <text x="80" y="76" font-size="20" font-weight="bold" fill="#fff">Felix</text>
+    <text x="80" y="102" font-size="16" fill="#44DD44">● Online</text>
+    <g font-size="20" fill="#E0E8F0">
+      <g transform="translate(0,140)"><circle cx="44" cy="30" r="24" fill="#9c5a1e"/><text x="35" y="38" fill="#fff" font-weight="bold">A</text><circle cx="62" cy="48" r="8" fill="#44DD44" stroke="#1F2530" stroke-width="3"/><text x="84" y="24" font-weight="bold">Anna</text><text x="84" y="50" font-size="16" fill="#7A90A8">So — who is online? 😎</text><circle cx="466" cy="26" r="15" fill="#F5C400"/><text x="460" y="33" font-size="18" font-weight="bold" fill="#3a2c00">1</text></g>
+      <g transform="translate(0,218)"><circle cx="44" cy="30" r="24" fill="#2f7a4a"/><text x="35" y="38" fill="#fff" font-weight="bold">M</text><circle cx="62" cy="48" r="8" fill="#44DD44" stroke="#1F2530" stroke-width="3"/><text x="84" y="24" font-weight="bold">Mom</text><text x="84" y="50" font-size="16" fill="#7A90A8">Coming over on Sunday?</text></g>
+      <g transform="translate(0,296)"><circle cx="44" cy="30" r="24" fill="#6b4a99"/><text x="35" y="38" fill="#fff" font-weight="bold">T</text><circle cx="62" cy="48" r="8" fill="#44DD44" stroke="#1F2530" stroke-width="3"/><text x="84" y="24" font-weight="bold">Team Retro 🦙</text><text x="84" y="50" font-size="16" fill="#7A90A8">Ben: build is out</text></g>
+      <g transform="translate(0,374)"><circle cx="44" cy="30" r="24" fill="#9c4a6e"/><text x="35" y="38" fill="#fff" font-weight="bold">L</text><circle cx="62" cy="48" r="8" fill="#44DD44" stroke="#1F2530" stroke-width="3"/><text x="84" y="24" font-weight="bold">Lukas</text><text x="84" y="50" font-size="16" fill="#7A90A8">hahaha insane</text></g>
+    </g>
+    <!-- chat snippet overlapping bottom-right -->
+    <g transform="translate(300,360)">
+      <rect x="0" y="0" width="480" height="380" rx="14" fill="#1F2530" stroke="#4A5E78" stroke-width="2"/>
+      <rect x="0" y="0" width="480" height="48" rx="14" fill="url(#tb)"/>
+      <text x="22" y="32" font-size="20" font-weight="bold" fill="#fff">✿ WhatsApp — Anna</text>
+      <rect x="22" y="78" width="320" height="58" rx="12" fill="#252D3A" stroke="#3A4A5E"/>
+      <text x="42" y="114" font-size="20" fill="#E0E8F0">So — who is online? 😎</text>
+      <rect x="150" y="156" width="308" height="58" rx="12" fill="#0D5C5C" stroke="#0E5F5F"/>
+      <text x="170" y="192" font-size="20" fill="#E0E8F0">Me. Feels like 2003 🌼</text>
+      <rect x="22" y="234" width="340" height="58" rx="12" fill="#252D3A" stroke="#3A4A5E"/>
+      <text x="42" y="270" font-size="20" fill="#E0E8F0">WAIT — is that ICQ?! 😂</text>
+    </g>
+  </g>
+
+  <!-- skins -->
+  <g transform="translate(380,1430)">
+    <rect x="0" y="0" width="44" height="44" rx="9" fill="#0D6B6B" stroke="#000" stroke-opacity="0.3"/>
+    <rect x="60" y="0" width="44" height="44" rx="9" fill="#5CA52E" stroke="#000" stroke-opacity="0.3"/>
+    <rect x="120" y="0" width="44" height="44" rx="9" fill="#2E86DE" stroke="#000" stroke-opacity="0.3"/>
+    <text x="184" y="31" font-size="26" fill="#cfe0ee">3 skins</text>
+  </g>
+
+  <!-- CTA -->
+  <g transform="translate(330,1560)">
+    <rect x="0" y="0" width="420" height="86" rx="14" fill="url(#cta)" stroke="#0E5F5F"/>
+    <text x="210" y="56" font-size="34" font-weight="bold" fill="#06231f" text-anchor="middle">▼ Download free</text>
+  </g>
+  <text x="540" y="1720" font-size="26" fill="#8da3ba" text-anchor="middle">WhatsApp + Telegram · Windows · macOS · Linux</text>
+  <text x="540" y="1762" font-size="24" fill="#6f88a0" text-anchor="middle">Free &amp; open source</text>
+</svg>
