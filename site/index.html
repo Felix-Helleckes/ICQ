@@ -47,6 +47,9 @@
     nav .sp { flex:1; }
     nav a.ghost { color:var(--dim); font-size:14px; padding:7px 13px; border:1px solid var(--line); border-radius:7px; }
     nav a.ghost:hover { color:#fff; border-color:var(--teal); }
+    nav a.ghost.support { color:#ff7a98; border-color:rgba(255,122,152,0.45); }
+    nav a.ghost.support:hover { color:#fff; border-color:#ff7a98; background:rgba(255,122,152,0.14); }
+    footer a.support { color:#ff7a98; }
     .lang { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
     .lang button { background:transparent; color:var(--dim); border:0; padding:7px 11px; font:inherit; font-size:13px; cursor:pointer; }
     .lang button.on { background:var(--teal); color:#04201f; font-weight:bold; }
@@ -108,6 +111,7 @@
       <div class="sp"></div>
       <a href="#features" class="ghost" data-i18n="nav.features">Features</a>
       <a href="https://github.com/Felix-Helleckes/ICQ" class="ghost">GitHub</a>
+      <a href="https://paypal.me/sparky512" target="_blank" rel="noopener" class="ghost support" data-i18n="nav.support">♥ Support</a>
       <div class="lang">
         <button data-lang="en">EN</button><button data-lang="de">DE</button>
       </div>
@@ -163,7 +167,7 @@
     </section>
 
     <footer>
-      <div>© <span id="yr"></span> Felix Helleckes · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · MIT license</div>
+      <div>© <span id="yr"></span> Felix Helleckes · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · MIT license · <a class="support" href="https://paypal.me/sparky512" target="_blank" rel="noopener">♥ Support via PayPal</a></div>
       <div class="disc" data-i18n="footer.disc">Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses the unofficial WhatsApp Web interface — this may violate WhatsApp's Terms of Service; use at your own risk.</div>
     </footer>
   </div>
@@ -172,6 +176,7 @@
     var I18N = {
       en: {
         'nav.features':'Features',
+        'nav.support':'♥ Support',
         'hero.h1':'Your WhatsApp. <span class="hl">Like it’s 2003.</span>',
         'hero.sub':'WhatsApp and Telegram in one retro ICQ messenger — separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.',
         'hero.note':'Free &amp; open source · Windows · macOS · Linux · no sign-up needed',
@@ -190,6 +195,7 @@
       },
       de: {
         'nav.features':'Features',
+        'nav.support':'♥ Unterstützen',
         'hero.h1':'Dein WhatsApp. <span class="hl">Als wäre es 2003.</span>',
         'hero.sub':'WhatsApp und Telegram in einem Retro-ICQ-Messenger — eigene Chat-Fenster, der klassische <b>uh-oh!</b>-Sound und umschaltbare Skins.',
         'hero.note':'Kostenlos &amp; Open Source · Windows · macOS · Linux · keine Anmeldung nötig',

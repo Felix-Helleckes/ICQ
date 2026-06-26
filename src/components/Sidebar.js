@@ -7,6 +7,9 @@ const GAMES = [
   { id: 'lama',  name: 'Slide-A-Lama', icon: '🦙', url: 'https://slidealama.eu/' },
 ];
 
+// Where the in-app "support" button sends people.
+const DONATE_URL = 'https://paypal.me/sparky512';
+
 const STATUS_COLOR = {
   ready: '#44DD44', 'needs-auth': '#F5C400', 'no-credentials': '#F5C400',
   disconnected: '#CC3333', qr: '#F5C400',
@@ -370,6 +373,16 @@ export default function Sidebar({
           </div>
         </>
       )}
+
+      {/* Support / donate footer — opens the donation page in the browser */}
+      <button
+        className="donate-footer"
+        onClick={() => window.api?.openExternal?.(DONATE_URL)}
+        title="Projekt unterstützen"
+      >
+        <span className="donate-heart">♥</span>
+        <span>Projekt unterstützen</span>
+      </button>
     </div>
   );
 }

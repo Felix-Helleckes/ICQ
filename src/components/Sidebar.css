@@ -190,6 +190,27 @@
   box-shadow: 0 0 3px currentColor;
 }
 
+/* ── Support / donate footer ── */
+.donate-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-top: 1px solid var(--icq-border);
+  background: var(--icq-bg);
+  color: var(--icq-text-dim);
+  font-family: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.donate-footer:hover { background: var(--icq-bg-light); color: var(--icq-text); }
+.donate-heart { color: #ff5b7f; font-size: 0.95rem; line-height: 1; }
+
 /* ── Search bar ── */
 .search-bar {
   padding: 5px 6px;
