@@ -34,6 +34,17 @@ jobs:
           node-version: 20
           cache: 'npm'
 
+      - name: Verify tag matches package.json version
+        shell: bash
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "package.json=$PKG  tag=$TAG"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::Tag v$TAG does not match package.json version $PKG — aborting so we never ship mislabeled binaries again."
+            exit 1
+          fi
+
       - name: Install Linux system deps
         if: matrix.os == 'ubuntu-latest'
         run: |
