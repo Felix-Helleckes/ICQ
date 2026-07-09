@@ -73,6 +73,8 @@ export default function App() {
     const bothReady = waStatus === 'ready' || tgStatus === 'ready';
     if (bothReady && !startupSoundPlayedRef.current) {
       startupSoundPlayedRef.current = true;
+      // Respect the persisted mute setting — no startup chime when muted.
+      if (!soundEnabledRef.current) return;
       try {
         const startupAudio = new Audio(process.env.PUBLIC_URL + '/sounds/Startup.wav');
         startupAudio.volume = 0.3;
