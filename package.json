@@ -19,6 +19,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:unit": "react-scripts test --watchAll=false",
+    "test:electron": "jest --config jest.electron.config.js",
     "test:e2e": "playwright test",
     "check:electron": "node scripts/check-electron.js",
     "electron": "electron .",

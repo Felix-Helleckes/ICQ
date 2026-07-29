@@ -51,6 +51,16 @@ function TwoFAPanel({ hint, onSubmit }) {
 
 // ── WhatsApp panel ────────────────────────────────────────────
 function WhatsAppPanel({ waStatus, waQR }) {
+  // Escape hatch for a stuck startup: if 'loading' persists unusually long, offer a
+  // manual reconnect. wa.reconnect() re-inits the bridge, which also sweeps orphaned
+  // Chrome processes — the usual cause of a hang — so the button actually helps.
+  const [stuckLoading, setStuckLoading] = useState(false);
+  useEffect(() => {
+    if (waStatus !== 'loading') { setStuckLoading(false); return undefined; }
+    const t = setTimeout(() => setStuckLoading(true), 45000);
+    return () => clearTimeout(t);
+  }, [waStatus]);
+
   return (
     <>
       {(waStatus === 'disconnected' || waStatus === 'loading') && (
@@ -60,6 +70,15 @@ function WhatsAppPanel({ waStatus, waQR }) {
             {waStatus === 'loading' ? 'WhatsApp startet…' : 'Verbinde…'}
           </p>
           <p className="login-hint small">Chrome/Puppeteer wird gestartet,<br/>das dauert kurz beim ersten Mal.</p>
+          {stuckLoading && waStatus === 'loading' && (
+            <>
+              <p className="login-hint small">Das dauert ungewöhnlich lange…</p>
+              <button
+                className="win98-btn"
+                onClick={() => window.api?.wa?.reconnect?.()}
+              >🔄 Neu verbinden</button>
+            </>
+          )}
         </div>
       )}
       {waStatus === 'qr' && !waQR    && <p className="login-hint">Waiting for QR code…</p>}

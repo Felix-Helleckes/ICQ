@@ -7,6 +7,12 @@ const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFile } = require('child_process');
+const { createConcurrencyLimiter } = require('./lib/concurrency');
+const { waitForChats } = require('./lib/wa-chats');
+const { resolveChromiumExecutable } = require('./lib/chromium-path');
+const { mapChatEntry } = require('./lib/chat-entry');
+const { mapMessageEntry, isBacklogMessage } = require('./lib/message-entry');
 
 // Logging helper: append to temp startup log for easier debugging across restarts
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
@@ -25,6 +31,7 @@ let lastClientId = null;
 let loadingWatchdog = null;
 let waRetryUsed = false;
 let waManualLogout = false; // true only when logout() was explicitly called — prevents auto-reconnect
+let readyAtSec = 0; // when the client last became ready — used to tag replayed backlog messages
 
 const WA_LOADING_TIMEOUT_MS = 180000;     // 180s startup budget (packaged app + Chrome cold start)
 const WA_POST_AUTH_TIMEOUT_MS = 90000;   // 90s post-auth: packaged apps need more time than dev
@@ -60,13 +67,74 @@ function armLoadingWatchdog(reason) {
 
     waRetryUsed = true;
     console.warn(`[WA watchdog] timeout (${reason}) -> retry init`);
-    try { if (client) await client.destroy(); } catch (e) {}
+    const stuckClient = client;
     client = null;
+    await closeClientBrowser(stuckClient);
     currentQR = null;
     status = 'loading';
     broadcast('wa:status', 'loading');
     init(onAvatarCb, lastDataDir, { isRetry: true });
   }, timeout);
+}
+
+// Last resort — only for a browser that is STILL running after a graceful close.
+// Never call this directly on a live client: see closeClientBrowser.
+function hardKillClientBrowser(c) {
+  try {
+    const proc = c?.pupBrowser?.process?.();
+    if (proc && !proc.killed && proc.exitCode === null) {
+      log('WA teardown: browser still alive after graceful close -> SIGKILL');
+      proc.kill('SIGKILL');
+    }
+  } catch (e) {}
+}
+
+// Close a client's browser, clean shutdown first.
+//
+// WhatsApp keeps its session credentials in Chrome's IndexedDB/LevelDB, which is
+// flushed on close. Killing the process before that finishes corrupts the store and
+// WhatsApp refuses the NEXT login ("Login zurzeit nicht möglich") until the session
+// folder is deleted. So destroy() always gets a real window here. The kill is only
+// the fallback for a hung browser — one that lingers holds the profile lock and
+// makes the next start hang at "WhatsApp startet…".
+async function closeClientBrowser(c, graceMs = 4500) {
+  if (!c) return;
+  try {
+    await Promise.race([c.destroy(), new Promise(r => setTimeout(r, graceMs))]);
+  } catch (e) { /* destroy throws when the page is already gone — fine */ }
+  hardKillClientBrowser(c);
+}
+
+// A Chrome from a previous app run can outlive a fast exit (before-quit only waits
+// 1.5s) and keep the profile locked — the main cause of a restart hanging forever.
+// Kill ONLY processes whose command line references OUR session profile directory;
+// the user's normal Chrome windows have a different profile and are never touched.
+function killOrphanedChrome(dataDir) {
+  return new Promise((resolve) => {
+    if (!dataDir) return resolve();
+    const marker = path.join(dataDir, 'whatsapp');
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(bound);
+      log('WA init: orphan-chrome sweep done');
+      resolve();
+    };
+    const bound = setTimeout(done, 9000); // absolute upper bound — never block startup
+    try {
+      if (process.platform === 'win32') {
+        const esc = marker.replace(/'/g, "''");
+        const cmd = `Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe' or Name = 'msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${esc}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
+        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 8000 }, () => done());
+        child.on('error', () => done());
+      } else {
+        const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const child = execFile('pkill', ['-f', esc], { timeout: 5000 }, () => done());
+        child.on('error', () => done());
+      }
+    } catch (e) { done(); }
+  });
 }
 
 function cleanupStaleSessionLocks(dataDir) {
@@ -144,6 +212,8 @@ async function waitForReady(timeoutMs = 30000) {
   return false;
 }
 
+// For IDEMPOTENT operations only (archive, block, edit, delete): re-running them
+// after a reconnect is harmless. Never use this for sending — see runSendOnce.
 async function runWithRecovery(opName, handler) {
   await ensureOperationalForSend();
   try {
@@ -157,6 +227,41 @@ async function runWithRecovery(opName, handler) {
 
     await ensureOperationalForSend();
     return await handler();
+  }
+}
+
+// Lightweight readiness gate for sends. Unlike ensureOperationalForSend it does NOT
+// call getState() (another in-page round-trip that can hang) and, crucially, never
+// triggers a reconnect. A send must never tear down the connection: doing so used to
+// cascade — one flaky send reconnected the client, then every following send failed
+// with "not ready" until it recovered, so sending looked completely broken.
+function assertReadyToSend() {
+  if (!client || !client.pupPage || status !== 'ready') throw new Error('WhatsApp not ready');
+}
+
+// All sends go through the library's client.sendMessage.
+//
+// It normalizes the options into the exact shape WhatsApp Web expects (parseVCards,
+// isCaptionByUser, waitUntilMsgSent, media/sticker handling) before the in-page call
+// spreads them into the outgoing message. Bypassing it and calling the in-page
+// sendMessage directly with a hand-built options object produced messages that were
+// added to the chat but never transmitted — stuck at ack 0, i.e. the clock icon.
+//
+// What we deliberately do NOT do here is retry, or trigger a reconnect:
+//   - The library serializes the sent message afterwards (getMessageModel), and that
+//     step can throw AFTER the message was already delivered. Retrying then sends it
+//     a second time for real — the recipient sees two copies, unfixable.
+//   - Tearing down the connection from a send error cascaded: every following send
+//     failed with "not ready" until recovery finished, so sending looked dead.
+// Real connection loss is still caught by the health check and the disconnect event.
+// A failure the user can repeat beats a message they cannot take back.
+async function runSendOnce(opName, handler) {
+  assertReadyToSend();
+  try {
+    return await handler();
+  } catch (e) {
+    log('WA send failed', opName, String(e?.message || e));
+    throw e;
   }
 }
 
@@ -244,87 +349,41 @@ function ensureExecutable(filePath) {
 }
 
 function findChromiumExecutable() {
-  const win = process.platform === 'win32';
-  const mac = process.platform === 'darwin';
-  // Auf macOS immer System-Chrome bevorzugen!
-  if (mac) {
-    const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-    if (fs.existsSync(chromePath)) return ensureExecutable(chromePath);
-    const chromiumPath = '/Applications/Chromium.app/Contents/MacOS/Chromium';
-    if (fs.existsSync(chromiumPath)) return ensureExecutable(chromiumPath);
-    const edgePath = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
-    if (fs.existsSync(edgePath)) return ensureExecutable(edgePath);
-    // Kein Chrome gefunden
+  const exe = resolveChromiumExecutable({
+    platform: process.platform,
+    resourcesPath: process.resourcesPath,
+    env: process.env,
+    existsSync: fs.existsSync,
+    readdirSync: fs.readdirSync,
+    puppeteerPath: () => {
+      try { return require('puppeteer').executablePath?.() || null; } catch (e) { return null; }
+    },
+  });
+  if (!exe && process.platform === 'darwin') {
     console.error('[WA init] Kein Google Chrome auf macOS gefunden! Bitte Chrome installieren.');
-    return null;
   }
-  // Windows/Linux: wie gehabt
-  // 1. Bundled chromium (extraResources → resources/chrome/<version>/chrome-*/chrome[.exe])
-  try {
-    const resPath = process.resourcesPath;
-    if (resPath) {
-      const chromeDir = path.join(resPath, 'chrome');
-      const versions = fs.readdirSync(chromeDir);
-      for (const v of versions) {
-        const vDir = path.join(chromeDir, v);
-        const candidates = [
-          path.join(vDir, 'chrome-win64',  'chrome.exe'),
-          path.join(vDir, 'chrome-win32',  'chrome.exe'),
-          path.join(vDir, 'chrome-linux64', 'chrome'),
-          path.join(vDir, 'chrome-linux',   'chrome'),
-          path.join(vDir, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
-          path.join(vDir, 'chrome-mac-arm64','Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
-        ];
-        for (const exe of candidates) {
-          if (fs.existsSync(exe)) return ensureExecutable(exe);
-        }
-      }
-    }
-  } catch (e) {}
-
-  // 2. System Chrome / Edge
-  const sysCandidates = win ? [
-    path.join(process.env['ProgramFiles']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
-    path.join(process.env['ProgramFiles(x86)']   || '', 'Google\\Chrome\\Application\\chrome.exe'),
-    path.join(process.env['LOCALAPPDATA']        || '', 'Google\\Chrome\\Application\\chrome.exe'),
-    path.join(process.env['ProgramFiles']        || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
-    path.join(process.env['ProgramFiles(x86)']   || '', 'Microsoft\\Edge\\Application\\msedge.exe'),
-  ] : [
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/chromium',
-    '/snap/bin/chromium',
-  ];
-
-  for (const p of sysCandidates) {
-    if (p && fs.existsSync(p)) return ensureExecutable(p);
-  }
-
-  // 3. Dev fallback: puppeteer's own downloaded Chromium
-  try {
-    const p = require('puppeteer').executablePath?.();
-    if (p && fs.existsSync(p)) return ensureExecutable(p);
-  } catch (e) {}
-
-  return null;
+  return exe ? ensureExecutable(exe) : null;
 }
 
-function init(avatarCallback, dataDir, opts = {}) {
+async function init(avatarCallback, dataDir, opts = {}) {
   const { isRetry = false } = opts;
   if (avatarCallback) onAvatarCb = avatarCallback;
   lastDataDir = dataDir;
   if (!isRetry) waRetryUsed = false;
 
-  // Attempt to restore any previous corrupt-backup files before cleaning locks
-  restoreFromBackups(dataDir);
-
-  // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
-  cleanupStaleSessionLocks(dataDir);
-
   clearLoadingWatchdog();
   status = 'loading';
   broadcast('wa:status', 'loading');
+
+  // Attempt to restore any previous corrupt-backup files before cleaning locks
+  restoreFromBackups(dataDir);
+
+  // Sweep Chrome processes a previous run left behind BEFORE touching lock files —
+  // deleting SingletonLock while the old Chrome still lives corrupts the profile.
+  await killOrphanedChrome(dataDir);
+
+  // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
+  cleanupStaleSessionLocks(dataDir);
 
   const executablePath = findChromiumExecutable();
 
@@ -391,9 +450,18 @@ function init(avatarCallback, dataDir, opts = {}) {
     log('WA event', 'authenticated');
   });
 
+  // Offline sync progress (0→100). Logged so a stuck initial sync is visible in
+  // icq-startup.log — the 'ready' event only fires once this completes.
+  try {
+    client.on('loading_screen', (percent, message) => {
+      log('WA event', 'loading_screen', { percent, message });
+    });
+  } catch (e) { /* older whatsapp-web.js without the event */ }
+
   client.on('ready', () => {
     status = 'ready';
     currentQR = null;
+    readyAtSec = Math.floor(Date.now() / 1000);
     clearLoadingWatchdog();
     broadcast('wa:status', 'ready');
     broadcast('wa:ready', { name: client.info?.pushname });
@@ -402,8 +470,13 @@ function init(avatarCallback, dataDir, opts = {}) {
   });
 
   client.on('message', async (msg) => {
+    // Messages sent/received while the app was closed get replayed by the sync
+    // right after startup. Tag them so the UI can skip sounds and unread bumps —
+    // and don't eagerly download their media (a burst of 50 replays used to
+    // hammer the page; media loads when the chat is opened).
+    const isBacklog = isBacklogMessage(msg.timestamp, readyAtSec);
     let mediaData = null;
-    if (msg.hasMedia && (msg.type === 'sticker' || msg.type === 'image' || msg.type === 'video' || msg.type === 'ptt' || msg.type === 'audio')) {
+    if (!isBacklog && msg.hasMedia && (msg.type === 'sticker' || msg.type === 'image' || msg.type === 'video' || msg.type === 'ptt' || msg.type === 'audio')) {
       try {
         const media = await msg.downloadMedia();
         if (media) mediaData = `data:${media.mimetype};base64,${media.data}`;
@@ -420,22 +493,21 @@ function init(avatarCallback, dataDir, opts = {}) {
       fromMe: msg.fromMe,
       ack: msg.ack ?? 0,
       mediaData,
+      isBacklog,
     });
     // Also emit a chat-update so the UI can react immediately (ordering, lastMessage, archived)
+    // NOTE: no archived lookup here. This fires on EVERY incoming message and used
+    // to call getChatById() — i.e. a groupMetadata network round-trip per group
+    // message, which throttled the whole client. The sidebar updates from
+    // 'wa:message'; archived state comes from the chat list.
     try {
       const chatId = msg.from || msg.to;
-        let archivedFlag = false;
-        try {
-          const ch = await client.getChatById(chatId);
-          archivedFlag = !!ch?.archived;
-        } catch (e) { /* ignore */ }
         broadcast('wa:chat-update', {
           id: chatId,
           lastMessage: msg.body || '',
           timestamp: msg.timestamp || Math.floor(Date.now()/1000),
           unreadCount: undefined,
           isGroup: msg.isGroup || false,
-          archived: archivedFlag,
         });
     } catch (e) {}
   });
@@ -453,21 +525,16 @@ function init(avatarCallback, dataDir, opts = {}) {
       fromMe: true,
       ack: msg.ack ?? 0,
       mediaData: null,
+      isBacklog: isBacklogMessage(msg.timestamp, readyAtSec),
     });
     try {
       const chatId = msg.to || msg.from;
-        let archivedFlag = false;
-        try {
-          const ch = await client.getChatById(chatId);
-          archivedFlag = !!ch?.archived;
-        } catch (e) { /* ignore */ }
         broadcast('wa:chat-update', {
           id: chatId,
           lastMessage: msg.body || '',
           timestamp: msg.timestamp || Math.floor(Date.now()/1000),
           unreadCount: 0,
           isGroup: msg.isGroup || false,
-          archived: archivedFlag,
         });
     } catch (e) {}
   });
@@ -502,7 +569,7 @@ function init(avatarCallback, dataDir, opts = {}) {
     client = null;
     currentQR = null;
     setTimeout(async () => {
-      try { await oldClient.destroy(); } catch (e) {}
+      await closeClientBrowser(oldClient);
       if (!waManualLogout) {
         waRetryUsed = false;
         init(onAvatarCb, lastDataDir);
@@ -537,12 +604,16 @@ function init(avatarCallback, dataDir, opts = {}) {
         log('WA auth_failure: backup created', backupDir);
       }
     } catch (e) { log('WA auth_failure cleanup error', String(e)); }
-    // Reinit to show QR again instead of stuck error screen
+    // Reinit to show QR again instead of stuck error screen. The failed client was
+    // previously just dropped (client = null) — its Chrome kept running and held
+    // the profile lock. Destroy + hard-kill it before re-initializing.
+    const failedClient = client;
     client = null;
     currentQR = null;
     waRetryUsed = false;
     status = 'loading';
     broadcast('wa:status', 'loading');
+    (async () => { await closeClientBrowser(failedClient); })();
     setTimeout(() => init(onAvatarCb, lastDataDir), 2000);
   });
 
@@ -577,83 +648,302 @@ function stopHealthCheck() {
   if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
 }
 
+// Fast, metadata-free chat list read straight from the WhatsApp store.
+//
+// whatsapp-web.js's getChats() serializes every chat through getChatModel, which
+// for GROUPS awaits a network groupMetadata.update() and touches newer WA-Web
+// modules. That is both slow (a round-trip per group) and throws on some builds —
+// and because the library wraps it all in one Promise.all, a single bad chat blanks
+// the entire list. The contact list needs none of that: just id, title, last
+// message, unread count and archived. Reading those fields directly is fast and
+// cannot fail on the group-metadata path. Group metadata is fetched lazily, only
+// when a group chat is actually opened.
+async function fetchChatsLight() {
+  if (!client || !client.pupPage) return { chats: [], skipped: 0, error: 'no-page' };
+  return client.pupPage.evaluate(() => {
+    const out = { chats: [], skipped: 0, error: null };
+    let coll;
+    try {
+      coll = window.require('WAWebCollections').Chat.getModelsArray();
+    } catch (e) {
+      out.error = 'collection: ' + ((e && e.message) || String(e));
+      return out;
+    }
+    for (const chat of coll) {
+      try {
+        const id = chat && chat.id ? chat.id._serialized : null;
+        if (!id) { out.skipped += 1; continue; }
+        let title = null;
+        try { title = chat.formattedTitle || null; } catch (e) {}
+        // Last-message preview: resolve via lastReceivedKey against the global Msg
+        // collection (what the library does), because a chat's own msgs buffer is
+        // empty until that chat has been opened — which would leave most previews
+        // blank right after login. Falls back to the buffer, and stays fully
+        // synchronous (no network) either way.
+        let last = null;
+        try {
+          const key = chat.lastReceivedKey;
+          const serialized = key && (key._serialized || key);
+          if (serialized) {
+            const m = window.require('WAWebCollections').Msg.get(String(serialized));
+            if (m && !m.isNotification) last = { body: m.body || m.caption || '', t: m.t || 0 };
+          }
+        } catch (e) {}
+        if (!last) {
+          try {
+            const arr = (chat.msgs && chat.msgs.getModelsArray) ? chat.msgs.getModelsArray() : [];
+            for (let i = arr.length - 1; i >= 0; i -= 1) {
+              const m = arr[i];
+              if (m && !m.isNotification) { last = { body: m.body || m.caption || '', t: m.t || 0 }; break; }
+            }
+          } catch (e) {}
+        }
+        out.chats.push({
+          id: { _serialized: id },
+          name: title,
+          formattedTitle: title,
+          lastMessage: last,
+          unreadCount: (() => { try { return chat.unreadCount || 0; } catch (e) { return 0; } })(),
+          isGroup: String(id).endsWith('@g.us'),
+          archive: (() => { try { return !!chat.archive; } catch (e) { return false; } })(),
+          t: (() => { try { return chat.t || 0; } catch (e) { return 0; } })(),
+        });
+      } catch (e) { out.skipped += 1; }
+    }
+    return out;
+  });
+}
+
 async function getChats() {
   if (status !== 'ready') return [];
-  const chats = await client.getChats();
-  // Sofort die Basisdaten zurückgeben (ohne Avatare)
-  const result = chats.slice(0, 100).map(c => ({
-    id: c.id._serialized,
-    name: c.name,
-    lastMessage: c.lastMessage?.body || '',
-    timestamp: c.lastMessage?.timestamp || 0,
-    unreadCount: c.unreadCount,
-    isGroup: c.isGroup,
-    archived: !!c.archived,
-    avatar: null,
-  }));
-  // Avatare im Hintergrund nachladen und einzeln broadcasten
+
+  // Primary: the fast metadata-free read. Only if that yields nothing (store shape
+  // moved) do we pay for the library's heavyweight path. On a fresh login the store
+  // fills gradually after 'ready', so wrap it in a bounded wait that returns as soon
+  // as chats appear.
+  const attempt = async () => {
+    const light = await fetchChatsLight().catch(e => ({ chats: [], skipped: 0, error: String(e?.message || e) }));
+    if (light?.error) log('WA getChats light error', light.error);
+    if (light?.chats?.length) {
+      if (light.skipped) log('WA getChats light skipped', { skipped: light.skipped });
+      return light.chats;
+    }
+    try {
+      const chats = await client.getChats();
+      log('WA getChats via library', { count: chats?.length || 0 });
+      return Array.isArray(chats) ? chats : [];
+    } catch (e) {
+      log('WA getChats library threw', String(e?.message || e));
+      return [];
+    }
+  };
+
+  const chats = await waitForChats(attempt, () => status === 'ready', { deadlineMs: 20000, intervalMs: 700 });
+  log('WA getChats result', { count: chats.length });
+
+  // Return base data only (no avatars). Profile pictures are loaded lazily and
+  // throttled by getContactAvatar so they never compete with this first sync.
+  return chats.slice(0, 100).map(mapChatEntry);
+}
+
+// Defensive message fetch that runs inside the page and NEVER calls getChatModel
+// (getAsModel:false), so group chats whose metadata sync fails still return their
+// messages. Mirrors whatsapp-web.js's own fetchMessages internals.
+//
+// Two modes:
+//   - count-based (`limit`): page back until we have N messages. Used by the cheap
+//     periodic reconcile.
+//   - time-based (`sinceTs` > 0): page back until the history actually reaches that
+//     timestamp — that is what makes "the last 3 days" real instead of a fixed 30.
+//     Bounded by `maxCount` (busy groups) and never returns fewer than `minCount`
+//     (a quiet chat still shows history older than the window).
+async function fetchMessagesRaw(chatId, opts = {}) {
+  if (!client || !client.pupPage) return { messages: [], error: 'no-page' };
+  const sinceTs = Number(opts.sinceTs) || 0;
+  const limit = Number(opts.limit) || 30;
+  const maxCount = Number(opts.maxCount) || 300;
+  const minCount = Number(opts.minCount) || 25;
+  return client.pupPage.evaluate(async (chatId, sinceTs, limit, maxCount, minCount) => {
+    const out = { messages: [], error: null, pages: 0 };
+    const keep = (m) => m && !m.isNotification;
+    let chat;
+    try {
+      chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
+    } catch (e) { out.error = 'getChat: ' + ((e && e.message) || String(e)); return out; }
+    if (!chat) { out.error = 'chat-not-found'; return out; }
+
+    let msgs = [];
+    try { msgs = chat.msgs.getModelsArray().filter(keep); } catch (e) { out.error = 'msgs: ' + ((e && e.message) || String(e)); }
+    out.buffered = msgs.length; // chat-list sync keeps only the preview message here
+
+    const oldestT = () => {
+      let o = Infinity;
+      for (const m of msgs) { const t = m.t || 0; if (t && t < o) o = t; }
+      return o;
+    };
+    const target = sinceTs > 0 ? maxCount : limit;
+
+    // Paging strategies. whatsapp-web.js calls loadEarlierMsgs({ chat }); WhatsApp
+    // Web's module API drifts, so when that yields nothing we try the older direct
+    // signature, the chat model's own method, and finally scan the module for any
+    // loadEarlier-style function. The first strategy that returns messages is
+    // locked in for the remaining pages; every failure is recorded for the log.
+    out.attempts = [];
+    out.strategy = null;
+    const strategies = [
+      ['module-obj', async () => window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat })],
+      ['module-direct', async () => window.require('WAWebChatLoadMessages').loadEarlierMsgs(chat)],
+      ['chat-method', async () => (chat.loadEarlierMsgs ? chat.loadEarlierMsgs() : null)],
+      ['module-scan', async () => {
+        const mod = window.require('WAWebChatLoadMessages');
+        for (const k of Object.keys(mod)) {
+          if (!/loadearlier/i.test(k) || typeof mod[k] !== 'function' || k === 'loadEarlierMsgs') continue;
+          try { const r = await mod[k]({ chat }); if (r && r.length) return r; } catch (e) {}
+          try { const r = await mod[k](chat); if (r && r.length) return r; } catch (e) {}
+        }
+        return null;
+      }],
+    ];
+    const loadOlder = async () => {
+      if (out.strategy) {
+        const s = strategies.find((x) => x[0] === out.strategy);
+        try { return await s[1](); } catch (e) { return null; }
+      }
+      for (const [name, fn] of strategies) {
+        try {
+          const r = await fn();
+          if (r && r.length) { out.strategy = name; return r; }
+          out.attempts.push(name + ':empty');
+        } catch (e) {
+          out.attempts.push(name + ':' + ((e && e.message) || 'err').slice(0, 80));
+        }
+      }
+      return null;
+    };
+
+    try {
+      let guard = 0;
+      while (guard < 40) {
+        guard += 1;
+        if (msgs.length >= target) break;
+        // Time-based: stop once the history reaches past the cutoff and we have a
+        // sane minimum. Otherwise keep paging backwards.
+        if (sinceTs > 0 && msgs.length >= minCount && oldestT() <= sinceTs) break;
+        const loaded = await loadOlder();
+        if (!loaded || !loaded.length) break; // start of chat, or no strategy works
+        out.pages += 1;
+        msgs = [...loaded.filter(keep), ...msgs];
+      }
+    } catch (e) { /* keep whatever we already have */ }
+
+    // When nothing paged, record what the module actually exposes — that pins the
+    // API drift precisely in the startup log.
+    if (!out.strategy && out.pages === 0) {
+      try { out.attempts.push('keys:' + Object.keys(window.require('WAWebChatLoadMessages')).join('|').slice(0, 200)); }
+      catch (e) { out.attempts.push('module-missing:' + ((e && e.message) || 'err').slice(0, 80)); }
+    }
+
+    msgs.sort((a, b) => (a.t || 0) - (b.t || 0));
+
+    if (sinceTs > 0) {
+      const recent = msgs.filter((m) => (m.t || 0) >= sinceTs);
+      msgs = recent.length >= minCount ? recent : msgs.slice(-minCount);
+      if (msgs.length > maxCount) msgs = msgs.slice(-maxCount);
+    } else if (msgs.length > limit) {
+      msgs = msgs.slice(-limit);
+    }
+
+    for (const m of msgs) {
+      try { out.messages.push(window.WWebJS.getMessageModel(m)); } catch (e) { /* skip bad msg */ }
+    }
+    return out;
+  }, chatId, sinceTs, limit, maxCount, minCount);
+}
+
+const MEDIA_MSG_TYPES = ['sticker', 'image', 'video', 'ptt', 'audio'];
+
+// Download media for already-mapped message entries in the background and push each
+// one to the UI as it lands. Uses getMessageById, which reads the message store
+// directly (no chat model), so it works for group chats too. Sequential on purpose —
+// this is background work and must not compete with the foreground.
+function downloadMediaInBackground(entries) {
+  const targets = (entries || []).filter(m => m.hasMedia && MEDIA_MSG_TYPES.includes(m.type));
+  if (!targets.length) return;
   (async () => {
-    for (const c of chats.slice(0, 100)) {
+    for (const entry of targets) {
+      if (status !== 'ready') return;
       try {
-        const contact = await c.getContact();
-        const pic = await contact.getProfilePicUrl();
-        if (pic) broadcast('wa:avatar', { id: c.id._serialized, avatar: pic });
-      } catch (e) { /* no pic */ }
+        const msg = await client.getMessageById(entry.id);
+        if (!msg) continue;
+        const media = await msg.downloadMedia();
+        if (media) {
+          broadcast('wa:media', { msgId: entry.id, mediaData: `data:${media.mimetype};base64,${media.data}` });
+        }
+      } catch (e) { /* ignore media load errors */ }
     }
   })();
-  return result;
 }
 
 async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
-  const limit = opts.limit ?? 30; // Limit reduced for faster initial load
-  const chat = await client.getChatById(chatId);
-  const msgs = await chat.fetchMessages({ limit });
-  
-  // Return immediately WITHOUT media to unblock UI
-  const result = msgs.map(m => ({
-    id: m.id._serialized,
-    body: m.body || '',
-    fromMe: m.fromMe,
-    timestamp: m.timestamp,
-    author: m.author || m.from,
-    type: m.type,
-    isGif: m.isGif || false,
-    ack: m.ack ?? (m.fromMe ? 1 : -1),
-    hasMedia: m.hasMedia,
-    mediaData: null,
-  }));
-  
-  // Load media in background (don't block UI)
-  (async () => {
-    for (const m of msgs) {
-      if (m.hasMedia && (m.type === 'sticker' || m.type === 'image' || m.type === 'video' || m.type === 'ptt' || m.type === 'audio')) {
-        try {
-          const media = await m.downloadMedia();
-          if (media) {
-            const mediaData = `data:${media.mimetype};base64,${media.data}`;
-            broadcast('wa:media', { msgId: m.id._serialized, mediaData });
-          }
-        } catch (e) { /* ignore media load errors */ }
+  const limit = opts.limit ?? 30; // count-based fallback / reconcile depth
+
+  // Primary: raw fetch. The library route (getChatById → fetchMessages) builds the
+  // full chat model first — a groupMetadata.update() round-trip on every open that
+  // also throws for groups on some WA-Web builds, which left the window empty. The
+  // raw path skips the model entirely (getAsModel:false), so it is faster AND works
+  // for groups. It also supports paging back to a timestamp (opts.sinceTs), which
+  // the library API cannot do at all. Only if it yields nothing do we try the
+  // library path.
+  const raw = await fetchMessagesRaw(chatId, {
+    sinceTs: opts.sinceTs,
+    limit,
+    maxCount: opts.maxCount,
+    minCount: opts.minCount,
+  }).catch(e => ({ messages: [], error: String(e?.message || e) }));
+  if (raw?.error) log('WA getMessages raw error', chatId, raw.error);
+  log('WA getMessages paging', {
+    chatId,
+    buffered: raw?.buffered ?? -1,
+    pages: raw?.pages || 0,
+    strategy: raw?.strategy || null,
+    attempts: raw?.attempts?.length ? raw.attempts : undefined,
+    count: raw?.messages?.length || 0,
+  });
+
+  let result = (raw?.messages || []).map(mapMessageEntry);
+
+  // The chat-list sync leaves only the preview message in each chat's buffer, so a
+  // result this small means paging didn't work (module drift) — not that the chat
+  // is empty. Give the library path a shot and keep whichever found more.
+  if (result.length < Math.min(limit, 10)) {
+    try {
+      const chat = await client.getChatById(chatId);
+      const msgs = await chat.fetchMessages({ limit });
+      const viaLib = msgs.map(mapMessageEntry);
+      if (viaLib.length > result.length) {
+        result = viaLib;
+        log('WA getMessages via library', { chatId, count: result.length });
       }
+    } catch (e) {
+      log('WA getMessages library threw', chatId, String(e?.message || e));
     }
-  })();
-  
+  }
+
+  // Load media in background (don't block UI).
+  if (!opts.skipMedia) downloadMediaInBackground(result);
+
+  log('WA getMessages', { chatId, count: result.length });
   return result;
 }
 
 async function sendMessage(chatId, text, quotedMessageId = null) {
-  return runWithRecovery('sendMessage', async () => {
-    // If message contains a URL, disable automatic link preview generation
-    // to avoid waiting for preview fetching which can slow down send.
-    const URL_RE = /https?:\/\/\S+/i;
+  return runSendOnce('sendMessage', async () => {
+    // If the message contains a URL, disable automatic link preview generation to
+    // avoid waiting for the preview fetch, which slows the send down.
     const options = {};
-    if (URL_RE.test(String(text || ''))) {
-      options.linkPreview = false;
-    }
-    if (quotedMessageId) {
-      options.quotedMessageId = quotedMessageId;
-    }
+    if (/https?:\/\/\S+/i.test(String(text || ''))) options.linkPreview = false;
+    if (quotedMessageId) options.quotedMessageId = quotedMessageId;
     await client.sendMessage(chatId, text, options);
     return true;
   });
@@ -661,16 +951,15 @@ async function sendMessage(chatId, text, quotedMessageId = null) {
 
 async function markChatRead(chatId) {
   if (status !== 'ready') return;
-  try {
-    const chat = await client.getChatById(chatId);
-    await chat.sendSeen();
-  } catch (e) { /* ignore */ }
+  // client.sendSeen() resolves the chat with getAsModel:false — no groupMetadata
+  // round-trip, unlike getChatById().sendSeen().
+  try { await client.sendSeen(chatId); } catch (e) { /* ignore */ }
 }
 
 async function sendFile(chatId, filePath) {
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  return runWithRecovery('sendFile', async () => {
+  return runSendOnce('sendFile', async () => {
     await client.sendMessage(chatId, media);
     return true;
   });
@@ -679,14 +968,14 @@ async function sendFile(chatId, filePath) {
 async function sendSticker(chatId, filePath) {
   const { MessageMedia } = require('whatsapp-web.js');
   const media = MessageMedia.fromFilePath(filePath);
-  return runWithRecovery('sendSticker', async () => {
+  return runSendOnce('sendSticker', async () => {
     await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
     return true;
   });
 }
 
 async function sendVoice(chatId, base64Data, mimeType) {
-  return runWithRecovery('sendVoice', async () => {
+  return runSendOnce('sendVoice', async () => {
     const { MessageMedia } = require('whatsapp-web.js');
     const mt = mimeType || 'audio/ogg';
     const filename = mt.includes('ogg') ? 'voice.ogg' : 'voice.webm';
@@ -701,18 +990,9 @@ async function setArchive(chatId, archive) {
     try {
       if (archive) await client.archiveChat(chatId);
       else await client.unarchiveChat(chatId);
-      // Broadcast updated chat state
-      try {
-        const ch = await client.getChatById(chatId);
-        broadcast('wa:chat-update', {
-          id: chatId,
-          lastMessage: ch?.lastMessage?.body || '',
-          timestamp: ch?.lastMessage?.timestamp || Math.floor(Date.now()/1000),
-          unreadCount: ch?.unreadCount,
-          isGroup: ch?.isGroup || false,
-          archived: !!ch?.archived,
-        });
-      } catch (e) {}
+      // Broadcast the state we just set — re-reading it via getChatById() built the
+      // full chat model, which threw for groups and silently skipped this update.
+      broadcast('wa:chat-update', { id: chatId, archived: !!archive });
     } catch (e) { throw e; }
     return true;
   });
@@ -802,19 +1082,25 @@ async function getParticipants(chatId) {
   } catch (e) { return []; }
 }
 
+// Profile-picture fetches all run inside WhatsApp's single headless page, so
+// firing 100 of them at once (one per visible contact) stalls chat/message sync.
+// Cap concurrency to keep avatar loading fully in the background.
+const runAvatarTask = createConcurrencyLimiter(4);
+
 async function getContactAvatar(id) {
   if (status !== 'ready') return null;
-  try {
+  return runAvatarTask(async () => {
     const contact = await client.getContactById(id);
     return await contact.getProfilePicUrl() || null;
-  } catch (e) { return null; }
+  });
 }
 
 async function logout() {
   waManualLogout = true;
   clearLoadingWatchdog();
-  try { await client.logout(); } catch (e) {}
-  try { if (client) await client.destroy(); } catch (e) {}
+  const oldClient = client;
+  try { await oldClient?.logout(); } catch (e) {}
+  await closeClientBrowser(oldClient);
   client = null;
   status = 'disconnected';
   currentQR = null;
@@ -829,7 +1115,12 @@ async function logout() {
 async function shutdown() {
   stopHealthCheck();
   clearLoadingWatchdog();
-  try { if (client) await client.destroy(); } catch (e) {}
+  const c = client;
+  client = null;
+  // Generous grace window: Chrome must finish flushing the session store, otherwise
+  // the next login is refused. before-quit allows 7s total, so 5s here leaves
+  // headroom for the Telegram bridge and the final exit.
+  await closeClientBrowser(c, 5000);
   status = 'disconnected';
 }
 
@@ -844,7 +1135,7 @@ function reconnect(dataDir) {
   status = 'loading';
   broadcast('wa:status', 'loading');
   setTimeout(async () => {
-    try { if (oldClient) await oldClient.destroy(); } catch (e) {}
+    await closeClientBrowser(oldClient);
     init(onAvatarCb, dataDir || lastDataDir);
   }, 500);
 }

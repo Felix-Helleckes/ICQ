@@ -194,7 +194,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     });
     const removeWaMedia = service === 'whatsapp' && api.wa.onMedia
       ? api.wa.onMedia(({ msgId, mediaData }) => {
-          setMessages(prev => prev.map(m => 
+          setMessages(prev => prev.map(m =>
             m.id === msgId ? { ...m, mediaData } : m
           ));
         })
@@ -224,8 +224,11 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
   }, [chatId, markChatReadNow, mergeById, service]);
 
+  // Returns true when the message really went out. WhatsApp sends are never
+  // auto-retried (a retry can deliver the message twice), so a failure has to be
+  // reported back — the composer restores the text instead of eating it.
   const sendMessage = async (text, replyToMsgId = null) => {
-    if (!text.trim() || !api) return;
+    if (!text.trim() || !api) return false;
     try {
       let sent;
       if (service === 'whatsapp') {
@@ -244,7 +247,8 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
       // Sidebar sofort benachrichtigen
       const ts = Math.floor(Date.now() / 1000);
       api.notifySent?.({ chatId, body: text, timestamp: ts, service });
-    } catch (e) { console.error('[ChatApp send]', e); }
+      return true;
+    } catch (e) { console.error('[ChatApp send]', e); return false; }
   };
 
   const sendFile = async (filePath) => {

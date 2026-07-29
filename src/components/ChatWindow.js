@@ -169,6 +169,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const streamRef = useRef(null);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
   const [replyToMsgId, setReplyToMsgId] = useState(null);
+  const [sendFailed, setSendFailed] = useState(false);
 // messageContext removed: use native context menu via main process
   const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
   const [forwardDialog, setForwardDialog] = useState({ open: false, msg: null, chats: [], loading: false, query: '' });
@@ -363,12 +364,26 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     return () => { if (off) off(); };
   }, [messages]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!text.trim()) return;
-    onSend(text, replyToMsgId);
+    const pending = text;
+    const pendingReply = replyToMsgId;
+    // Clear optimistically so typing feels instant…
     setText('');
     setReplyToMsgId(null);
+    setSendFailed(false);
     inputRef.current?.focus();
+
+    const ok = await onSend(pending, pendingReply);
+    // …but a send is never retried automatically (a retry can deliver the message
+    // twice). If it failed, give the text back rather than silently losing it —
+    // unless the user already started typing something new.
+    if (ok === false) {
+      setText(prev => (prev ? prev : pending));
+      setReplyToMsgId(prev => (prev ? prev : pendingReply));
+      setSendFailed(true);
+      inputRef.current?.focus();
+    }
   };
 
   const handleKey = (e) => {
@@ -773,12 +788,17 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
           )}
 
         </div>
+        {sendFailed && (
+          <div className="send-failed" role="alert">
+            ⚠ Nachricht konnte nicht gesendet werden — Text steht noch da, bitte erneut senden.
+          </div>
+        )}
         <div className="input-row">
           <textarea
             ref={inputRef}
             className="msg-input"
             value={text}
-            onChange={e => setText(e.target.value)}
+            onChange={e => { setText(e.target.value); if (sendFailed) setSendFailed(false); }}
             onKeyDown={handleKey}
             onPaste={handlePaste}
             placeholder="Nachricht eingeben..."

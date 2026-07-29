@@ -14,17 +14,29 @@ const fs = require('fs');
 const path = require('path');
 
 const dir = path.join(__dirname, '..', 'electron');
-const files = fs.readdirSync(dir).filter((f) => f.endsWith('.js'));
+
+// Recurse so helpers under electron/lib/ are checked too. Skip *.test.js —
+// those are exercised (and thus syntax-checked) by `npm run test:electron`.
+function collect(base) {
+  const out = [];
+  for (const entry of fs.readdirSync(base, { withFileTypes: true })) {
+    const full = path.join(base, entry.name);
+    if (entry.isDirectory()) out.push(...collect(full));
+    else if (entry.name.endsWith('.js') && !entry.name.endsWith('.test.js')) out.push(full);
+  }
+  return out;
+}
+const files = collect(dir);
 
 let failed = 0;
-for (const file of files) {
-  const full = path.join(dir, file);
+for (const full of files) {
+  const rel = path.relative(path.join(__dirname, '..'), full).replace(/\\/g, '/');
   try {
     execFileSync(process.execPath, ['--check', full], { stdio: 'pipe' });
-    console.log(`  ok   electron/${file}`);
+    console.log(`  ok   ${rel}`);
   } catch (err) {
     failed += 1;
-    console.error(`  FAIL electron/${file}`);
+    console.error(`  FAIL ${rel}`);
     console.error(String(err.stderr || err.message));
   }
 }

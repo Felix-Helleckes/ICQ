@@ -37,8 +37,13 @@ jobs:
       - name: Syntax-check Electron main process
         run: npm run check:electron
 
-      - name: Unit tests
+      - name: Unit tests (renderer)
         run: npm run test:unit
+        env:
+          CI: "true"
+
+      - name: Unit tests (Electron main-process helpers)
+        run: npm run test:electron
         env:
           CI: "true"
 

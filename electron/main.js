@@ -3,6 +3,8 @@ const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
+const { resolveDataDir } = require('./lib/data-dir');
+const { mergeMessages, pruneMessages, coversSince } = require('./lib/message-entry');
 // E2E smoke mode (set by the Playwright CI test): load the built renderer
 // and skip messenger bridge init so the app boots deterministically with
 // no network / Puppeteer dependency.
@@ -49,63 +51,49 @@ if (!singleInstanceLock) {
   app.quit();
 }
 
-// ── Portable: redirect userData to folder next to .exe ───────
-if (process.env.PORTABLE_EXECUTABLE_DIR) {
-  const portableUserData = path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'ICQ-Data');
-  const portableSessionData = path.join(portableUserData, 'session');
-  try {
-    fs.mkdirSync(portableUserData, { recursive: true });
-    fs.mkdirSync(portableSessionData, { recursive: true });
-    fs.accessSync(portableUserData, fs.constants.W_OK);
-    app.setPath('userData', portableUserData);
-    appDataDir = portableUserData;
-    app.setPath('sessionData', portableSessionData);
-    logStartup(`Portable paths active: userData=${portableUserData}`);
-  } catch (e) {
-    // Keep Electron default userData when portable dir is not writable.
-    logStartup('Portable path setup failed, using default userData', e);
+// ── User-data directory ───────────────────────────────────────
+// Portable builds keep the login/session in `ICQ-Data` next to the .exe so the
+// folder is self-contained; installed builds try the same but fall back to the
+// OS default (%APPDATA%) when the install location isn't writable. The decision
+// logic lives in electron/lib/data-dir.js so it can be unit-tested.
+const dataDecision = resolveDataDir({
+  portableExecDir: process.env.PORTABLE_EXECUTABLE_DIR,
+  isPackaged: app.isPackaged,
+  execPath: process.execPath,
+  fs,
+});
+if (dataDecision) {
+  app.setPath('userData', dataDecision.userDataDir);
+  app.setPath('sessionData', dataDecision.sessionDataDir);
+  appDataDir = dataDecision.userDataDir;
+  logStartup(`Data dir active (${dataDecision.source}): userData=${dataDecision.userDataDir}`);
+  // The installed-build fallback moves the data dir off the original %APPDATA%
+  // location, so migrate any avatars a previous version cached there.
+  if (dataDecision.source === 'portable-fallback') {
+    migrateAvatars(ORIGINAL_USER_DATA, dataDecision.userDataDir);
   }
+} else {
+  logStartup(`Using default userData: ${ORIGINAL_USER_DATA}`);
 }
 
-// Fallback portable support: when packaged, prefer an `ICQ-Data` folder next to the executable
-// and use it as `userData` (create it if missing). This ensures portable builds persist avatars/sessions.
-if (!process.env.PORTABLE_EXECUTABLE_DIR && app.isPackaged) {
+// Copy avatar cache from a previous (default) userData location into the active
+// portable data dir, so switching to the fallback path doesn't lose avatars.
+function migrateAvatars(srcUserData, dstUserData) {
   try {
-    const execDir = path.dirname(process.execPath || process.cwd());
-    const portableUserData = path.join(execDir, 'ICQ-Data');
-    const portableSessionData = path.join(portableUserData, 'session');
-    try {
-      fs.mkdirSync(portableUserData, { recursive: true });
-      fs.mkdirSync(portableSessionData, { recursive: true });
-      fs.accessSync(portableUserData, fs.constants.W_OK);
-      app.setPath('userData', portableUserData);
-      app.setPath('sessionData', portableSessionData);
-      appDataDir = portableUserData;
-      logStartup(`Portable fallback active: userData=${portableUserData}`);
-
-      // Migrate avatars from original userData to portable folder if present
-      try {
-        const srcAv = path.join(ORIGINAL_USER_DATA, 'avatars');
-        const dstAv = path.join(portableUserData, 'avatars');
-        if (fs.existsSync(srcAv)) {
-          fs.mkdirSync(dstAv, { recursive: true });
-          const files = fs.readdirSync(srcAv, { withFileTypes: true });
-          for (const f of files) {
-            if (!f.isFile()) continue;
-            const src = path.join(srcAv, f.name);
-            const dst = path.join(dstAv, f.name);
-            if (!fs.existsSync(dst)) {
-              try { fs.copyFileSync(src, dst); logStartup(`Migrated avatar ${f.name}`); } catch (e) { logStartup(`Avatar migrate failed ${f.name}`, e); }
-            }
-          }
-        }
-      } catch (e) { logStartup('Avatar migration failed', e); }
-    } catch (e) {
-      logStartup('Portable fallback setup failed (cannot write ICQ-Data), using default userData', e);
+    const srcAv = path.join(srcUserData, 'avatars');
+    const dstAv = path.join(dstUserData, 'avatars');
+    if (!fs.existsSync(srcAv)) return;
+    fs.mkdirSync(dstAv, { recursive: true });
+    const files = fs.readdirSync(srcAv, { withFileTypes: true });
+    for (const f of files) {
+      if (!f.isFile()) continue;
+      const src = path.join(srcAv, f.name);
+      const dst = path.join(dstAv, f.name);
+      if (fs.existsSync(dst)) continue;
+      try { fs.copyFileSync(src, dst); logStartup(`Migrated avatar ${f.name}`); }
+      catch (e) { logStartup(`Avatar migrate failed ${f.name}`, e); }
     }
-  } catch (e) {
-    logStartup('Portable fallback setup failed', e);
-  }
+  } catch (e) { logStartup('Avatar migration failed', e); }
 }
 
 // Contactlist/Chat windows
@@ -113,9 +101,7 @@ let contactListWindow = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
 const participantsStore = new Map(); // chatId → participants array
-const waMessageCache = new Map(); // chatId → { messages, timestamp } for last 5 chats
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-const CACHE_SIZE = 5;
+const waMessageCache = new Map(); // chatId → { messages, timestamp } — in-memory mirror of the disk cache
 // appDataDir declared early at top of file (before portable blocks)
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
@@ -242,8 +228,12 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', (e) => {
   e.preventDefault();
-  // Give bridges max 1.5s to shut down cleanly, then force exit
-  const timeout = setTimeout(() => app.exit(0), 1500);
+  // WhatsApp's session credentials live in Chrome's IndexedDB/LevelDB, which needs a
+  // moment to flush on close. Killing it too early corrupts that store and WhatsApp
+  // then refuses the next login ("Login zurzeit nicht möglich") until the session
+  // folder is deleted. Give the bridges a realistic window to close cleanly; the
+  // timeout is only the last-resort escape hatch.
+  const timeout = setTimeout(() => app.exit(0), 7000);
   Promise.all([
     whatsappBridge.shutdown?.().catch(() => {}),
     telegramBridge.shutdown?.().catch(() => {}),
@@ -365,26 +355,94 @@ ipcMain.handle('wa:reconnect',    async ()             => {
   whatsappBridge.reconnect(appDataDir);
 });
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
-ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
-  // Check cache for faster repeat opens
-  const cached = waMessageCache.get(chatId);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL && !opts.refresh) {
-    return cached.messages;
-  }
-  
-  const messages = await whatsappBridge.getMessages(chatId, opts);
 
-  // Maintain cache size limit
-  if (waMessageCache.size >= CACHE_SIZE) {
-    const firstKey = waMessageCache.keys().next().value;
-    waMessageCache.delete(firstKey);
+// ── Persistent WhatsApp message cache (last 3 days per chat) ───────────────
+// Opening a chat fetches its history back to the 3-day cutoff and caches it, so
+// the window really shows the last 3 days rather than a fixed message count.
+//
+// The LIVE fetch is the authority — the cache must never take precedence over
+// fresh data. An earlier cache-first design did exactly that (serve cache, refresh
+// in the background) and served stale/short lists whenever that throttled refresh
+// was skipped or failed. The cache is now only a fallback for when the live fetch
+// fails, so the window is never blank.
+// `waMessageCache` is the in-memory mirror; disk is what survives restarts.
+const WA_HISTORY_DAYS = 3;   // how far back an opened chat is fetched + kept
+const WA_HISTORY_MIN = 25;   // a quiet chat still shows this many, even if older
+const WA_HISTORY_MAX = 300;  // bound for busy groups (fetch + cache + render)
+function waMessagesDir() {
+  const userData = appDataDir || app.getPath('userData');
+  return path.join(userData, 'wa-messages');
+}
+function waMessagesFile(chatId) {
+  const safe = String(chatId).replace(/[^a-zA-Z0-9]/g, '_');
+  return path.join(waMessagesDir(), `${safe}.json`);
+}
+function readWaMessages(chatId) {
+  if (!chatId) return null;
+  const mem = waMessageCache.get(chatId);
+  if (mem) return mem.messages;
+  try {
+    const fp = waMessagesFile(chatId);
+    if (!fs.existsSync(fp)) return null;
+    const arr = JSON.parse(fs.readFileSync(fp, 'utf8'));
+    if (!Array.isArray(arr)) return null;
+    waMessageCache.set(chatId, { messages: arr, timestamp: Date.now() });
+    return arr;
+  } catch (e) { return null; }
+}
+function writeWaMessages(chatId, messages) {
+  if (!chatId || !Array.isArray(messages) || messages.length === 0) return;
+  try {
+    const existing = (waMessageCache.get(chatId)?.messages) || readWaMessages(chatId) || [];
+    const merged = pruneMessages(mergeMessages(existing, messages), {
+      days: WA_HISTORY_DAYS, minKeep: WA_HISTORY_MIN, maxKeep: WA_HISTORY_MAX,
+    });
+    waMessageCache.set(chatId, { messages: merged, timestamp: Date.now() });
+    const dir = waMessagesDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(waMessagesFile(chatId), JSON.stringify(merged));
+  } catch (e) { console.error('[wa-messages write]', e); }
+}
+const WA_RECONCILE_TTL = 10000; // the periodic reconcile may reuse a cache this young
+
+ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
+  // ChatApp sends refresh:true when a chat is actually opened, and polls without it
+  // for its periodic reconcile. Opening ALWAYS hits WhatsApp; only the reconcile may
+  // reuse a very fresh cache, so we don't re-query every 8s per open chat.
+  const isOpen = opts.refresh === true;
+  const entry = waMessageCache.get(chatId);
+  if (!isOpen && entry && Date.now() - entry.timestamp < WA_RECONCILE_TTL) {
+    return entry.messages;
   }
-  waMessageCache.set(chatId, { messages, timestamp: Date.now() });
-  // Return the freshly loaded messages — without this the chat window
-  // opened empty and only filled ~2s later via the background reconcile,
-  // which also dropped sticker/media (wa:media fired into an empty list).
-  return messages;
+
+  // On open, page back to the 3-day cutoff — unless the cache already holds that
+  // history, in which case a cheap fetch of the newest messages is enough (they get
+  // merged with the cached window). The reconcile always stays cheap.
+  const sinceTs = Math.floor(Date.now() / 1000) - WA_HISTORY_DAYS * 86400;
+  const deep = isOpen && !coversSince(readWaMessages(chatId), sinceTs);
+  const fetchOpts = deep
+    ? { ...opts, sinceTs, minCount: WA_HISTORY_MIN, maxCount: WA_HISTORY_MAX }
+    : opts;
+
+  const live = await whatsappBridge.getMessages(chatId, fetchOpts).catch(() => []);
+  if (Array.isArray(live) && live.length) {
+    writeWaMessages(chatId, live);
+    const merged = readWaMessages(chatId) || live;
+    logStartup(`wa:get-messages ${chatId} deep=${deep} live=${live.length} merged=${merged.length}`);
+    return merged;
+  }
+
+  // Live fetch failed or returned nothing → serve the cache so the window isn't
+  // blank. This is the ONLY case the cache is used in place of fresh data.
+  const cached = readWaMessages(chatId);
+  logStartup(`wa:get-messages ${chatId} live=0 cached=${cached?.length || 0}`);
+  return (cached && cached.length) ? cached : [];
 });
+
+// NOTE: deliberately no background pre-fetch of other chats. After the QR scan the
+// contact list must load on its own — anything else competing for the single
+// WhatsApp page made the first load crawl. Messages are fetched+cached only when a
+// chat is actually opened (see the handler above).
 ipcMain.handle('wa:send-message', async (e, id, text, quotedMessageId)  => whatsappBridge.sendMessage(id, text, quotedMessageId));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));

@@ -378,6 +378,19 @@
   align-items: flex-end;
 }
 
+/* Shown when a send failed. Sends are never auto-retried (that could deliver the
+   message twice), so the user has to know it did not go out. */
+.send-failed {
+  margin: 0 5px;
+  padding: 5px 8px;
+  border: 1px solid #b34a4a;
+  border-radius: 4px;
+  background: rgba(179, 74, 74, 0.14);
+  color: #ff9c9c;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .msg-input {
   flex: 1;
   resize: none;

@@ -65,6 +65,19 @@
     .btn.primary:hover { filter:brightness(1.08); }
     .btn.alt { color:var(--fg); background:var(--panel2); border-color:var(--line); }
     .btn.alt:hover { border-color:var(--teal); color:#fff; }
+    /* Windows Setup/Portable chooser */
+    .btn-menu { position:relative; display:inline-flex; }
+    .btn-menu > .btn { cursor:pointer; }
+    .caret { font-size:11px; opacity:.85; }
+    .btn-menu .menu { position:absolute; top:calc(100% + 6px); left:0; z-index:30; min-width:236px;
+      padding:6px; border-radius:11px; background:var(--panel2); border:1px solid var(--line);
+      box-shadow:0 14px 36px rgba(0,0,0,.45); display:none; flex-direction:column; gap:2px; }
+    .btn-menu.open .menu { display:flex; }
+    .btn-menu .menu a { display:flex; flex-direction:column; gap:1px; padding:9px 12px; border-radius:8px;
+      color:var(--fg); text-decoration:none; }
+    .btn-menu .menu a:hover { background:var(--t1); }
+    .btn-menu .menu a b { font-size:14px; }
+    .btn-menu .menu a small { font-size:12px; color:#9fb7b4; font-weight:normal; }
     .hero .note { font-size:13px; color:var(--dim); }
 
     .hero-reel { width:100%; aspect-ratio:16/9; background:#0b1422; border:1px solid var(--line);
@@ -122,7 +135,21 @@
         <h1 data-i18n-html="hero.h1">Your WhatsApp. <span class="hl">Like it’s 2003.</span></h1>
         <p class="sub" data-i18n="hero.sub">WhatsApp and Telegram in one retro ICQ messenger — separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.</p>
         <div class="cta">
-          <a class="btn primary" id="dl-win" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">▼ Windows</a>
+          <div class="btn-menu" id="win-menu">
+            <button class="btn primary" id="dl-win" type="button" aria-haspopup="true" aria-expanded="false">
+              Windows <span class="caret">▾</span>
+            </button>
+            <div class="menu" role="menu">
+              <a id="dl-win-setup" role="menuitem" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">
+                <b data-i18n="hero.winSetup">Setup (Installer)</b>
+                <small data-i18n="hero.winSetupSub">Installs like a normal app</small>
+              </a>
+              <a id="dl-win-portable" role="menuitem" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">
+                <b data-i18n="hero.winPortable">Portable</b>
+                <small data-i18n="hero.winPortableSub">Single .exe · login stays in its folder</small>
+              </a>
+            </div>
+          </div>
           <a class="btn alt" id="dl-mac" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">macOS</a>
           <a class="btn alt" id="dl-linux" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">Linux</a>
         </div>
@@ -180,6 +207,8 @@
         'hero.h1':'Your WhatsApp. <span class="hl">Like it’s 2003.</span>',
         'hero.sub':'WhatsApp and Telegram in one retro ICQ messenger — separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.',
         'hero.note':'Free &amp; open source · Windows · macOS · Linux · no sign-up needed',
+        'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installs like a normal app',
+        'hero.winPortable':'Portable','hero.winPortableSub':'Single .exe · login stays in its folder',
         'feat.h2':'One messenger. Two services. A 2003 feeling.',
         'feat.lead':'Everything modern messengers do — wrapped in the look you miss.',
         'f1t':'WhatsApp + Telegram','f1d':'Both accounts in one app, cleanly split by tab. QR login, your real chats.',
@@ -199,6 +228,8 @@
         'hero.h1':'Dein WhatsApp. <span class="hl">Als wäre es 2003.</span>',
         'hero.sub':'WhatsApp und Telegram in einem Retro-ICQ-Messenger — eigene Chat-Fenster, der klassische <b>uh-oh!</b>-Sound und umschaltbare Skins.',
         'hero.note':'Kostenlos &amp; Open Source · Windows · macOS · Linux · keine Anmeldung nötig',
+        'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installiert sich wie eine normale App',
+        'hero.winPortable':'Portable','hero.winPortableSub':'Eine .exe · Login bleibt im Ordner daneben',
         'feat.h2':'Ein Messenger. Zwei Dienste. 2003er Gefühl.',
         'feat.lead':'Alles was moderne Messenger können — verpackt im Look, den du vermisst.',
         'f1t':'WhatsApp + Telegram','f1d':'Beide Konten in einer App, sauber getrennt per Tab. QR-Login, deine echten Chats.',
@@ -251,15 +282,36 @@
             }
             return page;
           }
-          var win = pick(/Setup.*\.exe$/i, /\.exe$/i);
+          // Precise matches; pick() falls back to the releases page when the
+          // specific asset is missing, so a link is never mislabeled.
+          var winSetup = pick(/Setup.*\.exe$/i);
+          var winPortable = pick(/Portable.*\.exe$/i);
           var mac = pick(/\.dmg$/i);
           var linux = pick(/\.AppImage$/i, /\.deb$/i);
           var set = function (id, url) { var e = document.getElementById(id); if (e) e.href = url; };
-          set('dl-win', win); set('dl-mac', mac); set('dl-linux', linux);
+          set('dl-win-setup', winSetup); set('dl-win-portable', winPortable);
+          set('dl-mac', mac); set('dl-linux', linux);
           var ua = navigator.userAgent;
-          set('dl-cta', /Win/.test(ua) ? win : /Mac/.test(ua) ? mac : /Linux/.test(ua) ? linux : page);
+          set('dl-cta', /Win/.test(ua) ? winSetup : /Mac/.test(ua) ? mac : /Linux/.test(ua) ? linux : page);
         })
         .catch(function () { /* keep the releases-page fallback hrefs */ });
+    })();
+
+    // Windows Setup/Portable chooser dropdown.
+    (function () {
+      var menu = document.getElementById('win-menu');
+      if (!menu) return;
+      var btn = document.getElementById('dl-win');
+      var close = function () { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+      btn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var open = menu.classList.toggle('open');
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      document.addEventListener('click', function (e) { if (!menu.contains(e.target)) close(); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
+      // Let the chosen download proceed, then close the menu.
+      menu.querySelectorAll('.menu a').forEach(function (a) { a.addEventListener('click', close); });
     })();
 
     // Apply the resolved language (set in <head>) to the static markup.

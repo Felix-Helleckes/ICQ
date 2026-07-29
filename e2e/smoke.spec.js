@@ -37,6 +37,16 @@ test('contact window boots and renders both service tabs', async () => {
   await expect(win.locator('.svc-tab', { hasText: 'Telegram' })).toBeVisible();
 });
 
+test('shows the WhatsApp login panel while no session is connected', async () => {
+  // E2E mode skips the messenger bridges, so WhatsApp stays disconnected and the
+  // login panel — not a chat list — must render. This guards the gate that keeps
+  // the app from rendering an empty contact list before a session exists.
+  await expect(win.locator('.login-panel')).toBeVisible();
+  await expect(win.locator('.login-header')).toContainText('WhatsApp Login');
+  // The contact-list "No chats found" placeholder must NOT show pre-login.
+  await expect(win.locator('.no-contacts')).toHaveCount(0);
+});
+
 test('the default skin is applied to the document', async () => {
   const skin = await win.evaluate(() => document.documentElement.getAttribute('data-skin'));
   expect(skin).toBe('retro-teal');

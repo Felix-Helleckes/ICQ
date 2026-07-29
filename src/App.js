@@ -27,6 +27,12 @@ export default function App() {
   // Per-service chat cache — so switching services is instant (no reload)
   const waCacheRef = React.useRef(null);   // null = not loaded yet
   const tgCacheRef = React.useRef(null);
+  // WhatsApp first-load retry: right after a fresh login getChats() can return an
+  // empty list while WA is still syncing. We never cache that empty result and
+  // bump waReloadTick to retry a few times instead of showing "No chats found".
+  const [waReloadTick, setWaReloadTick] = useState(0);
+  const waChatsAttemptRef = React.useRef(0);
+  const waChatsRetryRef = React.useRef(null);
   const waProfileRef = React.useRef(null);
   const tgProfileRef = React.useRef(null);
   const activeServiceRef = React.useRef(activeService);
@@ -167,6 +173,14 @@ export default function App() {
       const cache = waCacheRef.current;
       const knownChat = cache?.some(c => c.id === msg.from);
       if (!knownChat) { scheduleReload('whatsapp'); return; }
+      if (msg.isBacklog) {
+        // Replayed by the startup/reconnect sync (sent while the app was closed):
+        // no sound, no speculative unread bump — the authoritative unread count
+        // arrives with the chat list. This kills the "uh-oh storm" + badge
+        // flicker right after starting the app.
+        patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now });
+        return;
+      }
       playMessageSound(msg.from, 'whatsapp');
       patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: (cache.find(c=>c.id===msg.from)?.unreadCount || 0) + 1 });
     });
@@ -217,10 +231,26 @@ export default function App() {
           api.wa.getMyProfile().catch(() => null),
         ]);
         if (profile) { waProfileRef.current = profile; setMyProfile(profile); }
-        // Keep the order provided by the service (server-side ordering)
-        waCacheRef.current = (chatsResult || []).slice();
-        setChats(waCacheRef.current);
-        setChatsLoading(false);
+        const list = Array.isArray(chatsResult) ? chatsResult : [];
+        if (list.length > 0) {
+          // Keep the order provided by the service (server-side ordering)
+          waChatsAttemptRef.current = 0;
+          waCacheRef.current = list.slice();
+          setChats(waCacheRef.current);
+          setChatsLoading(false);
+        } else if (waStatus === 'ready' && activeServiceRef.current === 'whatsapp' && waChatsAttemptRef.current < 2) {
+          // Still syncing — never cache the empty list. Keep the indicator up and
+          // retry so a fresh login doesn't get stuck on "No chats found".
+          setChats([]);
+          waChatsAttemptRef.current += 1;
+          clearTimeout(waChatsRetryRef.current);
+          waChatsRetryRef.current = setTimeout(() => setWaReloadTick(t => t + 1), 3000);
+        } else {
+          // Give up after several attempts — the account genuinely has no chats.
+          waChatsAttemptRef.current = 0;
+          setChats([]);
+          setChatsLoading(false);
+        }
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
         if (tgProfileRef.current) setMyProfile(tgProfileRef.current);
         if (tgCacheRef.current) { setChats(tgCacheRef.current); return; }
@@ -240,31 +270,12 @@ export default function App() {
       }
     }
     load();
-    // Background: prefetch participants for top groups so names resolve without opening chats
-    (async () => {
-      try {
-        const cache = activeService === 'whatsapp' ? waCacheRef.current : tgCacheRef.current;
-        if (!cache || cache.length === 0) return;
-        // Pick top N group chats to limit load
-        const groups = cache.filter(c => c.isGroup).slice(0, 12);
-        for (const g of groups) {
-          try {
-            const existing = await api.getStoredParticipants?.(g.id);
-            if (existing && existing.length) continue;
-            const list = activeService === 'whatsapp' ? await api.wa.getParticipants(g.id) : await api.tg.getParticipants(g.id);
-            const arr = Array.isArray(list) ? list : [];
-            // fetch and attach avatars where possible
-            const withAvatars = await Promise.all(arr.map(async (m) => {
-              let avatar = null;
-              try { avatar = activeService === 'whatsapp' ? await api.wa.getAvatar(m.id) : await api.tg.getAvatar(m.id); } catch (e) { avatar = null; }
-              return { ...m, avatar };
-            }));
-            if (withAvatars && withAvatars.length) await api.setStoredParticipants?.(g.id, withAvatars);
-          } catch (e) { /* ignore individual failures */ }
-        }
-      } catch (e) {}
-    })();
-  }, [activeService, waStatus, tgStatus]);
+    // NOTE: no background prefetching here on purpose. After the QR scan the
+    // contact list must load on its own — group participants + their avatars used
+    // to be pulled for the top groups right after, which hammered the single
+    // WhatsApp page and made the first load crawl. ChatApp loads participants
+    // on demand when a group chat is actually opened.
+  }, [activeService, waStatus, tgStatus, waReloadTick]);
 
   // Open a separate chat window (ICQ 5 style) + clear unread badge
   const openChat = (chat) => {
@@ -304,6 +315,8 @@ export default function App() {
       setWaStatus('disconnected');
       waCacheRef.current = null;
       waProfileRef.current = null;
+      clearTimeout(waChatsRetryRef.current);
+      waChatsAttemptRef.current = 0;
     } else {
       await api?.tg.logout().catch(() => {});
       setTgStatus('needs-auth');
@@ -355,6 +368,7 @@ export default function App() {
           tgStatus={tgStatus}
           chats={chats}
           chatsLoading={chatsLoading}
+          avatarsEnabled={!chatsLoading}
           onSelectChat={openChat}
           loginPanel={loginPanel}
           myProfile={myProfile}

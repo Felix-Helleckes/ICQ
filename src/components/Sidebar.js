@@ -26,7 +26,7 @@ function statusLabel(s) {
   }[s] || s;
 }
 
-function ContactItem({ chat, onSelect, service }) {
+function ContactItem({ chat, onSelect, service, avatarsEnabled = true }) {
   // Only use chat.avatar as initial state if it's already a data URL (Telegram).
   // HTTP(S) URLs from WhatsApp expire and are written as broken files — always
   // prefer the persisted disk cache; fall back to bridge fetch if nothing stored.
@@ -45,9 +45,13 @@ function ContactItem({ chat, onSelect, service }) {
     const load = async () => {
       if (avatar) return;
       try {
+        // The disk cache is a cheap local read — always try it, even on first load.
         const stored = await window.api.getStoredAvatar?.(chat.id);
         if (mounted && stored) { setAvatar(stored); return; }
-        // fetch from bridge
+        // Fetching from the messenger hits the WhatsApp/Telegram client. Skip it
+        // while the contact list is still loading so profile pictures don't
+        // compete with the initial chat sync (they load once the list is ready).
+        if (!avatarsEnabled) return;
         let fetched = null;
         try {
           if (service === 'whatsapp') fetched = await window.api.wa.getAvatar(chat.id);
@@ -61,7 +65,7 @@ function ContactItem({ chat, onSelect, service }) {
     };
     load();
     return () => { mounted = false; };
-  }, [chat.id, service, avatar]);
+  }, [chat.id, service, avatar, avatarsEnabled]);
   return (
     <div className="contact-item" onClick={() => onSelect(chat)} onContextMenu={handleContext}>
       <div className="contact-avatar">
@@ -81,7 +85,7 @@ function ContactItem({ chat, onSelect, service }) {
   );
 }
 
-function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service }) {
+function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service, avatarsEnabled }) {
   const [expanded, setExpanded] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
   const totalUnread = archived.reduce((s, c) => s + (c.unreadCount || 0), 0);
@@ -103,7 +107,7 @@ function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service }) {
         {totalUnread > 0 && <span className="group-unread-badge">{totalUnread}</span>}
       </div>
       {expanded && archived.map(chat => (
-        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} />
+        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} avatarsEnabled={avatarsEnabled} />
       ))}
       {ctxMenu && (
         <>
@@ -119,7 +123,7 @@ function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service }) {
   );
 }
 
-function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead, service }) {
+function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMarkGroupsRead, service, avatarsEnabled }) {
   const [expanded, setExpanded] = useState(false);
   const [ctxMenu, setCtxMenu] = useState(null);
   const totalUnread = groups.reduce((s, c) => s + (c.unreadCount || 0), 0);
@@ -146,7 +150,7 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMark
         >{groupSound ? '🔔' : '🔕'}</button>
       </div>
       {expanded && groups.map(chat => (
-        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} />
+        <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} avatarsEnabled={avatarsEnabled} />
       ))}
       {ctxMenu && (
         <>
@@ -165,7 +169,7 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMark
 export default function Sidebar({
   activeService, setActiveService,
   waStatus, tgStatus,
-  chats, chatsLoading, onSelectChat,
+  chats, chatsLoading, avatarsEnabled, onSelectChat,
   loginPanel,
   myProfile,
   onLogout,
@@ -360,15 +364,16 @@ export default function Sidebar({
                 onToggleGroupSound={onToggleGroupSound}
                 onMarkGroupsRead={onMarkGroupsRead}
                 service={activeService}
+                avatarsEnabled={avatarsEnabled}
               />
             )}
             {/* Collapsible archived section (like groups) */}
             {!chatsLoading && archived.length > 0 && (
-              <ArchivedSection archived={archived} onSelect={onSelectChat} onMarkArchivedRead={onMarkArchivedRead} service={activeService} />
+              <ArchivedSection archived={archived} onSelect={onSelectChat} onMarkArchivedRead={onMarkArchivedRead} service={activeService} avatarsEnabled={avatarsEnabled} />
             )}
             {/* Direct chats */}
             {contacts.map(chat => (
-              <ContactItem key={chat.id} chat={chat} onSelect={onSelectChat} service={activeService} />
+              <ContactItem key={chat.id} chat={chat} onSelect={onSelectChat} service={activeService} avatarsEnabled={avatarsEnabled} />
             ))}
           </div>
         </>
