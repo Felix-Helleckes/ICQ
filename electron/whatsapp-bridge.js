@@ -717,25 +717,22 @@ async function fetchChatsLight() {
 async function getChats() {
   if (status !== 'ready') return [];
 
-  // Primary: the fast metadata-free read. Only if that yields nothing (store shape
-  // moved) do we pay for the library's heavyweight path. On a fresh login the store
-  // fills gradually after 'ready', so wrap it in a bounded wait that returns as soon
-  // as chats appear.
+  // The library path is PRIMARY — it returns fully populated chats (name, last
+  // message, unread count) and is what shipped when this worked well. The lightweight
+  // in-page read is only the fallback for when it throws or comes back empty. On a
+  // fresh login the store fills gradually after 'ready', so the whole thing is
+  // wrapped in a bounded wait that returns as soon as chats appear.
   const attempt = async () => {
-    const light = await fetchChatsLight().catch(e => ({ chats: [], skipped: 0, error: String(e?.message || e) }));
-    if (light?.error) log('WA getChats light error', light.error);
-    if (light?.chats?.length) {
-      if (light.skipped) log('WA getChats light skipped', { skipped: light.skipped });
-      return light.chats;
-    }
     try {
       const chats = await client.getChats();
-      log('WA getChats via library', { count: chats?.length || 0 });
-      return Array.isArray(chats) ? chats : [];
+      if (Array.isArray(chats) && chats.length) return chats;
     } catch (e) {
       log('WA getChats library threw', String(e?.message || e));
-      return [];
     }
+    const light = await fetchChatsLight().catch(e => ({ chats: [], skipped: 0, error: String(e?.message || e) }));
+    if (light?.error) log('WA getChats fallback error', light.error);
+    if (light?.chats?.length) log('WA getChats via fallback', { count: light.chats.length, skipped: light.skipped || 0 });
+    return light?.chats || [];
   };
 
   const chats = await waitForChats(attempt, () => status === 'ready', { deadlineMs: 20000, intervalMs: 700 });
@@ -862,10 +859,26 @@ async function fetchMessagesRaw(chatId, opts = {}) {
 
 const MEDIA_MSG_TYPES = ['sticker', 'image', 'video', 'ptt', 'audio'];
 
-// Download media for already-mapped message entries in the background and push each
-// one to the UI as it lands. Uses getMessageById, which reads the message store
-// directly (no chat model), so it works for group chats too. Sequential on purpose —
-// this is background work and must not compete with the foreground.
+// Preferred: download straight from the Message objects returned by fetchMessages —
+// they already carry a media handle, so no extra lookup is needed.
+function downloadMediaFromMessages(msgs) {
+  (async () => {
+    for (const m of msgs || []) {
+      if (status !== 'ready') return;
+      if (!m?.hasMedia || !MEDIA_MSG_TYPES.includes(m.type)) continue;
+      try {
+        const media = await m.downloadMedia();
+        if (media) {
+          broadcast('wa:media', { msgId: m.id._serialized, mediaData: `data:${media.mimetype};base64,${media.data}` });
+        }
+      } catch (e) { /* ignore media load errors */ }
+    }
+  })();
+}
+
+// Fallback path only: we have plain entries without media handles, so look each
+// message up by id. Sequential on purpose — background work must not compete with
+// the foreground.
 function downloadMediaInBackground(entries) {
   const targets = (entries || []).filter(m => m.hasMedia && MEDIA_MSG_TYPES.includes(m.type));
   if (!targets.length) return;
@@ -886,52 +899,39 @@ function downloadMediaInBackground(entries) {
 
 async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
-  const limit = opts.limit ?? 30; // count-based fallback / reconcile depth
+  const limit = opts.limit ?? 30;
 
-  // Primary: raw fetch. The library route (getChatById → fetchMessages) builds the
-  // full chat model first — a groupMetadata.update() round-trip on every open that
-  // also throws for groups on some WA-Web builds, which left the window empty. The
-  // raw path skips the model entirely (getAsModel:false), so it is faster AND works
-  // for groups. It also supports paging back to a timestamp (opts.sinceTs), which
-  // the library API cannot do at all. Only if it yields nothing do we try the
-  // library path.
-  const raw = await fetchMessagesRaw(chatId, {
-    sinceTs: opts.sinceTs,
-    limit,
-    maxCount: opts.maxCount,
-    minCount: opts.minCount,
-  }).catch(e => ({ messages: [], error: String(e?.message || e) }));
-  if (raw?.error) log('WA getMessages raw error', chatId, raw.error);
-  log('WA getMessages paging', {
-    chatId,
-    buffered: raw?.buffered ?? -1,
-    pages: raw?.pages || 0,
-    strategy: raw?.strategy || null,
-    attempts: raw?.attempts?.length ? raw.attempts : undefined,
-    count: raw?.messages?.length || 0,
-  });
-
-  let result = (raw?.messages || []).map(mapMessageEntry);
-
-  // The chat-list sync leaves only the preview message in each chat's buffer, so a
-  // result this small means paging didn't work (module drift) — not that the chat
-  // is empty. Give the library path a shot and keep whichever found more.
-  if (result.length < Math.min(limit, 10)) {
-    try {
-      const chat = await client.getChatById(chatId);
-      const msgs = await chat.fetchMessages({ limit });
-      const viaLib = msgs.map(mapMessageEntry);
-      if (viaLib.length > result.length) {
-        result = viaLib;
-        log('WA getMessages via library', { chatId, count: result.length });
-      }
-    } catch (e) {
-      log('WA getMessages library threw', chatId, String(e?.message || e));
-    }
+  // The library path is PRIMARY. chat.fetchMessages() pages back through WhatsApp's
+  // own message loader and reliably returns the last `limit` messages; it is what
+  // this app shipped with when message loading worked well. An earlier attempt to
+  // replace it with a hand-rolled in-page reader returned only the single preview
+  // message the chat-list sync leaves in the buffer — the "only the last message"
+  // regression. The hand-rolled reader survives only as a fallback below.
+  let result = [];
+  let libMsgs = null;
+  try {
+    const chat = await client.getChatById(chatId);
+    libMsgs = await chat.fetchMessages({ limit });
+    result = libMsgs.map(mapMessageEntry);
+  } catch (e) {
+    log('WA getMessages library threw', chatId, String(e?.message || e));
   }
 
-  // Load media in background (don't block UI).
-  if (!opts.skipMedia) downloadMediaInBackground(result);
+  // Fallback: only when the library path failed outright or came back empty.
+  if (!result.length) {
+    const raw = await fetchMessagesRaw(chatId, { limit, minCount: 1, maxCount: limit })
+      .catch(e => ({ messages: [], error: String(e?.message || e) }));
+    if (raw?.error) log('WA getMessages raw error', chatId, raw.error);
+    result = (raw?.messages || []).map(mapMessageEntry);
+    if (result.length) log('WA getMessages via fallback', { chatId, count: result.length });
+  }
+
+  // Load media in background (don't block UI). Prefer the Message objects we already
+  // have — they carry a media handle, so no extra lookup is needed.
+  if (!opts.skipMedia) {
+    if (libMsgs) downloadMediaFromMessages(libMsgs);
+    else downloadMediaInBackground(result);
+  }
 
   log('WA getMessages', { chatId, count: result.length });
   return result;

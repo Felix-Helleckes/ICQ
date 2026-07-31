@@ -4,7 +4,6 @@ const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
 const { resolveDataDir } = require('./lib/data-dir');
-const { mergeMessages, pruneMessages, coversSince } = require('./lib/message-entry');
 // E2E smoke mode (set by the Playwright CI test): load the built renderer
 // and skip messenger bridge init so the app boots deterministically with
 // no network / Puppeteer dependency.
@@ -101,7 +100,7 @@ let contactListWindow = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
 const participantsStore = new Map(); // chatId → participants array
-const waMessageCache = new Map(); // chatId → { messages, timestamp } — in-memory mirror of the disk cache
+const waMessageCache = new Map(); // chatId → { messages, timestamp } — short-lived, replace-only
 // appDataDir declared early at top of file (before portable blocks)
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
@@ -217,6 +216,17 @@ app.on('ready', async () => {
     ? path.join(__dirname, '../data')
     : app.getPath('userData');
   appDataDir = dataDir;
+  // One-time cleanup: an earlier build kept a merged on-disk message history here.
+  // Merging never dropped anything, so malformed entries from those builds stayed
+  // forever and rendered as duplicate messages. The cache is in-memory now; remove
+  // the old directory so nobody has to clean it up by hand.
+  try {
+    const legacyMsgDir = path.join(dataDir, 'wa-messages');
+    if (fs.existsSync(legacyMsgDir)) {
+      fs.rmSync(legacyMsgDir, { recursive: true, force: true });
+      logStartup('Removed legacy wa-messages cache');
+    }
+  } catch (e) { logStartup('Legacy wa-messages cleanup failed', e); }
   const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
   try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
   try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
@@ -356,87 +366,36 @@ ipcMain.handle('wa:reconnect',    async ()             => {
 });
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
 
-// ── Persistent WhatsApp message cache (last 3 days per chat) ───────────────
-// Opening a chat fetches its history back to the 3-day cutoff and caches it, so
-// the window really shows the last 3 days rather than a fixed message count.
-//
-// The LIVE fetch is the authority — the cache must never take precedence over
-// fresh data. An earlier cache-first design did exactly that (serve cache, refresh
-// in the background) and served stale/short lists whenever that throttled refresh
-// was skipped or failed. The cache is now only a fallback for when the live fetch
-// fails, so the window is never blank.
-// `waMessageCache` is the in-memory mirror; disk is what survives restarts.
-const WA_HISTORY_DAYS = 3;   // how far back an opened chat is fetched + kept
-const WA_HISTORY_MIN = 25;   // a quiet chat still shows this many, even if older
-const WA_HISTORY_MAX = 300;  // bound for busy groups (fetch + cache + render)
-function waMessagesDir() {
-  const userData = appDataDir || app.getPath('userData');
-  return path.join(userData, 'wa-messages');
-}
-function waMessagesFile(chatId) {
-  const safe = String(chatId).replace(/[^a-zA-Z0-9]/g, '_');
-  return path.join(waMessagesDir(), `${safe}.json`);
-}
-function readWaMessages(chatId) {
-  if (!chatId) return null;
-  const mem = waMessageCache.get(chatId);
-  if (mem) return mem.messages;
-  try {
-    const fp = waMessagesFile(chatId);
-    if (!fs.existsSync(fp)) return null;
-    const arr = JSON.parse(fs.readFileSync(fp, 'utf8'));
-    if (!Array.isArray(arr)) return null;
-    waMessageCache.set(chatId, { messages: arr, timestamp: Date.now() });
-    return arr;
-  } catch (e) { return null; }
-}
-function writeWaMessages(chatId, messages) {
-  if (!chatId || !Array.isArray(messages) || messages.length === 0) return;
-  try {
-    const existing = (waMessageCache.get(chatId)?.messages) || readWaMessages(chatId) || [];
-    const merged = pruneMessages(mergeMessages(existing, messages), {
-      days: WA_HISTORY_DAYS, minKeep: WA_HISTORY_MIN, maxKeep: WA_HISTORY_MAX,
-    });
-    waMessageCache.set(chatId, { messages: merged, timestamp: Date.now() });
-    const dir = waMessagesDir();
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(waMessagesFile(chatId), JSON.stringify(merged));
-  } catch (e) { console.error('[wa-messages write]', e); }
-}
-const WA_RECONCILE_TTL = 10000; // the periodic reconcile may reuse a cache this young
+// ── WhatsApp message cache (in-memory, short-lived) ────────────────────────
+// Deliberately simple: it REPLACES a chat's entry, it never merges. A previous
+// version kept a merged, persistent on-disk history — and because merging never
+// drops anything, malformed entries from older builds stayed forever and showed up
+// as duplicate messages in the chat window. Live data is always authoritative; this
+// only spares WhatsApp a re-query for the periodic reconcile.
+const WA_CACHE_TTL = 10000;
+const WA_CACHE_SIZE = 8;
 
 ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
-  // ChatApp sends refresh:true when a chat is actually opened, and polls without it
-  // for its periodic reconcile. Opening ALWAYS hits WhatsApp; only the reconcile may
-  // reuse a very fresh cache, so we don't re-query every 8s per open chat.
-  const isOpen = opts.refresh === true;
-  const entry = waMessageCache.get(chatId);
-  if (!isOpen && entry && Date.now() - entry.timestamp < WA_RECONCILE_TTL) {
-    return entry.messages;
+  // ChatApp sends refresh:true when a chat is opened, and polls without it for its
+  // periodic reconcile. Opening always hits WhatsApp; only the reconcile may reuse a
+  // very fresh entry, so we don't re-query every 8s per open chat.
+  const cached = waMessageCache.get(chatId);
+  if (!opts.refresh && cached && Date.now() - cached.timestamp < WA_CACHE_TTL) {
+    return cached.messages;
   }
 
-  // On open, page back to the 3-day cutoff — unless the cache already holds that
-  // history, in which case a cheap fetch of the newest messages is enough (they get
-  // merged with the cached window). The reconcile always stays cheap.
-  const sinceTs = Math.floor(Date.now() / 1000) - WA_HISTORY_DAYS * 86400;
-  const deep = isOpen && !coversSince(readWaMessages(chatId), sinceTs);
-  const fetchOpts = deep
-    ? { ...opts, sinceTs, minCount: WA_HISTORY_MIN, maxCount: WA_HISTORY_MAX }
-    : opts;
+  const messages = await whatsappBridge.getMessages(chatId, opts).catch(() => []);
 
-  const live = await whatsappBridge.getMessages(chatId, fetchOpts).catch(() => []);
-  if (Array.isArray(live) && live.length) {
-    writeWaMessages(chatId, live);
-    const merged = readWaMessages(chatId) || live;
-    logStartup(`wa:get-messages ${chatId} deep=${deep} live=${live.length} merged=${merged.length}`);
-    return merged;
+  // Never cache an empty result over a good one — a transient failure would
+  // otherwise blank the chat window for the next 10 seconds.
+  if (Array.isArray(messages) && messages.length) {
+    if (waMessageCache.size >= WA_CACHE_SIZE) {
+      waMessageCache.delete(waMessageCache.keys().next().value);
+    }
+    waMessageCache.set(chatId, { messages, timestamp: Date.now() });
+    return messages;
   }
-
-  // Live fetch failed or returned nothing → serve the cache so the window isn't
-  // blank. This is the ONLY case the cache is used in place of fresh data.
-  const cached = readWaMessages(chatId);
-  logStartup(`wa:get-messages ${chatId} live=0 cached=${cached?.length || 0}`);
-  return (cached && cached.length) ? cached : [];
+  return cached?.messages || [];
 });
 
 // NOTE: deliberately no background pre-fetch of other chats. After the QR scan the
