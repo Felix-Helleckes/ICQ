@@ -29,10 +29,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        env:
-          # whatsapp-web.js pulls in Puppeteer; we don't run the WA bridge in
-          # CI, so skip the Chromium download to keep installs fast.
-          PUPPETEER_SKIP_DOWNLOAD: "1"
 
       - name: Syntax-check Electron main process
         run: npm run check:electron
@@ -80,8 +76,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: "1"
 
       - name: Build renderer (E2E loads the built files)
         run: npm run build

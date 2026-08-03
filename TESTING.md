@@ -5,7 +5,7 @@
 | Ebene | Wo | Deckt ab |
 |-------|-----|----------|
 | Renderer-Unit-Tests | `npm run test:unit` (CRA/Jest, `src/**`) | UI-Logik, Skins |
-| Electron-Helper-Unit-Tests | `npm run test:electron` (`electron/lib/**`) | `getChats`-Retry, Avatar-Concurrency-Cap, Chrome-Pfad-Auflösung, Portable/Setup-Datenverzeichnis |
+| Electron-Helper-Unit-Tests | `npm run test:electron` (`electron/lib/**`) | Chat-/Nachrichten-Normalisierung, Backlog-Erkennung, Portable/Setup-Datenverzeichnis |
 | Main-Prozess-Syntax | `npm run check:electron` | Boot-Fehler im Main-Prozess |
 | E2E-Boot-Smoke | `npm run test:e2e` (Playwright + Electron) | App bootet, beide Service-Tabs, Login-Panel, kein White-Screen — auf **ubuntu + windows + macos** |
 | Cross-Platform-Builds | `.github/workflows/release.yml` (bei `v*`-Tag) | Win **Setup + Portable**, macOS dmg, Linux AppImage + deb |
@@ -37,19 +37,18 @@ Nur die Punkte, die die Automation nicht erreicht. Pro Plattform der Reihe nach.
 
 ### macOS (dmg, arm64)
 1. Nicht notarisiert → einmalig `xattr -cr "/Applications/ICQ Messenger.app"`.
-2. WhatsApp-Login (nutzt System-Chrome — muss installiert sein), Chatliste, Neustart → Session hält.
+2. WhatsApp-Login, Chatliste, Neustart → Session hält.
 
 ### Linux (AppImage + deb)
-1. Chromium vorhanden? (`chromium`/`google-chrome`). Fehlt es → Login-Panel zeigt die Chrome-Installieren-Hilfe.
-2. Login, Chatliste, Neustart → Session hält.
+1. Login, Chatliste, Neustart → Session hält. (Kein Chrome/Chromium mehr nötig — WhatsApp läuft über das Protokoll.)
 
 ### Quer über alle Plattformen (die gefixten Bugs)
 - Nach frischem Login **nie** „No chats found" während noch synchronisiert wird — es muss der „Lädt Chats…"-Indikator stehen.
 - Nach dem QR-Scan lädt **nur** die Kontaktliste — kein Avatar-/Teilnehmer-/Nachrichten-Prefetch nebenher.
 - Die Liste soll **zügig** kommen und Namen **inkl. Last-Message-Vorschau** zeigen (nicht nur Namen).
 - Chat öffnen → zeigt Nachrichten (nicht leer), **auch bei Gruppen**.
-- Chat erneut öffnen / nach App-Neustart → **sofort** da (Disk-Cache, ~3 Tage).
+- Senden zeigt Haken (nicht dauerhaft die Uhr) und kommt **einmal** an, nie doppelt.
 
 ## Wenn etwas hakt
-- **Startup-/Bridge-Log:** `%TEMP%\icq-startup.log` (Win) bzw. `$TMPDIR/icq-startup.log` — zeigt gewähltes Datenverzeichnis und jedes WA-Event (`qr`, `authenticated`, `ready`, `disconnected`).
+- **Startup-/Bridge-Log:** `%TEMP%\icq-startup.log` (Win) bzw. `$TMPDIR/icq-startup.log` — zeigt gewähltes Datenverzeichnis, den History-Sync und jedes WA-Event (`qr-generated`, `ready`, `disconnected`).
 - **Renderer-Konsole:** DevTools im Fenster.

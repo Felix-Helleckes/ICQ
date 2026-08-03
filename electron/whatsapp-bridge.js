@@ -1,18 +1,27 @@
 /**
- * WhatsApp bridge using whatsapp-web.js
+ * WhatsApp bridge built on Baileys (WhatsApp multi-device protocol over WebSocket).
  * Runs in the Electron main process.
+ *
+ * This replaces the previous whatsapp-web.js/Puppeteer bridge, which drove the real
+ * WhatsApp Web app inside a bundled headless Chrome and reached into its private
+ * internals. That approach broke every time WhatsApp shipped a web update, needed a
+ * 409 MB Chrome, and tied the session to a Chrome profile (version conflicts, stale
+ * locks, orphaned processes). Baileys speaks the protocol directly — no browser.
+ *
+ * The public API and every 'wa:*' broadcast channel are unchanged, so main.js and the
+ * renderer keep working as before.
+ *
+ * Baileys v7 removed makeInMemoryStore, so this module keeps its own bounded store of
+ * chats/messages/contacts, fed by the history sync and the live event stream.
  */
-const { Client, LocalAuth } = require('whatsapp-web.js');
 const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { execFile } = require('child_process');
-const { createConcurrencyLimiter } = require('./lib/concurrency');
-const { waitForChats } = require('./lib/wa-chats');
-const { resolveChromiumExecutable } = require('./lib/chromium-path');
-const { mapChatEntry } = require('./lib/chat-entry');
 const { mapMessageEntry, isBacklogMessage } = require('./lib/message-entry');
+const { mapChatEntry } = require('./lib/chat-entry');
+const { createContactDirectory } = require('./lib/contact-names');
+const { ackFromStatus, statusFromReceipt, createAckTracker } = require('./lib/ack');
 
 // Logging helper: append to temp startup log for easier debugging across restarts
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
@@ -22,1178 +31,795 @@ function log(...args) {
   try { console.log(...args); } catch (e) {}
 }
 
-let client = null;
+// Baileys expects a pino-like logger. Providing our own keeps its very chatty debug
+// output out of the app log while still surfacing real errors.
+const waLogger = {
+  level: 'silent',
+  child() { return waLogger; },
+  trace() {}, debug() {}, info() {},
+  warn(...a) { try { console.warn('[WA]', ...a); } catch (e) {} },
+  error(...a) { try { console.error('[WA]', ...a); } catch (e) {} },
+  fatal(...a) { try { console.error('[WA fatal]', ...a); } catch (e) {} },
+};
+
+// Baileys v7 is a pure ESM package. Electron's Node (20.x in Electron 29) cannot
+// require() ESM, so it is loaded lazily via dynamic import — which Electron does
+// support. `BA` is populated by init() before any other code path touches it.
+let BA = null;
+async function loadBaileys() {
+  if (!BA) BA = await import('@whiskeysockets/baileys');
+  return BA;
+}
+
+let sock = null;
 let status = 'disconnected';
 let currentQR = null;
 let onAvatarCb = null;
 let lastDataDir = null;
-let lastClientId = null;
-let loadingWatchdog = null;
-let waRetryUsed = false;
-let waManualLogout = false; // true only when logout() was explicitly called — prevents auto-reconnect
-let readyAtSec = 0; // when the client last became ready — used to tag replayed backlog messages
+let saveCreds = null;
+let waManualLogout = false;   // true only while logout() runs — prevents auto-reconnect
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let readyAtSec = 0;           // when the socket last opened — tags replayed backlog messages
+let meId = null;
+let connectionOpen = false;   // socket is up; 'ready' may still be waiting for history
+let historySeen = false;      // at least one history chunk with chats has arrived
+let readyTimer = null;        // fallback so an account without history still becomes ready
+let chatsChangedTimer = null; // debounces the "reload your chat list" signal
 
-const WA_LOADING_TIMEOUT_MS = 180000;     // 180s startup budget (packaged app + Chrome cold start)
-const WA_POST_AUTH_TIMEOUT_MS = 90000;   // 90s post-auth: packaged apps need more time than dev
+const MAX_MSGS_PER_CHAT = 200; // bounded store — history sync can deliver a lot
+
+// ── Store (Baileys v7 has no built-in store) ──────────────────────────────
+const chatStore = new Map();     // jid → chat record
+const messageStore = new Map();  // jid → Map<msgId, WAMessage>
+const contacts = createContactDirectory(); // names + LID↔phone mapping
+const ackTracker = createAckTracker();     // highest delivery state seen per message
+const blockedSet = new Set();
+
+function resetStore() {
+  chatStore.clear();
+  messageStore.clear();
+  contacts.clear();
+  blockedSet.clear();
+  ackStore.clear();
+}
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
     if (!w.isDestroyed()) w.webContents.send(channel, data);
   });
-  // Notify main.js avatar cache if registered
   if (channel === 'wa:avatar' && onAvatarCb) onAvatarCb(data.id, data.avatar);
 }
 
-function clearLoadingWatchdog() {
-  if (loadingWatchdog) {
-    clearTimeout(loadingWatchdog);
-    loadingWatchdog = null;
+function setStatus(next) {
+  if (status === next) return;
+  status = next;
+  broadcast('wa:status', next);
+}
+
+// ── Conversions ───────────────────────────────────────────────────────────
+
+// Ack mapping + the "never move backwards" rule live in lib/ack.js (tested there).
+function ackOf(m) {
+  const computed = ackFromStatus(m?.status, !!m?.key?.fromMe);
+  return ackTracker.resolve(m?.key?.id, computed);
+}
+
+// Record and publish a delivery state. Acks only ever move forward.
+function applyAck(jid, id, status, fromMe) {
+  const ack = ackFromStatus(status, fromMe);
+  if (ackTracker.record(id, ack) == null) return; // not a forward move — ignore
+  const bucket = jid ? messageStore.get(jid) : null;
+  if (bucket?.has(id)) bucket.set(id, { ...bucket.get(id), status });
+  broadcast('wa:ack', { id, ack });
+  log('WA ack', { id, ack });
+}
+
+// Baileys message content type → the type strings the UI switches on
+function typeOf(m) {
+  const t = BA.getContentType(m?.message || {});
+  switch (t) {
+    case 'imageMessage': return 'image';
+    case 'videoMessage': return m?.message?.videoMessage?.gifPlayback ? 'video' : 'video';
+    case 'stickerMessage': return 'sticker';
+    case 'audioMessage': return m?.message?.audioMessage?.ptt ? 'ptt' : 'audio';
+    case 'documentMessage':
+    case 'documentWithCaptionMessage': return 'document';
+    default: return 'chat';
   }
 }
 
-function armLoadingWatchdog(reason) {
-  clearLoadingWatchdog();
-  // Use shorter timeout for post-auth (typically <5s), fallback to normal for startup
-  const timeout = reason === 'post-auth' ? WA_POST_AUTH_TIMEOUT_MS : WA_LOADING_TIMEOUT_MS;
-  loadingWatchdog = setTimeout(async () => {
-    // Only recover when WA is still not ready and a client exists.
-    if (!client || status === 'ready') return;
-    if (waRetryUsed) {
-      console.error(`[WA watchdog] still stuck after retry (${reason})`);
-      status = 'error';
-      broadcast('wa:status', 'error');
-      return;
-    }
-
-    waRetryUsed = true;
-    console.warn(`[WA watchdog] timeout (${reason}) -> retry init`);
-    const stuckClient = client;
-    client = null;
-    await closeClientBrowser(stuckClient);
-    currentQR = null;
-    status = 'loading';
-    broadcast('wa:status', 'loading');
-    init(onAvatarCb, lastDataDir, { isRetry: true });
-  }, timeout);
-}
-
-// Last resort — only for a browser that is STILL running after a graceful close.
-// Never call this directly on a live client: see closeClientBrowser.
-function hardKillClientBrowser(c) {
-  try {
-    const proc = c?.pupBrowser?.process?.();
-    if (proc && !proc.killed && proc.exitCode === null) {
-      log('WA teardown: browser still alive after graceful close -> SIGKILL');
-      proc.kill('SIGKILL');
-    }
-  } catch (e) {}
-}
-
-// Close a client's browser, clean shutdown first.
-//
-// WhatsApp keeps its session credentials in Chrome's IndexedDB/LevelDB, which is
-// flushed on close. Killing the process before that finishes corrupts the store and
-// WhatsApp refuses the NEXT login ("Login zurzeit nicht möglich") until the session
-// folder is deleted. So destroy() always gets a real window here. The kill is only
-// the fallback for a hung browser — one that lingers holds the profile lock and
-// makes the next start hang at "WhatsApp startet…".
-async function closeClientBrowser(c, graceMs = 4500) {
-  if (!c) return;
-  try {
-    await Promise.race([c.destroy(), new Promise(r => setTimeout(r, graceMs))]);
-  } catch (e) { /* destroy throws when the page is already gone — fine */ }
-  hardKillClientBrowser(c);
-}
-
-// A Chrome from a previous app run can outlive a fast exit (before-quit only waits
-// 1.5s) and keep the profile locked — the main cause of a restart hanging forever.
-// Kill ONLY processes whose command line references OUR session profile directory;
-// the user's normal Chrome windows have a different profile and are never touched.
-function killOrphanedChrome(dataDir) {
-  return new Promise((resolve) => {
-    if (!dataDir) return resolve();
-    const marker = path.join(dataDir, 'whatsapp');
-    let settled = false;
-    const done = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(bound);
-      log('WA init: orphan-chrome sweep done');
-      resolve();
-    };
-    // Absolute upper bound — never block startup indefinitely. Must exceed the
-    // child's own timeout, which includes the grace sleep above.
-    const bound = setTimeout(done, 13000);
-    try {
-      if (process.platform === 'win32') {
-        const esc = marker.replace(/'/g, "''");
-        // Only force-kill what is STILL there after a grace period. The previous app
-        // instance may be in the middle of its own clean shutdown (which flushes the
-        // session store); killing it mid-flush corrupts the profile and costs the
-        // login. So: look, wait, look again, and only then kill the leftovers.
-        const cmd = [
-          `$m = '${esc}'`,
-          `$f = "Name = 'chrome.exe' or Name = 'msedge.exe'"`,
-          `$p = Get-CimInstance Win32_Process -Filter $f | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($m) }`,
-          `if ($p) { Start-Sleep -Seconds 3 }`,
-          `Get-CimInstance Win32_Process -Filter $f | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($m) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
-        ].join('; ');
-        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 11000 }, () => done());
-        child.on('error', () => done());
-      } else {
-        const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const child = execFile('pkill', ['-f', esc], { timeout: 5000 }, () => done());
-        child.on('error', () => done());
-      }
-    } catch (e) { done(); }
-  });
-}
-
-function cleanupStaleSessionLocks(dataDir) {
-  const lockNames = ['lockfile', 'SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'];
-  const waDir = path.join(dataDir, 'whatsapp');
-  // Clean all session-* subdirs (covers both default 'session' and clientId-based 'session-*')
-  const dirsToClean = [];
-  try {
-    const entries = fs.readdirSync(waDir, { withFileTypes: true });
-    for (const e of entries) {
-      if (e.isDirectory() && e.name.startsWith('session')) dirsToClean.push(path.join(waDir, e.name));
-    }
-  } catch (e) {}
-  for (const sessionDir of dirsToClean) {
-    for (const name of lockNames) {
-      const fp = path.join(sessionDir, name);
-      if (fs.existsSync(fp)) { try { fs.rmSync(fp, { force: true }); } catch (e) {} }
-    }
-  }
-}
-
-const WA_CONNECTED_STATES = new Set(['CONNECTED', 'OPENING', 'PAIRING']);
-
-async function getClientStateSafe() {
-  if (!client) return null;
-  try {
-    return await client.getState();
-  } catch (e) {
-    return null;
-  }
-}
-
-function shouldReconnectOnError(err) {
-  const text = String(err?.message || err || '').toLowerCase();
-  if (!text) return false;
+function bodyOf(m) {
+  const msg = m?.message || {};
+  const inner = msg.ephemeralMessage?.message || msg.viewOnceMessage?.message
+    || msg.viewOnceMessageV2?.message || msg.documentWithCaptionMessage?.message || msg;
   return (
-    text.includes('promise was collected') ||
-    text.includes('target closed') ||
-    text.includes('session closed') ||
-    text.includes('execution context was destroyed') ||
-    text.includes('protocol error') ||
-    text.includes('not connected') ||
-    text.includes('not ready') ||
-    text.includes('evaluation failed')
+    inner.conversation
+    || inner.extendedTextMessage?.text
+    || inner.imageMessage?.caption
+    || inner.videoMessage?.caption
+    || inner.documentMessage?.caption
+    || inner.documentMessage?.fileName
+    || ''
   );
 }
 
-async function ensureOperationalForSend() {
-  if (!client || status !== 'ready') {
-    throw new Error('WhatsApp not ready');
-  }
-  const state = await getClientStateSafe();
-  if (state && !WA_CONNECTED_STATES.has(String(state))) {
-    throw new Error(`WhatsApp not connected (${state})`);
-  }
-}
+const MEDIA_TYPES = new Set(['image', 'video', 'sticker', 'ptt', 'audio', 'document']);
 
-function triggerRecovery(reason) {
-  if (waManualLogout) return;
-  console.warn('[WA recovery]', reason);
-  status = 'loading';
-  broadcast('wa:status', 'loading');
-  reconnect(lastDataDir);
-}
-
-async function waitForReady(timeoutMs = 30000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (status === 'ready' && client) {
-      const state = await getClientStateSafe();
-      if (!state || WA_CONNECTED_STATES.has(String(state))) return true;
-    }
-    await new Promise(resolve => setTimeout(resolve, 450));
-  }
-  return false;
-}
-
-// For IDEMPOTENT operations only (archive, block, edit, delete): re-running them
-// after a reconnect is harmless. Never use this for sending — see runSendOnce.
-async function runWithRecovery(opName, handler) {
-  await ensureOperationalForSend();
-  try {
-    return await handler();
-  } catch (e) {
-    if (!shouldReconnectOnError(e)) throw e;
-
-    triggerRecovery(`${opName} failed: ${e?.message || e}`);
-    const recovered = await waitForReady(35000);
-    if (!recovered) throw e;
-
-    await ensureOperationalForSend();
-    return await handler();
-  }
-}
-
-// Lightweight readiness gate for sends. Unlike ensureOperationalForSend it does NOT
-// call getState() (another in-page round-trip that can hang) and, crucially, never
-// triggers a reconnect. A send must never tear down the connection: doing so used to
-// cascade — one flaky send reconnected the client, then every following send failed
-// with "not ready" until it recovered, so sending looked completely broken.
-function assertReadyToSend() {
-  if (!client || !client.pupPage || status !== 'ready') throw new Error('WhatsApp not ready');
-}
-
-// All sends go through the library's client.sendMessage.
-//
-// It normalizes the options into the exact shape WhatsApp Web expects (parseVCards,
-// isCaptionByUser, waitUntilMsgSent, media/sticker handling) before the in-page call
-// spreads them into the outgoing message. Bypassing it and calling the in-page
-// sendMessage directly with a hand-built options object produced messages that were
-// added to the chat but never transmitted — stuck at ack 0, i.e. the clock icon.
-//
-// What we deliberately do NOT do here is retry, or trigger a reconnect:
-//   - The library serializes the sent message afterwards (getMessageModel), and that
-//     step can throw AFTER the message was already delivered. Retrying then sends it
-//     a second time for real — the recipient sees two copies, unfixable.
-//   - Tearing down the connection from a send error cascaded: every following send
-//     failed with "not ready" until recovery finished, so sending looked dead.
-// Real connection loss is still caught by the health check and the disconnect event.
-// A failure the user can repeat beats a message they cannot take back.
-async function runSendOnce(opName, handler) {
-  assertReadyToSend();
-  try {
-    return await handler();
-  } catch (e) {
-    log('WA send failed', opName, String(e?.message || e));
-    throw e;
-  }
-}
-
-function getPlatformTag() {
-  if (process.platform === 'win32') return 'win';
-  if (process.platform === 'darwin') return 'mac';
-  return 'linux';
-}
-
-function sanitizeToken(input) {
-  return String(input || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40) || 'node';
-}
-
-function getDeviceIdentity() {
-  const platform = getPlatformTag();
-  const host = sanitizeToken(os.hostname());
-  return {
-    clientId: `retrogram-${platform}-${host}`,
-  };
-}
-
-function resolveClientIdForLocalAuth(dataDir) {
-  // If an existing session folder exists, reuse its clientId to preserve sessions across restarts.
-  try {
-    const waDir = path.join(dataDir, 'whatsapp');
-    const entries = fs.readdirSync(waDir, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      if (e.name === 'session') return null; // legacy default session folder — no clientId
-      if (e.name.startsWith('session-')) return e.name.slice('session-'.length);
-    }
-  } catch (e) {
-    // ignore
-  }
-  // No existing session found: return a stable id based on platform only (avoid hostname volatility)
-  return `retrogram-${getPlatformTag()}`;
-}
-
-function restoreFromBackups(dataDir) {
-  try {
-    const waDir = path.join(dataDir, 'whatsapp');
-    if (!fs.existsSync(waDir)) return;
-    const entries = fs.readdirSync(waDir, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      const name = e.name;
-      const marker = '.corrupt-backup-';
-      if (!name.includes(marker)) continue;
-      // Original session folder name is the prefix before the marker
-      const sessionFolder = name.split(marker)[0];
-      const backupDir = path.join(waDir, name);
-      const targetDefault = path.join(waDir, sessionFolder, 'Default');
-      log('WA restore: found backup', backupDir, 'target', targetDefault);
-      try {
-        fs.mkdirSync(targetDefault, { recursive: true });
-        const files = fs.readdirSync(backupDir, { withFileTypes: true });
-        for (const f of files) {
-          const src = path.join(backupDir, f.name);
-          const dest = path.join(targetDefault, f.name.replace(/\s+/g, '_'));
-          if (fs.existsSync(dest)) {
-            log('WA restore: dest exists, skipping', dest);
-            continue;
-          }
-          try { fs.renameSync(src, dest); log('WA restore: moved', src, '->', dest); } catch (e) { try { fs.copyFileSync(src, dest); fs.rmSync(src, { force: true }); log('WA restore: copied then removed', src, '->', dest); } catch (err) { log('WA restore: failed to move/copy', src, String(err)); } }
-        }
-        // After moving files, remove backup dir if empty
-        try { const rem = fs.readdirSync(backupDir); if (rem.length === 0) fs.rmdirSync(backupDir); } catch (e) {}
-        broadcast('wa:backup-restored', { sessionFolder, path: targetDefault });
-      } catch (e) { log('WA restore error', String(e)); }
-    }
-  } catch (e) { log('WA restore scan error', String(e)); }
-}
-
-// Find a usable Chrome/Edge/Chromium on the host system.
-// Priority: 1. bundled extraResources chrome, 2. system Chrome/Edge, 3. puppeteer cache (dev)
-function ensureExecutable(filePath) {
-  if (!filePath || process.platform === 'win32') return filePath;
-  try { fs.chmodSync(filePath, 0o755); } catch (e) {}
-  return filePath;
-}
-
-// ── Sticky Chrome per session profile ─────────────────────────────────────
-// Chrome profiles are version-sensitive: opening a profile that was last used by a
-// NEWER Chrome makes Chrome reject or reset it — which throws away the WhatsApp
-// session and forces a fresh QR login. This app can drive either the bundled Chrome
-// or the system one, and those are different versions (bundled 146 vs a system
-// Chrome that auto-updates itself), so silently flip-flopping between them was
-// destroying sessions at random. Remember which binary a session profile belongs to
-// and keep using it for as long as it exists.
-//
-// The portable build extracts to a fresh temp directory per build, so the recorded
-// path goes stale on every update — that is fine: it falls back to a fresh lookup,
-// which finds the same bundled Chrome VERSION, and a same-version profile is happy.
-function chromeChoiceFile(dataDir) {
-  return path.join(dataDir, 'whatsapp', '.chrome-path');
-}
-
-function readStickyChrome(dataDir) {
-  try {
-    const recorded = fs.readFileSync(chromeChoiceFile(dataDir), 'utf8').trim();
-    if (recorded && fs.existsSync(recorded)) return recorded;
-    if (recorded) log('WA chrome: recorded binary is gone, re-resolving', recorded);
-  } catch (e) { /* nothing recorded yet */ }
-  return null;
-}
-
-function writeStickyChrome(dataDir, exe) {
-  try {
-    fs.mkdirSync(path.join(dataDir, 'whatsapp'), { recursive: true });
-    fs.writeFileSync(chromeChoiceFile(dataDir), String(exe), 'utf8');
-  } catch (e) { log('WA chrome: could not record binary choice', String(e)); }
-}
-
-// Resolve the Chrome to drive, preferring the one this session profile already uses.
-function resolveChromeForSession(dataDir) {
-  const sticky = dataDir ? readStickyChrome(dataDir) : null;
-  if (sticky) return sticky;
-  const fresh = findChromiumExecutable();
-  if (fresh && dataDir) {
-    writeStickyChrome(dataDir, fresh);
-    log('WA chrome: bound session to binary', fresh);
-  }
-  return fresh;
-}
-
-function findChromiumExecutable() {
-  const exe = resolveChromiumExecutable({
-    platform: process.platform,
-    resourcesPath: process.resourcesPath,
-    env: process.env,
-    existsSync: fs.existsSync,
-    readdirSync: fs.readdirSync,
-    puppeteerPath: () => {
-      try { return require('puppeteer').executablePath?.() || null; } catch (e) { return null; }
-    },
+// WAMessage → the flat shape the renderer uses. mapMessageEntry normalizes the rest.
+function toMessageEntry(m) {
+  const type = typeOf(m);
+  return mapMessageEntry({
+    id: m?.key?.id,
+    body: bodyOf(m),
+    fromMe: !!m?.key?.fromMe,
+    timestamp: Number(m?.messageTimestamp?.low ?? m?.messageTimestamp ?? 0),
+    author: m?.key?.participant || m?.participant || m?.key?.remoteJid,
+    type,
+    isGif: !!m?.message?.videoMessage?.gifPlayback,
+    ack: ackOf(m),
+    hasMedia: MEDIA_TYPES.has(type),
   });
-  if (!exe && process.platform === 'darwin') {
-    console.error('[WA init] Kein Google Chrome auf macOS gefunden! Bitte Chrome installieren.');
-  }
-  return exe ? ensureExecutable(exe) : null;
 }
 
-async function init(avatarCallback, dataDir, opts = {}) {
-  const { isRetry = false } = opts;
+// Name lookup lives in lib/contact-names.js (LID↔phone handling is subtle enough to
+// deserve its own tests). These thin wrappers keep the call sites readable.
+const rememberLidMapping = (m) => contacts.rememberMapping(m);
+const rememberContact = (c) => contacts.rememberContact(c);
+const displayNameFor = (jid) => contacts.nameFor(jid);
+const prettyIdFor = (jid) => contacts.prettyIdFor(jid);
+
+function chatEntryFor(jid) {
+  const c = chatStore.get(jid) || {};
+  const msgs = messageStore.get(jid);
+  let last = null;
+  if (msgs && msgs.size) {
+    for (const m of msgs.values()) {
+      const t = Number(m?.messageTimestamp?.low ?? m?.messageTimestamp ?? 0);
+      if (!last || t >= last.t) last = { t, body: bodyOf(m) };
+    }
+  }
+  return mapChatEntry({
+    id: { _serialized: jid },
+    // prettyIdFor is the floor: mapChatEntry would otherwise fall back to the raw
+    // JID, which is what put "4917...@s.whatsapp.net" in the contact list.
+    name: c.name || displayNameFor(jid) || prettyIdFor(jid),
+    lastMessage: last ? { body: last.body, t: last.t } : null,
+    unreadCount: Math.max(0, Number(c.unreadCount) || 0),
+    isGroup: jid.endsWith('@g.us'),
+    archive: !!c.archived,
+    t: Number(c.conversationTimestamp?.low ?? c.conversationTimestamp ?? 0),
+  });
+}
+
+// ── Store maintenance ─────────────────────────────────────────────────────
+
+function upsertChat(c) {
+  if (!c?.id) return;
+  const prev = chatStore.get(c.id) || {};
+  chatStore.set(c.id, { ...prev, ...c });
+}
+
+function storeMessages(list) {
+  for (const m of list || []) {
+    const jid = m?.key?.remoteJid;
+    const id = m?.key?.id;
+    if (!jid || !id) continue;
+    if (!messageStore.has(jid)) messageStore.set(jid, new Map());
+    const bucket = messageStore.get(jid);
+    bucket.set(id, { ...(bucket.get(id) || {}), ...m });
+    if (bucket.size > MAX_MSGS_PER_CHAT) {
+      // drop the oldest by timestamp
+      const sorted = [...bucket.entries()].sort(
+        (a, b) => Number(a[1]?.messageTimestamp?.low ?? a[1]?.messageTimestamp ?? 0)
+                - Number(b[1]?.messageTimestamp?.low ?? b[1]?.messageTimestamp ?? 0),
+      );
+      for (let i = 0; i < sorted.length - MAX_MSGS_PER_CHAT; i += 1) bucket.delete(sorted[i][0]);
+    }
+    // Make sure a chat exists for every message we know about.
+    if (!chatStore.has(jid)) upsertChat({ id: jid, conversationTimestamp: m.messageTimestamp });
+  }
+}
+
+function sortedChatJids() {
+  return [...chatStore.keys()].sort((a, b) => {
+    const ta = chatEntryFor(a).timestamp || 0;
+    const tb = chatEntryFor(b).timestamp || 0;
+    return tb - ta;
+  });
+}
+
+// ── Connection ────────────────────────────────────────────────────────────
+
+function sessionDir(dataDir) {
+  return path.join(dataDir, 'whatsapp', 'baileys-auth');
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+}
+
+function scheduleReconnect(dataDir) {
+  if (waManualLogout) return;
+  clearReconnectTimer();
+  // Back off gently: 2s, 4s, 8s … capped at 30s.
+  const delay = Math.min(30000, 2000 * Math.pow(2, Math.min(reconnectAttempt, 4)));
+  reconnectAttempt += 1;
+  log('WA reconnect scheduled', { attempt: reconnectAttempt, delay });
+  reconnectTimer = setTimeout(() => init(onAvatarCb, dataDir || lastDataDir), delay);
+}
+
+async function init(avatarCallback, dataDir) {
   if (avatarCallback) onAvatarCb = avatarCallback;
   lastDataDir = dataDir;
-  if (!isRetry) waRetryUsed = false;
+  clearReconnectTimer();
+  setStatus('loading');
 
-  clearLoadingWatchdog();
-  status = 'loading';
-  broadcast('wa:status', 'loading');
-
-  // Attempt to restore any previous corrupt-backup files before cleaning locks
-  restoreFromBackups(dataDir);
-
-  // Sweep Chrome processes a previous run left behind BEFORE touching lock files —
-  // deleting SingletonLock while the old Chrome still lives corrupts the profile.
-  await killOrphanedChrome(dataDir);
-
-  // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
-  cleanupStaleSessionLocks(dataDir);
-
-  const executablePath = resolveChromeForSession(dataDir);
-
-  if (!executablePath && process.platform === 'linux') {
-    status = 'error';
-    currentQR = null;
-    clearLoadingWatchdog();
-    broadcast('wa:status', 'error');
-    console.error('[WA init] No Chrome/Chromium executable found on Linux. Install chromium or google-chrome and restart.');
+  try {
+    await loadBaileys();
+  } catch (e) {
+    log('WA baileys import failed', String(e?.message || e));
+    setStatus('error');
     return;
   }
 
-  const isMac = process.platform === 'darwin';
-  const resolvedClientId = resolveClientIdForLocalAuth(dataDir);
-  lastClientId = resolvedClientId;
+  const authDir = sessionDir(dataDir);
+  try { fs.mkdirSync(authDir, { recursive: true }); } catch (e) {}
 
-  const localAuthOpts = { dataPath: path.join(dataDir, 'whatsapp') };
-  if (resolvedClientId) localAuthOpts.clientId = resolvedClientId;
-
-  // Log init details for debugging session reuse issues
+  let state;
   try {
-    const sessionFolder = resolvedClientId ? `session-${resolvedClientId}` : 'session';
-    log('WA init', { dataDir, resolvedClientId, sessionFolder, executablePath: executablePath || null });
-  } catch (e) { log('WA init log error', String(e)); }
+    const auth = await BA.useMultiFileAuthState(authDir);
+    state = auth.state;
+    saveCreds = auth.saveCreds;
+  } catch (e) {
+    log('WA auth state failed', String(e?.message || e));
+    setStatus('error');
+    return;
+  }
 
-  client = new Client({
-    authStrategy: new LocalAuth(localAuthOpts),
-    puppeteer: {
-      ...(executablePath ? { executablePath } : {}),
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        // --disable-gpu: needed on Windows + Linux for headless stability
-        // On macOS with Chrome 112+ it causes post-auth rendering failures → skip on mac
-        ...(!isMac ? ['--disable-gpu'] : []),
-        '--disable-extensions',
-        // --disable-background-networking blocks WhatsApp's post-QR WebSocket auth flow
-        // Removed: causes QR scan to succeed but session never becomes ready
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--metrics-recording-only',
-        '--no-first-run',
-        '--safebrowsing-disable-auto-update',
-      ],
-    },
-  });
+  log('WA init', { dataDir, authDir });
 
-  client.on('qr', (qr) => {
-    currentQR = qr;
-    status = 'qr';
-    clearLoadingWatchdog();
-    broadcast('wa:qr', qr);
-    log('WA event', 'qr-generated');
-  });
-
-  client.on('authenticated', () => {
-    // After QR scan/auth, WA can still hang before ready in rare cases.
-    status = 'loading';
-    broadcast('wa:status', 'loading');
-    armLoadingWatchdog('post-auth');
-    log('WA event', 'authenticated');
-  });
-
-  // Offline sync progress (0→100). Logged so a stuck initial sync is visible in
-  // icq-startup.log — the 'ready' event only fires once this completes.
   try {
-    client.on('loading_screen', (percent, message) => {
-      log('WA event', 'loading_screen', { percent, message });
+    sock = BA.default({
+      auth: {
+        creds: state.creds,
+        keys: BA.makeCacheableSignalKeyStore(state.keys, waLogger),
+      },
+      logger: waLogger,
+      // Identify as a desktop client so WhatsApp lists it sensibly under linked devices.
+      browser: BA.Browsers.appropriate('Desktop'),
+      markOnlineOnConnect: false, // don't steal notifications from the phone
+      syncFullHistory: false,     // recent history is enough and syncs far quicker
+      generateHighQualityLinkPreview: false,
+      // Needed for message retries: Baileys asks us for a message it must re-send.
+      getMessage: async (key) => {
+        const bucket = messageStore.get(key?.remoteJid);
+        return bucket?.get(key?.id)?.message || undefined;
+      },
     });
-  } catch (e) { /* older whatsapp-web.js without the event */ }
+  } catch (e) {
+    log('WA socket creation failed', String(e?.message || e));
+    setStatus('error');
+    scheduleReconnect(dataDir);
+    return;
+  }
 
-  client.on('ready', () => {
-    status = 'ready';
-    currentQR = null;
-    readyAtSec = Math.floor(Date.now() / 1000);
-    clearLoadingWatchdog();
-    broadcast('wa:status', 'ready');
-    broadcast('wa:ready', { name: client.info?.pushname });
-    startHealthCheck();
-    log('WA event', 'ready', { pushname: client.info?.pushname });
-  });
+  wireEvents(dataDir);
+}
 
-  client.on('message', async (msg) => {
-    // Messages sent/received while the app was closed get replayed by the sync
-    // right after startup. Tag them so the UI can skip sounds and unread bumps —
-    // and don't eagerly download their media (a burst of 50 replays used to
-    // hammer the page; media loads when the chat is opened).
-    const isBacklog = isBacklogMessage(msg.timestamp, readyAtSec);
-    let mediaData = null;
-    if (!isBacklog && msg.hasMedia && (msg.type === 'sticker' || msg.type === 'image' || msg.type === 'video' || msg.type === 'ptt' || msg.type === 'audio')) {
-      try {
-        const media = await msg.downloadMedia();
-        if (media) mediaData = `data:${media.mimetype};base64,${media.data}`;
-      } catch (e) { /* ignore download errors */ }
+// Report 'ready' exactly once per connection, once there is something to show.
+function announceReady() {
+  if (status === 'ready') return;
+  clearTimeout(readyTimer);
+  readyTimer = null;
+  setStatus('ready');
+  broadcast('wa:ready', { name: sock?.user?.name || sock?.user?.verifiedName || null });
+  log('WA event', 'ready', { chats: chatStore.size });
+}
+
+// Tell the renderer its cached chat list is stale. History arrives in chunks well
+// after the first one, and without this the list would keep showing the first chunk.
+// Debounced so a burst of chunks triggers a single refresh.
+function signalChatsChanged() {
+  clearTimeout(chatsChangedTimer);
+  chatsChangedTimer = setTimeout(() => {
+    chatsChangedTimer = null;
+    log('WA chats-updated', { chats: chatStore.size });
+    broadcast('wa:chats-updated', { count: chatStore.size });
+  }, 1500);
+}
+
+function wireEvents(dataDir) {
+  sock.ev.on('creds.update', () => { try { saveCreds?.(); } catch (e) {} });
+
+  sock.ev.on('connection.update', async (u) => {
+    const { connection, lastDisconnect, qr } = u;
+
+    if (qr) {
+      currentQR = qr;
+      setStatus('qr');
+      broadcast('wa:qr', qr);
+      log('WA event', 'qr-generated');
     }
-    broadcast('wa:message', {
-      from: msg.from,
-      to: msg.to,
-      body: msg.body || '',
-      timestamp: msg.timestamp,
-      id: msg.id._serialized,
-      type: msg.type,
-      isGif: msg.isGif || false,
-      fromMe: msg.fromMe,
-      ack: msg.ack ?? 0,
-      mediaData,
-      isBacklog,
-    });
-    // Also emit a chat-update so the UI can react immediately (ordering, lastMessage, archived)
-    // NOTE: no archived lookup here. This fires on EVERY incoming message and used
-    // to call getChatById() — i.e. a groupMetadata network round-trip per group
-    // message, which throttled the whole client. The sidebar updates from
-    // 'wa:message'; archived state comes from the chat list.
-    try {
-      const chatId = msg.from || msg.to;
-        broadcast('wa:chat-update', {
-          id: chatId,
-          lastMessage: msg.body || '',
-          timestamp: msg.timestamp || Math.floor(Date.now()/1000),
-          unreadCount: undefined,
-          isGroup: msg.isGroup || false,
-        });
-    } catch (e) {}
-  });
 
-  // Ausgehende Nachrichten (eigene) auch broadcasten für Badge-Update
-  client.on('message_create', async (msg) => {
-    if (!msg.fromMe) return;
-    broadcast('wa:message', {
-      from: msg.from,
-      to: msg.to,
-      body: msg.body || '',
-      timestamp: msg.timestamp,
-      id: msg.id._serialized,
-      type: msg.type,
-      fromMe: true,
-      ack: msg.ack ?? 0,
-      mediaData: null,
-      isBacklog: isBacklogMessage(msg.timestamp, readyAtSec),
-    });
-    try {
-      const chatId = msg.to || msg.from;
-        broadcast('wa:chat-update', {
-          id: chatId,
-          lastMessage: msg.body || '',
-          timestamp: msg.timestamp || Math.floor(Date.now()/1000),
-          unreadCount: 0,
-          isGroup: msg.isGroup || false,
-        });
-    } catch (e) {}
-  });
-
-  // Ack-Updates (gesendet/zugestellt/gelesen)
-  client.on('message_ack', (msg, ack) => {
-    broadcast('wa:ack', { id: msg.id._serialized, ack });
-  });
-
-  // Tipp-Indikator
-  client.on('contact_changed', () => {}); // keep alive
-  try {
-    client.on('typing', ({ chatId }) => broadcast('wa:typing', { chatId, typing: true }));
-    client.on('stop_typing', ({ chatId }) => broadcast('wa:typing', { chatId, typing: false }));
-  } catch (e) { /* older whatsapp-web.js versions may not have these events */ }
-
-  client.on('disconnected', (reason) => {
-    clearLoadingWatchdog();
-    console.warn('[WA disconnected]', reason);
-    log('WA event', 'disconnected', reason);
-    if (waManualLogout) {
-      // User explicitly logged out — don't reconnect
-      status = 'disconnected';
+    if (connection === 'open') {
       currentQR = null;
-      broadcast('wa:status', 'disconnected');
-      return;
+      reconnectAttempt = 0;
+      readyAtSec = Math.floor(Date.now() / 1000);
+      meId = sock.user?.id ? BA.jidNormalizedUser(sock.user.id) : null;
+      connectionOpen = true;
+      log('WA event', 'connected', { pushname: sock.user?.name, id: meId });
+
+      // Do NOT report 'ready' yet. Unlike whatsapp-web.js — which only fired 'ready'
+      // once its store was populated — Baileys opens the socket immediately and
+      // streams the chat history in afterwards (seconds later). Announcing ready now
+      // makes the UI fetch an almost empty chat list and cache it. Wait for the first
+      // history chunk, with a timeout so an account that has no history still starts.
+      clearTimeout(readyTimer);
+      readyTimer = setTimeout(() => {
+        if (connectionOpen && status !== 'ready') {
+          log('WA ready (history timeout)', { chats: chatStore.size });
+          announceReady();
+        }
+      }, 12000);
+
+      // Cache our own blocklist so the contact menu can show the right entry.
+      try {
+        const list = await sock.fetchBlocklist();
+        blockedSet.clear();
+        for (const j of list || []) blockedSet.add(j);
+      } catch (e) { /* not fatal */ }
     }
-    // Auto-reconnect: destroy old client and re-initialize after short delay
-    status = 'loading';
-    broadcast('wa:status', 'loading');
-    const oldClient = client;
-    client = null;
-    currentQR = null;
-    setTimeout(async () => {
-      await closeClientBrowser(oldClient);
-      if (!waManualLogout) {
-        waRetryUsed = false;
-        init(onAvatarCb, lastDataDir);
+
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = code === BA.DisconnectReason.loggedOut;
+      connectionOpen = false;
+      historySeen = false;
+      clearTimeout(readyTimer);
+      readyTimer = null;
+      log('WA event', 'disconnected', { code, loggedOut });
+
+      if (waManualLogout) { setStatus('disconnected'); return; }
+
+      if (loggedOut) {
+        // The session was revoked (unlinked on the phone). Wipe it so the next
+        // start shows a QR instead of retrying with dead credentials forever.
+        try { fs.rmSync(sessionDir(dataDir), { recursive: true, force: true }); } catch (e) {}
+        resetStore();
+        currentQR = null;
+        setStatus('disconnected');
+        scheduleReconnect(dataDir);
+        return;
       }
-    }, 3000);
+      setStatus('loading');
+      scheduleReconnect(dataDir);
+    }
   });
 
-  client.on('auth_failure', (msg) => {
-    console.error('[WA auth_failure]', msg);
-    log('WA event', 'auth_failure', msg);
-    clearLoadingWatchdog();
-    // Attempt safe recovery: move suspicious storage files to a backup folder instead of deleting them.
-    try {
-      const sessionBase = path.join(lastDataDir, 'whatsapp');
-      const sessionFolder = lastClientId ? `session-${lastClientId}` : 'session';
-      const sessionDir = path.join(sessionBase, sessionFolder, 'Default');
-      if (fs.existsSync(sessionDir)) {
-        const backupDir = path.join(sessionBase, `${sessionFolder}.corrupt-backup-${Date.now()}`);
-        fs.mkdirSync(backupDir, { recursive: true });
-        const files = ['Cookies', 'Local Storage', 'Session Storage', 'IndexedDB'];
-        files.forEach(f => {
-          const fp = path.join(sessionDir, f);
-          if (!fs.existsSync(fp)) return;
-          try {
-            const dest = path.join(backupDir, f.replace(/\s+/g, '_'));
-            fs.renameSync(fp, dest);
-            log('WA auth_failure: moved', fp, '->', dest);
-          } catch (e) {
-            try { fs.rmSync(fp, { recursive: true, force: true }); log('WA auth_failure: removed fallback', fp); } catch (err) { log('WA auth_failure: remove failed', fp, String(err)); }
-          }
-        });
-        log('WA auth_failure: backup created', backupDir);
-      }
-    } catch (e) { log('WA auth_failure cleanup error', String(e)); }
-    // Reinit to show QR again instead of stuck error screen. The failed client was
-    // previously just dropped (client = null) — its Chrome kept running and held
-    // the profile lock. Destroy + hard-kill it before re-initializing.
-    const failedClient = client;
-    client = null;
-    currentQR = null;
-    waRetryUsed = false;
-    status = 'loading';
-    broadcast('wa:status', 'loading');
-    (async () => { await closeClientBrowser(failedClient); })();
-    setTimeout(() => init(onAvatarCb, lastDataDir), 2000);
+  // Initial history sync — seeds chats, contacts and recent messages. It arrives in
+  // several chunks over a few seconds, so this both releases the initial 'ready' and
+  // tells the UI to refresh when later chunks add more.
+  sock.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest, lidPnMappings }) => {
+    // Mappings first: they let a contact found under one JID form name a chat keyed
+    // by the other one.
+    for (const m of lidPnMappings || []) rememberLidMapping(m);
+    for (const c of chats || []) upsertChat(c);
+    for (const c of contacts || []) rememberContact(c);
+    storeMessages(messages);
+    log('WA history', { chats: chats?.length || 0, contacts: contacts?.length || 0, messages: messages?.length || 0, isLatest: !!isLatest });
+
+    const gotSomething = (chats?.length || 0) > 0 || (contacts?.length || 0) > 0;
+    if (!gotSomething) return;
+    if (!historySeen) {
+      historySeen = true;
+      announceReady();
+    } else {
+      signalChatsChanged();
+    }
   });
 
-  armLoadingWatchdog('startup');
-  client.initialize().catch((err) => {
-    status = 'error';
-    clearLoadingWatchdog();
-    broadcast('wa:status', 'error');
-    console.error('[WA initialize error]', err.message || err);
+  sock.ev.on('chats.upsert', (list) => { for (const c of list || []) upsertChat(c); });
+  sock.ev.on('chats.update', (list) => {
+    for (const c of list || []) {
+      if (!c?.id) continue;
+      upsertChat(c);
+      broadcast('wa:chat-update', {
+        id: c.id,
+        archived: c.archived ?? undefined,
+        unreadCount: typeof c.unreadCount === 'number' ? Math.max(0, c.unreadCount) : undefined,
+      });
+    }
+  });
+  sock.ev.on('chats.delete', (ids) => {
+    for (const id of ids || []) { chatStore.delete(id); messageStore.delete(id); }
+  });
+
+  sock.ev.on('contacts.upsert', (list) => {
+    for (const c of list || []) rememberContact(c);
+    // Contact names feed the chat list — refresh it so raw JIDs turn into names.
+    if (list?.length && status === 'ready') signalChatsChanged();
+  });
+  sock.ev.on('contacts.update', (list) => {
+    for (const c of list || []) rememberContact(c);
+    if (list?.length && status === 'ready') signalChatsChanged();
+  });
+
+  // WhatsApp can send the LID↔phone mapping separately from the contact records.
+  sock.ev.on('lid-mapping.update', (m) => {
+    rememberLidMapping(m);
+    if (status === 'ready') signalChatsChanged();
+  });
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    storeMessages(messages);
+    for (const m of messages || []) {
+      const jid = m?.key?.remoteJid;
+      if (!jid || jid === 'status@broadcast') continue;
+      // Protocol/system messages carry no renderable content.
+      if (!m.message) continue;
+
+      const entry = toMessageEntry(m);
+      const ts = entry.timestamp;
+      // 'append' means history/backfill; 'notify' is live. Either way, anything
+      // older than our connect time is replayed backlog: no sound, no unread bump.
+      const isBacklog = type !== 'notify' || isBacklogMessage(ts, readyAtSec);
+
+      broadcast('wa:message', {
+        from: m.key.fromMe ? (meId || jid) : jid,
+        to: m.key.fromMe ? jid : (meId || jid),
+        body: entry.body,
+        timestamp: ts,
+        id: entry.id,
+        type: entry.type,
+        isGif: entry.isGif,
+        fromMe: entry.fromMe,
+        ack: entry.ack,
+        mediaData: null,
+        isBacklog,
+      });
+
+      broadcast('wa:chat-update', {
+        id: jid,
+        lastMessage: entry.body,
+        timestamp: ts,
+        isGroup: jid.endsWith('@g.us'),
+      });
+
+      // Live incoming media: fetch it so an open chat window fills in right away.
+      if (!isBacklog && entry.hasMedia && entry.type !== 'document') {
+        downloadMediaFor(m).catch(() => {});
+      }
+    }
+  });
+
+  sock.ev.on('messages.update', (updates) => {
+    for (const u of updates || []) {
+      const jid = u?.key?.remoteJid;
+      const id = u?.key?.id;
+      if (!jid || !id) continue;
+      const bucket = messageStore.get(jid);
+      if (bucket?.has(id)) bucket.set(id, { ...bucket.get(id), ...(u.update || {}) });
+      if (u.update?.status != null) applyAck(jid, id, u.update.status, !!u.key?.fromMe);
+    }
+  });
+
+  // Per-recipient delivery/read receipts. In groups this is the only path that
+  // reports delivery, and in 1:1 chats it is a second chance at the confirmation
+  // that messages.update may not have carried.
+  sock.ev.on('message-receipt.update', (updates) => {
+    for (const u of updates || []) {
+      const jid = u?.key?.remoteJid;
+      const id = u?.key?.id;
+      if (!jid || !id) continue;
+      const status = statusFromReceipt(u.receipt);
+      if (status != null) applyAck(jid, id, status, !!u.key?.fromMe);
+    }
+  });
+
+  sock.ev.on('messages.delete', (item) => {
+    if (item?.keys) {
+      for (const k of item.keys) messageStore.get(k.remoteJid)?.delete(k.id);
+    } else if (item?.jid) {
+      messageStore.delete(item.jid);
+    }
+  });
+
+  sock.ev.on('presence.update', ({ id, presences }) => {
+    if (!id || !presences) return;
+    const typing = Object.values(presences).some(
+      p => p?.lastKnownPresence === 'composing' || p?.lastKnownPresence === 'recording',
+    );
+    broadcast('wa:typing', { chatId: id, typing });
+  });
+
+  sock.ev.on('blocklist.set', ({ blocklist }) => {
+    blockedSet.clear();
+    for (const j of blocklist || []) blockedSet.add(j);
+  });
+  sock.ev.on('blocklist.update', ({ blocklist, type }) => {
+    for (const j of blocklist || []) {
+      if (type === 'add') blockedSet.add(j); else blockedSet.delete(j);
+    }
   });
 }
+
+// ── Media ─────────────────────────────────────────────────────────────────
+
+async function downloadMediaFor(m) {
+  const type = typeOf(m);
+  if (!MEDIA_TYPES.has(type)) return null;
+  const content = m?.message?.[`${type === 'ptt' ? 'audio' : type}Message`]
+    || m?.message?.imageMessage || m?.message?.videoMessage
+    || m?.message?.stickerMessage || m?.message?.audioMessage || m?.message?.documentMessage;
+  const mimetype = content?.mimetype || 'application/octet-stream';
+  const buffer = await BA.downloadMediaMessage(
+    m, 'buffer', {},
+    { logger: waLogger, reuploadRequest: sock.updateMediaMessage },
+  );
+  if (!buffer) return null;
+  const dataUrl = `data:${mimetype};base64,${buffer.toString('base64')}`;
+  broadcast('wa:media', { msgId: m.key.id, mediaData: dataUrl });
+  return dataUrl;
+}
+
+// ── Public API ────────────────────────────────────────────────────────────
 
 async function getQR() { return currentQR; }
-function getStatus() {
-  return status;
-}
-
-// Background health check — runs every 30s, never blocks the poll path.
-let healthCheckTimer = null;
-function startHealthCheck() {
-  if (healthCheckTimer) return;
-  healthCheckTimer = setInterval(async () => {
-    if (status !== 'ready') return;
-    if (!client) { triggerRecovery('ready-without-client'); return; }
-    const state = await getClientStateSafe();
-    if (state && !WA_CONNECTED_STATES.has(String(state))) {
-      triggerRecovery(`health-check state=${state}`);
-    }
-  }, 30000);
-}
-function stopHealthCheck() {
-  if (healthCheckTimer) { clearInterval(healthCheckTimer); healthCheckTimer = null; }
-}
-
-// Fast, metadata-free chat list read straight from the WhatsApp store.
-//
-// whatsapp-web.js's getChats() serializes every chat through getChatModel, which
-// for GROUPS awaits a network groupMetadata.update() and touches newer WA-Web
-// modules. That is both slow (a round-trip per group) and throws on some builds —
-// and because the library wraps it all in one Promise.all, a single bad chat blanks
-// the entire list. The contact list needs none of that: just id, title, last
-// message, unread count and archived. Reading those fields directly is fast and
-// cannot fail on the group-metadata path. Group metadata is fetched lazily, only
-// when a group chat is actually opened.
-async function fetchChatsLight() {
-  if (!client || !client.pupPage) return { chats: [], skipped: 0, error: 'no-page' };
-  return client.pupPage.evaluate(() => {
-    const out = { chats: [], skipped: 0, error: null };
-    let coll;
-    try {
-      coll = window.require('WAWebCollections').Chat.getModelsArray();
-    } catch (e) {
-      out.error = 'collection: ' + ((e && e.message) || String(e));
-      return out;
-    }
-    for (const chat of coll) {
-      try {
-        const id = chat && chat.id ? chat.id._serialized : null;
-        if (!id) { out.skipped += 1; continue; }
-        let title = null;
-        try { title = chat.formattedTitle || null; } catch (e) {}
-        // Last-message preview: resolve via lastReceivedKey against the global Msg
-        // collection (what the library does), because a chat's own msgs buffer is
-        // empty until that chat has been opened — which would leave most previews
-        // blank right after login. Falls back to the buffer, and stays fully
-        // synchronous (no network) either way.
-        let last = null;
-        try {
-          const key = chat.lastReceivedKey;
-          const serialized = key && (key._serialized || key);
-          if (serialized) {
-            const m = window.require('WAWebCollections').Msg.get(String(serialized));
-            if (m && !m.isNotification) last = { body: m.body || m.caption || '', t: m.t || 0 };
-          }
-        } catch (e) {}
-        if (!last) {
-          try {
-            const arr = (chat.msgs && chat.msgs.getModelsArray) ? chat.msgs.getModelsArray() : [];
-            for (let i = arr.length - 1; i >= 0; i -= 1) {
-              const m = arr[i];
-              if (m && !m.isNotification) { last = { body: m.body || m.caption || '', t: m.t || 0 }; break; }
-            }
-          } catch (e) {}
-        }
-        out.chats.push({
-          id: { _serialized: id },
-          name: title,
-          formattedTitle: title,
-          lastMessage: last,
-          unreadCount: (() => { try { return chat.unreadCount || 0; } catch (e) { return 0; } })(),
-          isGroup: String(id).endsWith('@g.us'),
-          archive: (() => { try { return !!chat.archive; } catch (e) { return false; } })(),
-          t: (() => { try { return chat.t || 0; } catch (e) { return 0; } })(),
-        });
-      } catch (e) { out.skipped += 1; }
-    }
-    return out;
-  });
-}
+function getStatus() { return status; }
 
 async function getChats() {
   if (status !== 'ready') return [];
-
-  // The library path is PRIMARY — it returns fully populated chats (name, last
-  // message, unread count) and is what shipped when this worked well. The lightweight
-  // in-page read is only the fallback for when it throws or comes back empty. On a
-  // fresh login the store fills gradually after 'ready', so the whole thing is
-  // wrapped in a bounded wait that returns as soon as chats appear.
-  const attempt = async () => {
-    try {
-      const chats = await client.getChats();
-      if (Array.isArray(chats) && chats.length) return chats;
-    } catch (e) {
-      log('WA getChats library threw', String(e?.message || e));
-    }
-    const light = await fetchChatsLight().catch(e => ({ chats: [], skipped: 0, error: String(e?.message || e) }));
-    if (light?.error) log('WA getChats fallback error', light.error);
-    if (light?.chats?.length) log('WA getChats via fallback', { count: light.chats.length, skipped: light.skipped || 0 });
-    return light?.chats || [];
-  };
-
-  const chats = await waitForChats(attempt, () => status === 'ready', { deadlineMs: 20000, intervalMs: 700 });
-  log('WA getChats result', { count: chats.length });
-
-  // Return base data only (no avatars). Profile pictures are loaded lazily and
-  // throttled by getContactAvatar so they never compete with this first sync.
-  return chats.slice(0, 100).map(mapChatEntry);
-}
-
-// Defensive message fetch that runs inside the page and NEVER calls getChatModel
-// (getAsModel:false), so group chats whose metadata sync fails still return their
-// messages. Mirrors whatsapp-web.js's own fetchMessages internals.
-//
-// Two modes:
-//   - count-based (`limit`): page back until we have N messages. Used by the cheap
-//     periodic reconcile.
-//   - time-based (`sinceTs` > 0): page back until the history actually reaches that
-//     timestamp — that is what makes "the last 3 days" real instead of a fixed 30.
-//     Bounded by `maxCount` (busy groups) and never returns fewer than `minCount`
-//     (a quiet chat still shows history older than the window).
-async function fetchMessagesRaw(chatId, opts = {}) {
-  if (!client || !client.pupPage) return { messages: [], error: 'no-page' };
-  const sinceTs = Number(opts.sinceTs) || 0;
-  const limit = Number(opts.limit) || 30;
-  const maxCount = Number(opts.maxCount) || 300;
-  const minCount = Number(opts.minCount) || 25;
-  return client.pupPage.evaluate(async (chatId, sinceTs, limit, maxCount, minCount) => {
-    const out = { messages: [], error: null, pages: 0 };
-    const keep = (m) => m && !m.isNotification;
-    let chat;
-    try {
-      chat = await window.WWebJS.getChat(chatId, { getAsModel: false });
-    } catch (e) { out.error = 'getChat: ' + ((e && e.message) || String(e)); return out; }
-    if (!chat) { out.error = 'chat-not-found'; return out; }
-
-    let msgs = [];
-    try { msgs = chat.msgs.getModelsArray().filter(keep); } catch (e) { out.error = 'msgs: ' + ((e && e.message) || String(e)); }
-    out.buffered = msgs.length; // chat-list sync keeps only the preview message here
-
-    const oldestT = () => {
-      let o = Infinity;
-      for (const m of msgs) { const t = m.t || 0; if (t && t < o) o = t; }
-      return o;
-    };
-    const target = sinceTs > 0 ? maxCount : limit;
-
-    // Paging strategies. whatsapp-web.js calls loadEarlierMsgs({ chat }); WhatsApp
-    // Web's module API drifts, so when that yields nothing we try the older direct
-    // signature, the chat model's own method, and finally scan the module for any
-    // loadEarlier-style function. The first strategy that returns messages is
-    // locked in for the remaining pages; every failure is recorded for the log.
-    out.attempts = [];
-    out.strategy = null;
-    const strategies = [
-      ['module-obj', async () => window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat })],
-      ['module-direct', async () => window.require('WAWebChatLoadMessages').loadEarlierMsgs(chat)],
-      ['chat-method', async () => (chat.loadEarlierMsgs ? chat.loadEarlierMsgs() : null)],
-      ['module-scan', async () => {
-        const mod = window.require('WAWebChatLoadMessages');
-        for (const k of Object.keys(mod)) {
-          if (!/loadearlier/i.test(k) || typeof mod[k] !== 'function' || k === 'loadEarlierMsgs') continue;
-          try { const r = await mod[k]({ chat }); if (r && r.length) return r; } catch (e) {}
-          try { const r = await mod[k](chat); if (r && r.length) return r; } catch (e) {}
-        }
-        return null;
-      }],
-    ];
-    const loadOlder = async () => {
-      if (out.strategy) {
-        const s = strategies.find((x) => x[0] === out.strategy);
-        try { return await s[1](); } catch (e) { return null; }
-      }
-      for (const [name, fn] of strategies) {
-        try {
-          const r = await fn();
-          if (r && r.length) { out.strategy = name; return r; }
-          out.attempts.push(name + ':empty');
-        } catch (e) {
-          out.attempts.push(name + ':' + ((e && e.message) || 'err').slice(0, 80));
-        }
-      }
-      return null;
-    };
-
-    try {
-      let guard = 0;
-      while (guard < 40) {
-        guard += 1;
-        if (msgs.length >= target) break;
-        // Time-based: stop once the history reaches past the cutoff and we have a
-        // sane minimum. Otherwise keep paging backwards.
-        if (sinceTs > 0 && msgs.length >= minCount && oldestT() <= sinceTs) break;
-        const loaded = await loadOlder();
-        if (!loaded || !loaded.length) break; // start of chat, or no strategy works
-        out.pages += 1;
-        msgs = [...loaded.filter(keep), ...msgs];
-      }
-    } catch (e) { /* keep whatever we already have */ }
-
-    // When nothing paged, record what the module actually exposes — that pins the
-    // API drift precisely in the startup log.
-    if (!out.strategy && out.pages === 0) {
-      try { out.attempts.push('keys:' + Object.keys(window.require('WAWebChatLoadMessages')).join('|').slice(0, 200)); }
-      catch (e) { out.attempts.push('module-missing:' + ((e && e.message) || 'err').slice(0, 80)); }
-    }
-
-    msgs.sort((a, b) => (a.t || 0) - (b.t || 0));
-
-    if (sinceTs > 0) {
-      const recent = msgs.filter((m) => (m.t || 0) >= sinceTs);
-      msgs = recent.length >= minCount ? recent : msgs.slice(-minCount);
-      if (msgs.length > maxCount) msgs = msgs.slice(-maxCount);
-    } else if (msgs.length > limit) {
-      msgs = msgs.slice(-limit);
-    }
-
-    for (const m of msgs) {
-      try { out.messages.push(window.WWebJS.getMessageModel(m)); } catch (e) { /* skip bad msg */ }
-    }
-    return out;
-  }, chatId, sinceTs, limit, maxCount, minCount);
-}
-
-const MEDIA_MSG_TYPES = ['sticker', 'image', 'video', 'ptt', 'audio'];
-
-// Preferred: download straight from the Message objects returned by fetchMessages —
-// they already carry a media handle, so no extra lookup is needed.
-function downloadMediaFromMessages(msgs) {
-  (async () => {
-    for (const m of msgs || []) {
-      if (status !== 'ready') return;
-      if (!m?.hasMedia || !MEDIA_MSG_TYPES.includes(m.type)) continue;
-      try {
-        const media = await m.downloadMedia();
-        if (media) {
-          broadcast('wa:media', { msgId: m.id._serialized, mediaData: `data:${media.mimetype};base64,${media.data}` });
-        }
-      } catch (e) { /* ignore media load errors */ }
-    }
-  })();
-}
-
-// Fallback path only: we have plain entries without media handles, so look each
-// message up by id. Sequential on purpose — background work must not compete with
-// the foreground.
-function downloadMediaInBackground(entries) {
-  const targets = (entries || []).filter(m => m.hasMedia && MEDIA_MSG_TYPES.includes(m.type));
-  if (!targets.length) return;
-  (async () => {
-    for (const entry of targets) {
-      if (status !== 'ready') return;
-      try {
-        const msg = await client.getMessageById(entry.id);
-        if (!msg) continue;
-        const media = await msg.downloadMedia();
-        if (media) {
-          broadcast('wa:media', { msgId: entry.id, mediaData: `data:${media.mimetype};base64,${media.data}` });
-        }
-      } catch (e) { /* ignore media load errors */ }
-    }
-  })();
+  const jids = sortedChatJids().filter(j => j && j !== 'status@broadcast' && !j.endsWith('@newsletter'));
+  return jids.slice(0, 100).map(chatEntryFor);
 }
 
 async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
   const limit = opts.limit ?? 30;
+  const bucket = messageStore.get(chatId);
+  const all = bucket ? [...bucket.values()] : [];
 
-  // The library path is PRIMARY. chat.fetchMessages() pages back through WhatsApp's
-  // own message loader and reliably returns the last `limit` messages; it is what
-  // this app shipped with when message loading worked well. An earlier attempt to
-  // replace it with a hand-rolled in-page reader returned only the single preview
-  // message the chat-list sync leaves in the buffer — the "only the last message"
-  // regression. The hand-rolled reader survives only as a fallback below.
-  let result = [];
-  let libMsgs = null;
-  try {
-    const chat = await client.getChatById(chatId);
-    libMsgs = await chat.fetchMessages({ limit });
-    result = libMsgs.map(mapMessageEntry);
-  } catch (e) {
-    log('WA getMessages library threw', chatId, String(e?.message || e));
-  }
+  const entries = all
+    .filter(m => m?.message)
+    .map(toMessageEntry)
+    .sort((a, b) => a.timestamp - b.timestamp);
+  const result = entries.slice(-limit);
 
-  // Fallback: only when the library path failed outright or came back empty.
-  if (!result.length) {
-    const raw = await fetchMessagesRaw(chatId, { limit, minCount: 1, maxCount: limit })
-      .catch(e => ({ messages: [], error: String(e?.message || e) }));
-    if (raw?.error) log('WA getMessages raw error', chatId, raw.error);
-    result = (raw?.messages || []).map(mapMessageEntry);
-    if (result.length) log('WA getMessages via fallback', { chatId, count: result.length });
-  }
-
-  // Load media in background (don't block UI). Prefer the Message objects we already
-  // have — they carry a media handle, so no extra lookup is needed.
+  // Fill in media for what we're about to show (background, non-blocking).
   if (!opts.skipMedia) {
-    if (libMsgs) downloadMediaFromMessages(libMsgs);
-    else downloadMediaInBackground(result);
+    (async () => {
+      for (const e of result) {
+        if (!e.hasMedia || e.type === 'document') continue;
+        const m = bucket?.get(e.id);
+        if (m) { try { await downloadMediaFor(m); } catch (err) { /* ignore */ } }
+      }
+    })();
   }
 
-  log('WA getMessages', { chatId, count: result.length });
+  log('WA getMessages', { chatId, count: result.length, stored: all.length });
   return result;
 }
 
+function requireSock() {
+  if (!sock || status !== 'ready') throw new Error('WhatsApp not ready');
+  return sock;
+}
+
+// Sends are never auto-retried: a retry can deliver the message twice and that
+// cannot be taken back. A failure the user can repeat is strictly better.
 async function sendMessage(chatId, text, quotedMessageId = null) {
-  return runSendOnce('sendMessage', async () => {
-    // If the message contains a URL, disable automatic link preview generation to
-    // avoid waiting for the preview fetch, which slows the send down.
-    const options = {};
-    if (/https?:\/\/\S+/i.test(String(text || ''))) options.linkPreview = false;
-    if (quotedMessageId) options.quotedMessageId = quotedMessageId;
-    await client.sendMessage(chatId, text, options);
+  const s = requireSock();
+  const options = {};
+  if (quotedMessageId) {
+    const quoted = messageStore.get(chatId)?.get(quotedMessageId);
+    if (quoted) options.quoted = quoted;
+  }
+  try {
+    await s.sendMessage(chatId, { text: String(text ?? '') }, options);
     return true;
-  });
+  } catch (e) {
+    log('WA send failed', 'sendMessage', chatId, String(e?.message || e));
+    throw e;
+  }
+}
+
+const MIME_BY_EXT = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+  webp: 'image/webp', bmp: 'image/bmp',
+  mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska',
+  mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav', m4a: 'audio/mp4',
+  pdf: 'application/pdf', zip: 'application/zip', txt: 'text/plain',
+};
+
+async function sendFile(chatId, filePath) {
+  const s = requireSock();
+  const name = path.basename(filePath);
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const mimetype = MIME_BY_EXT[ext] || 'application/octet-stream';
+  const buffer = fs.readFileSync(filePath);
+
+  let content;
+  if (mimetype.startsWith('image/')) content = { image: buffer, mimetype };
+  else if (mimetype.startsWith('video/')) content = { video: buffer, mimetype };
+  else if (mimetype.startsWith('audio/')) content = { audio: buffer, mimetype };
+  else content = { document: buffer, mimetype, fileName: name };
+
+  try {
+    await s.sendMessage(chatId, content);
+    return true;
+  } catch (e) {
+    log('WA send failed', 'sendFile', chatId, String(e?.message || e));
+    throw e;
+  }
+}
+
+async function sendSticker(chatId, filePath) {
+  const s = requireSock();
+  const buffer = fs.readFileSync(filePath);
+  const isWebp = (filePath.split('.').pop() || '').toLowerCase() === 'webp';
+  try {
+    // WhatsApp only accepts webp as a sticker. Anything else goes out as an image
+    // rather than failing — converting would need a native image encoder.
+    if (isWebp) await s.sendMessage(chatId, { sticker: buffer });
+    else await s.sendMessage(chatId, { image: buffer, mimetype: 'image/png' });
+    return true;
+  } catch (e) {
+    log('WA send failed', 'sendSticker', chatId, String(e?.message || e));
+    throw e;
+  }
+}
+
+async function sendVoice(chatId, base64Data, mimeType) {
+  const s = requireSock();
+  const mt = mimeType || 'audio/ogg; codecs=opus';
+  const buffer = Buffer.from(String(base64Data || ''), 'base64');
+  try {
+    await s.sendMessage(chatId, { audio: buffer, mimetype: mt, ptt: true });
+    return true;
+  } catch (e) {
+    log('WA send failed', 'sendVoice', chatId, String(e?.message || e));
+    throw e;
+  }
+}
+
+async function setArchive(chatId, archive) {
+  const s = requireSock();
+  // chatModify needs the chat's latest message (newest first) to anchor the change.
+  const bucket = messageStore.get(chatId);
+  const newest = bucket && bucket.size
+    ? [...bucket.values()].sort(
+        (a, b) => Number(b?.messageTimestamp?.low ?? b?.messageTimestamp ?? 0)
+                - Number(a?.messageTimestamp?.low ?? a?.messageTimestamp ?? 0),
+      )[0]
+    : null;
+  const lastMessages = newest ? [{ key: newest.key, messageTimestamp: newest.messageTimestamp }] : [];
+  await s.chatModify({ archive: !!archive, lastMessages }, chatId);
+  upsertChat({ id: chatId, archived: !!archive });
+  broadcast('wa:chat-update', { id: chatId, archived: !!archive });
+  return true;
+}
+
+async function setBlocked(contactId, blocked) {
+  const s = requireSock();
+  await s.updateBlockStatus(contactId, blocked ? 'block' : 'unblock');
+  if (blocked) blockedSet.add(contactId); else blockedSet.delete(contactId);
+  return true;
+}
+
+async function isContactBlocked(contactId) {
+  return blockedSet.has(contactId);
+}
+
+async function editMessage(chatId, messageId, newText) {
+  const s = requireSock();
+  const original = messageStore.get(chatId)?.get(messageId);
+  if (!original) throw new Error('Message not found');
+  if (!original.key?.fromMe) throw new Error('Only own messages can be edited');
+  await s.sendMessage(chatId, { text: String(newText ?? ''), edit: original.key });
+  return true;
+}
+
+async function deleteMessage(chatId, messageId) {
+  const s = requireSock();
+  const original = messageStore.get(chatId)?.get(messageId);
+  if (!original) throw new Error('Message not found');
+  if (!original.key?.fromMe) throw new Error('Only own messages can be deleted');
+  await s.sendMessage(chatId, { delete: original.key });
+  messageStore.get(chatId)?.delete(messageId);
+  return true;
 }
 
 async function markChatRead(chatId) {
   if (status !== 'ready') return;
-  // client.sendSeen() resolves the chat with getAsModel:false — no groupMetadata
-  // round-trip, unlike getChatById().sendSeen().
-  try { await client.sendSeen(chatId); } catch (e) { /* ignore */ }
-}
-
-async function sendFile(chatId, filePath) {
-  const { MessageMedia } = require('whatsapp-web.js');
-  const media = MessageMedia.fromFilePath(filePath);
-  return runSendOnce('sendFile', async () => {
-    await client.sendMessage(chatId, media);
-    return true;
-  });
-}
-
-async function sendSticker(chatId, filePath) {
-  const { MessageMedia } = require('whatsapp-web.js');
-  const media = MessageMedia.fromFilePath(filePath);
-  return runSendOnce('sendSticker', async () => {
-    await client.sendMessage(chatId, media, { sendMediaAsSticker: true });
-    return true;
-  });
-}
-
-async function sendVoice(chatId, base64Data, mimeType) {
-  return runSendOnce('sendVoice', async () => {
-    const { MessageMedia } = require('whatsapp-web.js');
-    const mt = mimeType || 'audio/ogg';
-    const filename = mt.includes('ogg') ? 'voice.ogg' : 'voice.webm';
-    const media = new MessageMedia(mt, String(base64Data || ''), filename);
-    await client.sendMessage(chatId, media, { sendAudioAsVoice: true });
-    return true;
-  });
-}
-
-async function setArchive(chatId, archive) {
-  return runWithRecovery('setArchive', async () => {
-    try {
-      if (archive) await client.archiveChat(chatId);
-      else await client.unarchiveChat(chatId);
-      // Broadcast the state we just set — re-reading it via getChatById() built the
-      // full chat model, which threw for groups and silently skipped this update.
-      broadcast('wa:chat-update', { id: chatId, archived: !!archive });
-    } catch (e) { throw e; }
-    return true;
-  });
-}
-
-// Block / unblock a contact — propagates to WhatsApp servers via the
-// linked-device protocol (the contact really gets blocked on your account).
-async function setBlocked(contactId, blocked) {
-  return runWithRecovery('setBlocked', async () => {
-    const contact = await client.getContactById(contactId);
-    if (!contact) throw new Error('Contact not found');
-    if (blocked) await contact.block();
-    else await contact.unblock();
-    return true;
-  });
-}
-
-async function isContactBlocked(contactId) {
-  if (status !== 'ready') return false;
   try {
-    const contact = await client.getContactById(contactId);
-    return !!contact?.isBlocked;
-  } catch (e) { return false; }
-}
-
-async function editMessage(chatId, messageId, newText) {
-  return runWithRecovery('editMessage', async () => {
-    if (!messageId) throw new Error('Missing message id');
-    const msg = await client.getMessageById(messageId);
-    if (!msg) throw new Error('Message not found');
-    if (!msg.fromMe) throw new Error('Only own messages can be edited');
-    await msg.edit(newText);
-    return true;
-  });
-}
-
-async function deleteMessage(chatId, messageId, forEveryone = true) {
-  return runWithRecovery('deleteMessage', async () => {
-    if (!messageId) throw new Error('Missing message id');
-    const msg = await client.getMessageById(messageId);
-    if (!msg) throw new Error('Message not found');
-    if (!msg.fromMe) throw new Error('Only own messages can be deleted');
-    await msg.delete(Boolean(forEveryone));
-    return true;
-  });
+    const bucket = messageStore.get(chatId);
+    if (!bucket || !bucket.size) return;
+    const unread = [...bucket.values()].filter(m => !m.key?.fromMe).slice(-20).map(m => m.key);
+    if (unread.length) await sock.readMessages(unread);
+    upsertChat({ id: chatId, unreadCount: 0 });
+  } catch (e) { /* ignore */ }
 }
 
 async function getMyProfile() {
   if (status !== 'ready') return null;
-  try {
-    const contact = await client.getContactById(client.info.wid._serialized);
-    let avatar = null;
-    try { avatar = await contact.getProfilePicUrl(); } catch (e) {}
-    return { name: client.info.pushname || contact.pushname || contact.name, avatar };
-  } catch (e) {
-    return { name: client.info?.pushname || 'Me', avatar: null };
-  }
+  // sock.user.name can still be empty right after a fresh link; the stored creds
+  // carry the pushname once the server has sent it.
+  const name = sock.user?.name
+    || sock.user?.verifiedName
+    || sock.authState?.creds?.me?.name
+    || displayNameFor(meId)
+    || 'Me';
+  let avatar = null;
+  try { if (meId) avatar = await sock.profilePictureUrl(meId, 'image'); } catch (e) { /* none set */ }
+  return { name, avatar };
+}
+
+async function getContactAvatar(id) {
+  if (status !== 'ready' || !id) return null;
+  try { return await sock.profilePictureUrl(id, 'image') || null; } catch (e) { return null; }
 }
 
 async function getParticipants(chatId) {
-  if (status !== 'ready') return [];
+  if (status !== 'ready' || !chatId?.endsWith('@g.us')) return [];
   try {
-    const ch = await client.getChatById(chatId);
-    const parts = [];
-    // whatsapp-web.js may expose participants in several ways
-    const list = ch?.participants || ch?.groupMetadata?.participants || [];
-    for (const p of list) {
-      try {
-        // p can be Contact objects or IDs
-        let id = null;
-        if (p?.id) id = p.id?._serialized || p.id;
-        else if (typeof p === 'string') id = p;
-        else if (p?._serialized) id = p._serialized;
-        if (!id) continue;
-        const contact = await client.getContactById(id).catch(() => null);
-        const isOnline = !!(contact?.isOnline || contact?.presence === 'online' || contact?.presence?.lastKnownPresence === 'online');
-        parts.push({
-          id: id,
-          name: contact?.pushname || contact?.name || (contact ? `${contact?.number || ''}` : id),
-          pushname: contact?.pushname || null,
-          isAdmin: !!(p?.isAdmin || (p?.admin === true)),
-          online: isOnline,
-        });
-      } catch (e) {}
-    }
-    return parts;
-  } catch (e) { return []; }
+    const meta = await sock.groupMetadata(chatId);
+    return (meta?.participants || []).map(p => ({
+      id: p.id,
+      name: displayNameFor(p.id) || prettyIdFor(p.id),
+      pushname: displayNameFor(p.id),
+      isAdmin: p.admin === 'admin' || p.admin === 'superadmin',
+      online: false,
+    }));
+  } catch (e) {
+    log('WA getParticipants failed', chatId, String(e?.message || e));
+    return [];
+  }
 }
 
-// Profile-picture fetches all run inside WhatsApp's single headless page, so
-// firing 100 of them at once (one per visible contact) stalls chat/message sync.
-// Cap concurrency to keep avatar loading fully in the background.
-const runAvatarTask = createConcurrencyLimiter(4);
-
-async function getContactAvatar(id) {
-  if (status !== 'ready') return null;
-  return runAvatarTask(async () => {
-    const contact = await client.getContactById(id);
-    return await contact.getProfilePicUrl() || null;
-  });
+async function closeSocket() {
+  connectionOpen = false;
+  historySeen = false;
+  clearTimeout(readyTimer); readyTimer = null;
+  clearTimeout(chatsChangedTimer); chatsChangedTimer = null;
+  const s = sock;
+  sock = null;
+  if (!s) return;
+  try { s.ev.removeAllListeners(); } catch (e) {}
+  try { s.end(undefined); } catch (e) {}
 }
 
 async function logout() {
   waManualLogout = true;
-  clearLoadingWatchdog();
-  const oldClient = client;
-  try { await oldClient?.logout(); } catch (e) {}
-  await closeClientBrowser(oldClient);
-  client = null;
-  status = 'disconnected';
+  clearReconnectTimer();
+  try { await sock?.logout(); } catch (e) { /* already gone */ }
+  await closeSocket();
+  try { fs.rmSync(sessionDir(lastDataDir), { recursive: true, force: true }); } catch (e) {}
+  resetStore();
   currentQR = null;
-  broadcast('wa:status', 'disconnected');
-  // After explicit logout, start a clean session init so QR login is immediately possible.
+  meId = null;
+  setStatus('disconnected');
+  // Start a clean session so a QR login is immediately possible again.
   setTimeout(() => {
     waManualLogout = false;
-    reconnect(lastDataDir);
+    reconnectAttempt = 0;
+    init(onAvatarCb, lastDataDir);
   }, 700);
 }
 
 async function shutdown() {
-  stopHealthCheck();
-  clearLoadingWatchdog();
-  const c = client;
-  client = null;
-  // Generous grace window: Chrome must finish flushing the session store, otherwise
-  // the next login is refused. before-quit allows 7s total, so 5s here leaves
-  // headroom for the Telegram bridge and the final exit.
-  await closeClientBrowser(c, 5000);
+  clearReconnectTimer();
+  await closeSocket();
   status = 'disconnected';
 }
 
-function reconnect(dataDir) {
-  stopHealthCheck();
-  clearLoadingWatchdog();
-  const oldClient = client;
-  client = null;
-  currentQR = null;
-  waRetryUsed = false;
+async function reconnect(dataDir) {
+  clearReconnectTimer();
   waManualLogout = false;
-  status = 'loading';
-  broadcast('wa:status', 'loading');
-  setTimeout(async () => {
-    await closeClientBrowser(oldClient);
-    init(onAvatarCb, dataDir || lastDataDir);
-  }, 500);
+  reconnectAttempt = 0;
+  await closeSocket();
+  setStatus('loading');
+  return init(onAvatarCb, dataDir || lastDataDir);
 }
 
 module.exports = {

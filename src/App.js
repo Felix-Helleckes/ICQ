@@ -184,6 +184,14 @@ export default function App() {
       playMessageSound(msg.from, 'whatsapp');
       patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: (cache.find(c=>c.id===msg.from)?.unreadCount || 0) + 1 });
     });
+    // WhatsApp streams its chat history in chunks for a few seconds after connecting,
+    // so the first list we fetched can be incomplete (or just raw IDs, before the
+    // contacts arrive). The bridge tells us when more landed — drop the cache and
+    // reload instead of showing a stale first chunk forever.
+    const removeWaChatsUpdated = api.wa.onChatsUpdated?.(() => {
+      waCacheRef.current = null;
+      setWaReloadTick(t => t + 1);
+    });
     // Avatare nachträglich einspielen (werden im Hintergrund geladen)
     const removeWaAvatar = api.wa.onAvatar(({ id, avatar }) => {
       patchChat('whatsapp', id, { avatar });
@@ -213,7 +221,7 @@ export default function App() {
       if (!msg?.chatId) return;
       patchChat(service, String(msg.chatId), { unreadCount: 0 });
     });
-    return () => { removeWaMsg?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); if (reloadTimer) clearTimeout(reloadTimer); };
+    return () => { removeWaMsg?.(); removeWaChatsUpdated?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); if (reloadTimer) clearTimeout(reloadTimer); };
   }, []);
 
   // Load chats when service / status changes — use cache if available

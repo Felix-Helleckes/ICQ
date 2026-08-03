@@ -54,8 +54,6 @@ jobs:
       - name: Install dependencies
         if: steps.check.outputs.should_release == 'true'
         run: npm ci
-        env:
-          PUPPETEER_SKIP_DOWNLOAD: "1"
 
       - name: Syntax-check Electron main process
         if: steps.check.outputs.should_release == 'true'
@@ -119,8 +117,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-        env:
-          PUPPETEER_CACHE_DIR: ./puppeteer_cache
 
       - name: Build React app
         run: npm run build

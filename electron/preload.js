@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('wa:chat-update', handler);
       return () => ipcRenderer.removeListener('wa:chat-update', handler);
     },
+    onChatsUpdated: (cb)          => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:chats-updated', handler);
+      return () => ipcRenderer.removeListener('wa:chats-updated', handler);
+    },
     onMedia:     (cb)            => {
       const handler = (_, data) => cb(data);
       ipcRenderer.on('wa:media', handler);

@@ -24,7 +24,7 @@
       cap1: ['Your WhatsApp. Like it’s 2003.', 'uh-oh! 🌼'],
       cap2: ['WhatsApp + Telegram — in one window.', 'Separate chat windows. True ICQ style.'],
       cap3: ['Skins: ICQ · MSN · Telegram.', 'One click. Fully re-skinned.'],
-      skins: ['ICQ Retro (Teal)', 'ICQ Classic (Green)', 'MSN Messenger'],
+      skins: ['ICQ Retro Dark', 'ICQ Retro Light', 'MSN Messenger'],
       endH1: 'ICQ · Retrogram', endH2: 'WhatsApp & Telegram — ICQ style', endDl: '▼ Download free',
       sndOn: 'Sound on', sndOff: 'Sound off'
     },
@@ -43,7 +43,7 @@
       cap1: ['Dein WhatsApp. Als wäre es 2003.', 'uh-oh! 🌼'],
       cap2: ['WhatsApp + Telegram — in einem Fenster.', 'Eigene Chat-Fenster. Echter ICQ-Style.'],
       cap3: ['Skins: ICQ · MSN · Telegram.', 'Ein Klick. Komplett umgefärbt.'],
-      skins: ['ICQ Retro (Teal)', 'ICQ Classic (Green)', 'MSN Messenger'],
+      skins: ['ICQ Retro Dark', 'ICQ Retro Light', 'MSN Messenger'],
       endH1: 'ICQ · Retrogram', endH2: 'WhatsApp & Telegram — im ICQ-Look', endDl: '▼ Kostenlos laden',
       sndOn: 'Ton an', sndOff: 'Ton aus'
     }

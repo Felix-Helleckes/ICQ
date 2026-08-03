@@ -25,20 +25,19 @@
     "electron": "electron .",
     "dist": "npm run dist:portable",
     "dist:win": "npm run dist:portable",
-    "dist:portable": "npm run download-chrome && npm run build && electron-builder --win portable --publish never",
-    "dist:nsis": "npm run download-chrome && npm run build && electron-builder --win nsis --publish never",
+    "dist:portable": "npm run build && electron-builder --win portable --publish never",
+    "dist:nsis": "npm run build && electron-builder --win nsis --publish never",
     "dist:store": "npm run build && electron-builder --win appx --publish never",
-    "download-chrome": "node scripts/download-chrome.js",
     "make-icon": "node scripts/make-icon.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "electron-is-dev": "^2.0.0",
     "qrcode": "^1.5.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
-    "telegram": "^2.22.2",
-    "whatsapp-web.js": "^1.23.0"
+    "telegram": "^2.22.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -68,7 +67,7 @@
     "publish": null,
     "asar": true,
     "asarUnpack": [
-      "**/node_modules/whatsapp-web.js/**",
+      "**/node_modules/@whiskeysockets/baileys/**",
       "**/*.node"
     ],
     "extends": null,
@@ -79,8 +78,7 @@
       "build/**/*",
       "public/**/*",
       "electron/**/*",
-      "node_modules/**/*",
-      "!puppeteer_cache/**"
+      "node_modules/**/*"
     ],
     "extraResources": [],
     "win": {
@@ -92,16 +90,7 @@
           ]
         }
       ],
-      "icon": "public/icon.ico",
-      "extraResources": [
-        {
-          "from": "puppeteer_cache/chrome",
-          "to": "chrome",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "icon": "public/icon.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -126,16 +115,7 @@
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
       "hardenedRuntime": false,
-      "gatekeeperAssess": false,
-      "extraResources": [
-        {
-          "from": "puppeteer_cache/chrome",
-          "to": "chrome",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "gatekeeperAssess": false
     },
     "dmg": {
       "title": "ICQ Messenger",
@@ -162,16 +142,7 @@
       ],
       "icon": "public/icon.png",
       "category": "Network;InstantMessaging",
-      "description": "Retro ICQ-style multi-messenger for WhatsApp and Telegram",
-      "extraResources": [
-        {
-          "from": "puppeteer_cache/chrome",
-          "to": "chrome",
-          "filter": [
-            "**/*"
-          ]
-        }
-      ]
+      "description": "Retro ICQ-style multi-messenger for WhatsApp and Telegram"
     },
     "directories": {
       "output": "dist"

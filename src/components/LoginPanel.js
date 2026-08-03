@@ -52,12 +52,11 @@ function TwoFAPanel({ hint, onSubmit }) {
 // ── WhatsApp panel ────────────────────────────────────────────
 function WhatsAppPanel({ waStatus, waQR }) {
   // Escape hatch for a stuck startup: if 'loading' persists unusually long, offer a
-  // manual reconnect. wa.reconnect() re-inits the bridge, which also sweeps orphaned
-  // Chrome processes — the usual cause of a hang — so the button actually helps.
+  // manual reconnect, which tears the socket down and dials again.
   const [stuckLoading, setStuckLoading] = useState(false);
   useEffect(() => {
     if (waStatus !== 'loading') { setStuckLoading(false); return undefined; }
-    const t = setTimeout(() => setStuckLoading(true), 45000);
+    const t = setTimeout(() => setStuckLoading(true), 30000);
     return () => clearTimeout(t);
   }, [waStatus]);
 
@@ -69,7 +68,7 @@ function WhatsAppPanel({ waStatus, waQR }) {
           <p className="login-hint">
             {waStatus === 'loading' ? 'WhatsApp startet…' : 'Verbinde…'}
           </p>
-          <p className="login-hint small">Chrome/Puppeteer wird gestartet,<br/>das dauert kurz beim ersten Mal.</p>
+          <p className="login-hint small">Verbindung zu WhatsApp wird aufgebaut…</p>
           {stuckLoading && waStatus === 'loading' && (
             <>
               <p className="login-hint small">Das dauert ungewöhnlich lange…</p>
@@ -93,14 +92,10 @@ function WhatsAppPanel({ waStatus, waQR }) {
       )}
       {waStatus === 'error' && (
         <div className="wa-error">
-          <p className="login-hint error">❌ WhatsApp konnte nicht gestartet werden.</p>
+          <p className="login-hint error">❌ WhatsApp konnte nicht verbunden werden.</p>
           <p className="login-hint small">
-            Falls Chrome fehlt, installiere{' '}
-            <a href="https://www.google.com/chrome" onClick={e => { e.preventDefault(); window.api?.openExternal?.('https://www.google.com/chrome'); }}>Google Chrome</a>
-            {' '}und starte die App neu.
-          </p>
-          <p className="login-hint small">
-            Linux Mint: <code>sudo apt install chromium-browser</code> (oder <code>sudo apt install chromium</code>)
+            Prüfe deine Internetverbindung. Falls eine Firewall oder ein Proxy
+            aktiv ist, muss die Verbindung zu WhatsApp erlaubt sein.
           </p>
           <button
             className="win98-btn"
