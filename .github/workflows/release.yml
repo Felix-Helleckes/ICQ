@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   check:
-    name: Check version
+    name: Check version & tests
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.check.outputs.version }}
@@ -42,6 +42,36 @@ jobs:
             echo "should_release=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Releasing v$VERSION"
           fi
+
+      - uses: actions/setup-node@v4
+        if: steps.check.outputs.should_release == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      # Releases now publish automatically, so a broken commit would reach users
+      # unnoticed. Gate on the test suite: no green tests, no release.
+      - name: Install dependencies
+        if: steps.check.outputs.should_release == 'true'
+        run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+
+      - name: Syntax-check Electron main process
+        if: steps.check.outputs.should_release == 'true'
+        run: npm run check:electron
+
+      - name: Unit tests (renderer)
+        if: steps.check.outputs.should_release == 'true'
+        run: npm run test:unit
+        env:
+          CI: "true"
+
+      - name: Unit tests (Electron main-process helpers)
+        if: steps.check.outputs.should_release == 'true'
+        run: npm run test:electron
+        env:
+          CI: "true"
 
   build:
     name: Build (${{ matrix.platform }})

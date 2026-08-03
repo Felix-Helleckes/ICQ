@@ -121,12 +121,24 @@ function killOrphanedChrome(dataDir) {
       log('WA init: orphan-chrome sweep done');
       resolve();
     };
-    const bound = setTimeout(done, 9000); // absolute upper bound — never block startup
+    // Absolute upper bound — never block startup indefinitely. Must exceed the
+    // child's own timeout, which includes the grace sleep above.
+    const bound = setTimeout(done, 13000);
     try {
       if (process.platform === 'win32') {
         const esc = marker.replace(/'/g, "''");
-        const cmd = `Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe' or Name = 'msedge.exe'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('${esc}') } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 8000 }, () => done());
+        // Only force-kill what is STILL there after a grace period. The previous app
+        // instance may be in the middle of its own clean shutdown (which flushes the
+        // session store); killing it mid-flush corrupts the profile and costs the
+        // login. So: look, wait, look again, and only then kill the leftovers.
+        const cmd = [
+          `$m = '${esc}'`,
+          `$f = "Name = 'chrome.exe' or Name = 'msedge.exe'"`,
+          `$p = Get-CimInstance Win32_Process -Filter $f | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($m) }`,
+          `if ($p) { Start-Sleep -Seconds 3 }`,
+          `Get-CimInstance Win32_Process -Filter $f | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($m) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+        ].join('; ');
+        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', cmd], { timeout: 11000 }, () => done());
         child.on('error', () => done());
       } else {
         const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -348,6 +360,50 @@ function ensureExecutable(filePath) {
   return filePath;
 }
 
+// ── Sticky Chrome per session profile ─────────────────────────────────────
+// Chrome profiles are version-sensitive: opening a profile that was last used by a
+// NEWER Chrome makes Chrome reject or reset it — which throws away the WhatsApp
+// session and forces a fresh QR login. This app can drive either the bundled Chrome
+// or the system one, and those are different versions (bundled 146 vs a system
+// Chrome that auto-updates itself), so silently flip-flopping between them was
+// destroying sessions at random. Remember which binary a session profile belongs to
+// and keep using it for as long as it exists.
+//
+// The portable build extracts to a fresh temp directory per build, so the recorded
+// path goes stale on every update — that is fine: it falls back to a fresh lookup,
+// which finds the same bundled Chrome VERSION, and a same-version profile is happy.
+function chromeChoiceFile(dataDir) {
+  return path.join(dataDir, 'whatsapp', '.chrome-path');
+}
+
+function readStickyChrome(dataDir) {
+  try {
+    const recorded = fs.readFileSync(chromeChoiceFile(dataDir), 'utf8').trim();
+    if (recorded && fs.existsSync(recorded)) return recorded;
+    if (recorded) log('WA chrome: recorded binary is gone, re-resolving', recorded);
+  } catch (e) { /* nothing recorded yet */ }
+  return null;
+}
+
+function writeStickyChrome(dataDir, exe) {
+  try {
+    fs.mkdirSync(path.join(dataDir, 'whatsapp'), { recursive: true });
+    fs.writeFileSync(chromeChoiceFile(dataDir), String(exe), 'utf8');
+  } catch (e) { log('WA chrome: could not record binary choice', String(e)); }
+}
+
+// Resolve the Chrome to drive, preferring the one this session profile already uses.
+function resolveChromeForSession(dataDir) {
+  const sticky = dataDir ? readStickyChrome(dataDir) : null;
+  if (sticky) return sticky;
+  const fresh = findChromiumExecutable();
+  if (fresh && dataDir) {
+    writeStickyChrome(dataDir, fresh);
+    log('WA chrome: bound session to binary', fresh);
+  }
+  return fresh;
+}
+
 function findChromiumExecutable() {
   const exe = resolveChromiumExecutable({
     platform: process.platform,
@@ -385,7 +441,7 @@ async function init(avatarCallback, dataDir, opts = {}) {
   // Setup installs keep persistent AppData state; stale Chromium lock files can block startup.
   cleanupStaleSessionLocks(dataDir);
 
-  const executablePath = findChromiumExecutable();
+  const executablePath = resolveChromeForSession(dataDir);
 
   if (!executablePath && process.platform === 'linux') {
     status = 'error';
