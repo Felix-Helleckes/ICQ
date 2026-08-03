@@ -1,15 +1,52 @@
 name: Release
 
+# Every push to main publishes a release, using the version from package.json.
+# Bump "version" in package.json and push — the tag (v<version>) is created by this
+# workflow, so no manual tagging is needed. Pushing again WITHOUT bumping the version
+# is a no-op: the existing release is never overwritten.
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# Never let two releases run at once — they would race on the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need the full tag list to detect an already-released version
+
+      - name: Resolve version and decide whether to release
+        id: check
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION is already released — bump \"version\" in package.json to publish a new one."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$VERSION"
+          fi
+
   build:
+    name: Build (${{ matrix.platform }})
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -22,7 +59,6 @@ jobs:
             platform: linux
 
     runs-on: ${{ matrix.os }}
-    name: Build (${{ matrix.platform }})
 
     steps:
       - name: Checkout
@@ -33,17 +69,6 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-
-      - name: Verify tag matches package.json version
-        shell: bash
-        run: |
-          PKG=$(node -p "require('./package.json').version")
-          TAG="${GITHUB_REF_NAME#v}"
-          echo "package.json=$PKG  tag=$TAG"
-          if [ "$PKG" != "$TAG" ]; then
-            echo "::error::Tag v$TAG does not match package.json version $PKG — aborting so we never ship mislabeled binaries again."
-            exit 1
-          fi
 
       - name: Install Linux system deps
         if: matrix.os == 'ubuntu-latest'
@@ -101,10 +126,12 @@ jobs:
 
   release:
     name: Publish Release
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
-    # Run even if some builds failed, so we publish whatever was built
-    if: always()
+    # All three platform builds must succeed. Publishing on partial success would
+    # silently ship a release missing, say, the Windows installer — and since this
+    # now runs automatically on every push, nobody would notice.
+    if: needs.check.outputs.should_release == 'true'
 
     steps:
       - name: Download all artifacts
@@ -119,9 +146,11 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ICQ Messenger ${{ github.ref_name }}
+          # The tag does not exist yet — the action creates it on the pushed commit.
+          tag_name: v${{ needs.check.outputs.version }}
+          name: ICQ Messenger v${{ needs.check.outputs.version }}
           body: |
-            ## ICQ Messenger ${{ github.ref_name }}
+            ## ICQ Messenger v${{ needs.check.outputs.version }}
 
             Retro ICQ 5-style multi-messenger for WhatsApp + Telegram.
 
