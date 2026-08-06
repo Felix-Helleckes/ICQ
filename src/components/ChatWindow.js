@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatWindow.css';
+import Icon from './Icon';
 
 function formatTime(ts) {
   const d = new Date(ts * 1000);
@@ -52,11 +53,11 @@ function linkify(text) {
 
 // ack: -1=error, 0=pending, 1=sent, 2=delivered, 3=read
 function AckIcon({ ack }) {
-  if (ack === 0)  return <span className="ack ack-pending" title="Ausstehend">🕐</span>;
+  if (ack === 0)  return <span className="ack ack-pending" title="Ausstehend"><Icon name="clock" size={11} /></span>;
   if (ack === -1) return <span className="ack ack-error"   title="Fehler">!</span>;
-  if (ack === 3)  return <span className="ack ack-read"    title="Gelesen">✓✓</span>;
-  if (ack === 2)  return <span className="ack ack-delivered" title="Zugestellt">✓✓</span>;
-  return               <span className="ack ack-sent"    title="Gesendet">✓</span>;
+  if (ack === 3)  return <span className="ack ack-read"    title="Gelesen"><Icon name="check-double" size={13} /></span>;
+  if (ack === 2)  return <span className="ack ack-delivered" title="Zugestellt"><Icon name="check-double" size={13} /></span>;
+  return               <span className="ack ack-sent"    title="Gesendet"><Icon name="check" size={12} /></span>;
 }
 
 function emojiToTwemojiUrl(emoji) {
@@ -127,7 +128,7 @@ function VoicePlayer({ src }) {
         onEnded={() => { setPlaying(false); setCurrentTime(0); if (audioRef.current) audioRef.current.currentTime = 0; }}
       />
       <button className="voice-play-btn" onClick={toggle} title={playing ? 'Pause' : 'Play'}>
-        {playing ? '⏸' : '▶'}
+        <Icon name={playing ? 'pause' : 'play'} size={13} />
       </button>
       <div className="voice-progress-wrap" onClick={seek}>
         <div className="voice-progress-bg">
@@ -637,7 +638,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
                   <div className="member-avatar">{m.avatar ? <img src={m.avatar} alt="" /> : (m.name||'?')[0]}</div>
                   <div className="member-name">{m.name || m.pushname || m.id}</div>
                   <div className="member-badges">
-                    {m.isAdmin && <span className="badge admin" title="Admin">★</span>}
+                    {m.isAdmin && <span className="badge admin" title="Admin"><Icon name="star" size={10} /></span>}
                     {m.online && <span className="badge online" title="Online">●</span>}
                   </div>
                 </div>
@@ -650,7 +651,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       {/* Drag overlay */}
       {isDragging && (
         <div className="drag-overlay">
-          <div className="drag-overlay-inner">📎 Datei hier ablegen</div>
+          <div className="drag-overlay-inner"><Icon name="paperclip" size={18} /> Datei hier ablegen</div>
         </div>
       )}
 
@@ -752,18 +753,18 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
             className={`toolbar-btn${showEmoji ? ' active' : ''}`}
             title="Emoji"
             onClick={() => setShowEmoji(v => !v)}
-          ><TwemojiEmoji emoji="😊" size={18} /></button>
-          <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}>📎</button>
+          ><Icon name="smile" size={17} /></button>
+          <button className="toolbar-btn" title="Datei senden" onClick={handleFileBtn}><Icon name="paperclip" /></button>
           <button
             ref={gameBtnRef}
             className={`toolbar-btn${showGameMenu ? ' active' : ''}`}
             title="Spiele"
             onClick={() => setShowGameMenu(v => !v)}
-          >🎮</button>
+          ><Icon name="gamepad" /></button>
 
           {showGameMenu && (
             <div className="game-menu" ref={gameMenuRef}>
-              <div className="game-menu-title">🎮 ICQ Spiele</div>
+              <div className="game-menu-title"><Icon name="gamepad" /> ICQ Spiele</div>
               {GAMES.map(g => (
                 <button
                   key={g.id}
@@ -790,7 +791,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
         </div>
         {sendFailed && (
           <div className="send-failed" role="alert">
-            ⚠ Nachricht konnte nicht gesendet werden — Text steht noch da, bitte erneut senden.
+            <Icon name="alert" size={14} /> Nachricht konnte nicht gesendet werden. Der Text steht noch da, bitte erneut senden.
           </div>
         )}
         <div className="input-row">
@@ -810,7 +811,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
               className={`win98-btn record-btn${isRecording ? ' active' : ''}`}
               title={isRecording ? 'Stop Recording' : 'Voice Message'}
               onClick={() => isRecording ? stopRecording() : startRecording()}
-            >{isRecording ? '■' : '🎤'}</button>
+            ><Icon name={isRecording ? 'stop' : 'mic'} /></button>
             <button className="win98-btn send-btn" onClick={handleSend}>Send</button>
           </div>
         </div>
@@ -889,7 +890,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
                 onClick={e => e.stopPropagation()} />
             : <img src={lightbox.src} className="lightbox-img" alt="Vollbild"
                 onClick={e => e.stopPropagation()} />}
-          <button className="lightbox-close" onClick={() => setLightbox(null)}>✕</button>
+          <button className="lightbox-close" onClick={() => setLightbox(null)}><Icon name="x" size={18} /></button>
         </div>
       )}
     </div>

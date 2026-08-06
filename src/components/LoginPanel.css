@@ -194,3 +194,8 @@
   box-shadow: 0 0 12px rgba(26,138,138,0.3);
 }
 .qr-box svg { width: 160px; height: 160px; }
+
+/* Line icons replaced the emoji in this panel; align them with their labels. */
+.login-icon { display: inline-flex; align-items: center; justify-content: center; }
+.login-hint.ok, .login-hint.error { display: inline-flex; align-items: center; gap: 6px; }
+.method-tab, .win98-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

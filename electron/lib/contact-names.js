@@ -76,7 +76,35 @@ function createContactDirectory() {
     pnToLid.clear();
   }
 
-  return { rememberMapping, rememberContact, nameFor, prettyIdFor, displayFor, clear };
+  /**
+   * Names must survive a restart: WhatsApp only pushes the contact list during the
+   * history sync right after linking, so without persisting these the chat list
+   * would fall back to bare phone numbers on every later start.
+   */
+  function toJSON() {
+    return {
+      contacts: [...contacts.entries()].map(([id, v]) => [id, v.name || null, v.notify || null, v.verifiedName || null]),
+      mappings: [...lidToPn.entries()].map(([lid, pn]) => [lid, pn]),
+    };
+  }
+
+  function hydrate(data) {
+    if (!data || typeof data !== 'object') return false;
+    for (const row of data.mappings || []) {
+      if (Array.isArray(row)) rememberMapping({ lid: row[0], pn: row[1] });
+    }
+    for (const row of data.contacts || []) {
+      if (!Array.isArray(row) || !row[0]) continue;
+      contacts.set(row[0], { name: row[1] || null, notify: row[2] || null, verifiedName: row[3] || null });
+    }
+    return true;
+  }
+
+  return {
+    rememberMapping, rememberContact, nameFor, prettyIdFor, displayFor, clear,
+    toJSON, hydrate,
+    get size() { return contacts.size; },
+  };
 }
 
 module.exports = { createContactDirectory };

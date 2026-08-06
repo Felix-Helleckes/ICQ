@@ -691,3 +691,18 @@
   display: flex;
   gap: 8px;
 }
+
+/* ── Line icons ────────────────────────────────────────────
+   The toolbar/ack icons replaced emoji glyphs. Centre them in their button and
+   let them inherit the surrounding colour so hover and state styling still work. */
+.toolbar-btn, .record-btn, .voice-play-btn, .lightbox-close, .send-failed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.send-failed { gap: 7px; justify-content: flex-start; }
+.ack { display: inline-flex; align-items: center; vertical-align: middle; }
+.ack-pending { font-size: inherit; }
+.badge.admin { display: inline-flex; align-items: center; padding: 2px 5px; }
+.drag-overlay-inner { display: inline-flex; align-items: center; gap: 8px; }
+.game-menu-title, .sidebar-game-menu-title { display: flex; align-items: center; gap: 7px; }

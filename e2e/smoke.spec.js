@@ -47,6 +47,20 @@ test('shows the WhatsApp login panel while no session is connected', async () =>
   await expect(win.locator('.no-contacts')).toHaveCount(0);
 });
 
+test('toolbar buttons use line icons, not emoji', async () => {
+  // The app chrome (sound, games, skins, logout) used to be emoji, which render
+  // differently per platform and clash with the retro look. They are inline SVGs
+  // now — assert that so they cannot creep back in.
+  const buttons = ['Sound aus', 'Spiele', 'Skin wählen', 'Logout'];
+  for (const title of buttons) {
+    const btn = win.locator(`button[title="${title}"]`);
+    await expect(btn, `${title} button exists`).toHaveCount(1);
+    await expect(btn.locator('svg.icon'), `${title} renders an icon`).toHaveCount(1);
+    // No leftover emoji glyph next to the icon.
+    expect(await btn.innerText(), `${title} has no emoji label`).toBe('');
+  }
+});
+
 test('the default skin is applied to the document', async () => {
   const skin = await win.evaluate(() => document.documentElement.getAttribute('data-skin'));
   expect(skin).toBe('retro-teal');

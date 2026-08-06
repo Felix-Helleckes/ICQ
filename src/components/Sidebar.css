@@ -61,6 +61,13 @@
   flex-shrink: 0;
 }
 .logout-btn:hover { color: #ff5555; background: rgba(255,255,255,0.08); }
+/* Icon buttons: the SVG replaces an emoji glyph, so centre it explicitly
+   instead of relying on text metrics. */
+.logout-btn, .sound-btn, .group-sound-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .sound-btn {
   background: transparent;
@@ -209,7 +216,7 @@
   transition: background 0.12s, color 0.12s;
 }
 .donate-footer:hover { background: var(--icq-bg-light); color: var(--icq-text); }
-.donate-heart { color: #ff5b7f; font-size: 0.95rem; line-height: 1; }
+.donate-heart { color: #ff5b7f; }
 
 /* ── Search bar ── */
 .search-bar {
@@ -458,7 +465,9 @@
   padding: 3px 0;
 }
 .ctx-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
   width: 100%;
   background: transparent;
   border: none;
@@ -470,3 +479,6 @@
   white-space: nowrap;
 }
 .ctx-item:hover { background: var(--icq-teal-dark); color: #fff; }
+
+/* Marks the active skin in the skin menu. */
+.skin-check { margin-left: auto; color: var(--icq-teal-light, #2BBFBF); }

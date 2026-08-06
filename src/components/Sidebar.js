@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Sidebar.css';
 import { SKINS, setSkin, getSavedSkinId } from '../skins';
+import Icon from './Icon';
 
 const GAMES = [
   { id: '8ball', name: '8 Ball Pool',  icon: '🎱', url: 'https://bloob.io/de/8ballpool' },
@@ -114,7 +115,7 @@ function ArchivedSection({ archived, onSelect, onMarkArchivedRead, service, avat
           <div className="ctx-overlay" onClick={closeMenu} />
           <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
             <button className="ctx-item" onClick={() => { onMarkArchivedRead?.(); closeMenu(); }}>
-              ✓ Alle als gelesen markieren
+              <Icon name="check" /> Alle als gelesen markieren
             </button>
           </div>
         </>
@@ -147,7 +148,7 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMark
           className={`group-sound-btn${groupSound ? '' : ' muted'}`}
           title={groupSound ? 'Gruppen-Sound aus' : 'Gruppen-Sound an'}
           onClick={e => { e.stopPropagation(); onToggleGroupSound(); }}
-        >{groupSound ? '🔔' : '🔕'}</button>
+        ><Icon name={groupSound ? 'bell' : 'bell-off'} /></button>
       </div>
       {expanded && groups.map(chat => (
         <ContactItem key={chat.id} chat={chat} onSelect={onSelect} service={service} avatarsEnabled={avatarsEnabled} />
@@ -157,7 +158,7 @@ function GroupSection({ groups, onSelect, groupSound, onToggleGroupSound, onMark
           <div className="ctx-overlay" onClick={closeMenu} />
           <div className="ctx-menu" style={{ top: ctxMenu.y, left: ctxMenu.x }}>
             <button className="ctx-item" onClick={() => { onMarkGroupsRead?.(); closeMenu(); }}>
-              ✓ Alle als gelesen markieren
+              <Icon name="check" /> Alle als gelesen markieren
             </button>
           </div>
         </>
@@ -248,7 +249,7 @@ export default function Sidebar({
             className={`sound-btn${soundEnabled ? '' : ' muted'}`}
             onClick={onToggleSound}
             title={soundEnabled ? 'Sound aus' : 'Sound an'}
-          >{soundEnabled ? '🔔' : '🔕'}</button>
+          ><Icon name={soundEnabled ? 'bell' : 'bell-off'} /></button>
         )}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
@@ -256,10 +257,10 @@ export default function Sidebar({
             className={`sound-btn${showGameMenu ? ' active' : ''}`}
             title="Spiele"
             onClick={() => setShowGameMenu(v => !v)}
-          >🎮</button>
+          ><Icon name="gamepad" /></button>
           {showGameMenu && (
             <div className="sidebar-game-menu" ref={gameMenuRef}>
-              <div className="sidebar-game-menu-title">🎮 ICQ Spiele</div>
+              <div className="sidebar-game-menu-title"><Icon name="gamepad" /> ICQ Spiele</div>
               {GAMES.map(g => (
                 <button
                   key={g.id}
@@ -279,10 +280,10 @@ export default function Sidebar({
             className={`sound-btn${showSkinMenu ? ' active' : ''}`}
             title="Skin wählen"
             onClick={() => setShowSkinMenu(v => !v)}
-          >🎨</button>
+          ><Icon name="palette" /></button>
           {showSkinMenu && (
             <div className="sidebar-game-menu" ref={skinMenuRef}>
-              <div className="sidebar-game-menu-title">🎨 Skin</div>
+              <div className="sidebar-game-menu-title"><Icon name="palette" /> Skin</div>
               {SKINS.map(s => (
                 <button
                   key={s.id}
@@ -291,7 +292,7 @@ export default function Sidebar({
                 >
                   <span className="skin-swatch" style={{ background: s.swatch }} />
                   <span>{s.name}</span>
-                  {s.id === skinId && <span style={{ marginLeft: 'auto' }}>✓</span>}
+                  {s.id === skinId && <Icon name="check" className="skin-check" />}
                 </button>
               ))}
             </div>
@@ -300,7 +301,7 @@ export default function Sidebar({
         <button className="scale-btn" title="Kontakte kleiner" onClick={onDecreaseContactScale}>A-</button>
         <button className="scale-btn" title="Kontakte größer" onClick={onIncreaseContactScale}>A+</button>
         {onLogout && (
-          <button className="logout-btn" onClick={onLogout} title="Logout">⏏</button>
+          <button className="logout-btn" onClick={onLogout} title="Logout"><Icon name="logout" /></button>
         )}
       </div>
 
@@ -385,7 +386,7 @@ export default function Sidebar({
         onClick={() => window.api?.openExternal?.(DONATE_URL)}
         title="Projekt unterstützen"
       >
-        <span className="donate-heart">♥</span>
+        <Icon name="heart" size={13} className="donate-heart" />
         <span>Projekt unterstützen</span>
       </button>
     </div>

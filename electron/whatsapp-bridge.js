@@ -22,6 +22,7 @@ const { mapMessageEntry, isBacklogMessage } = require('./lib/message-entry');
 const { mapChatEntry } = require('./lib/chat-entry');
 const { createContactDirectory } = require('./lib/contact-names');
 const { ackFromStatus, statusFromReceipt, createAckTracker } = require('./lib/ack');
+const { createWaStore, loadSnapshot, saveSnapshot } = require('./lib/wa-store');
 
 // Logging helper: append to temp startup log for easier debugging across restarts
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
@@ -51,6 +52,12 @@ async function loadBaileys() {
   return BA;
 }
 
+// Test seam. The automated suite injects a fake Baileys namespace so the whole
+// bridge can be driven — connect, history sync, messages, acks, sending — without
+// ever touching the network or a real account. loadBaileys() short-circuits once BA
+// is set, so this is all that is needed. Production never calls it.
+function __setBaileysForTests(fake) { BA = fake; }
+
 let sock = null;
 let status = 'disconnected';
 let currentQR = null;
@@ -67,21 +74,51 @@ let historySeen = false;      // at least one history chunk with chats has arriv
 let readyTimer = null;        // fallback so an account without history still becomes ready
 let chatsChangedTimer = null; // debounces the "reload your chat list" signal
 
-const MAX_MSGS_PER_CHAT = 200; // bounded store — history sync can deliver a lot
-
 // ── Store (Baileys v7 has no built-in store) ──────────────────────────────
-const chatStore = new Map();     // jid → chat record
-const messageStore = new Map();  // jid → Map<msgId, WAMessage>
+// Persisted to disk, and that is not optional: WhatsApp sends the history sync ONLY
+// right after a device is linked. Every later start connects with existing
+// credentials and receives no history at all, so a memory-only store comes up empty
+// and the chat list stays blank ("Lädt Chats…" → "No chats found").
+const store = createWaStore();
+const chatStore = store.chats;             // jid → chat record
+const messageStore = store.messages;       // jid → Map<msgId, WAMessage>
 const contacts = createContactDirectory(); // names + LID↔phone mapping
 const ackTracker = createAckTracker();     // highest delivery state seen per message
 const blockedSet = new Set();
 
+let storeFile = null;
+let saveTimer = null;
+
+function loadStore(dataDir) {
+  storeFile = path.join(dataDir, 'whatsapp', 'store.json');
+  const snap = loadSnapshot(storeFile, fs);
+  if (!snap) { log('WA store: nothing to restore'); return false; }
+  store.hydrate(snap);
+  contacts.hydrate(snap.contactDirectory);
+  log('WA store restored', { chats: store.chatCount, contacts: contacts.size });
+  return store.chatCount > 0;
+}
+
+function saveStoreNow() {
+  if (!storeFile) return;
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  if (!saveSnapshot(storeFile, store.snapshot({ contactDirectory: contacts.toJSON() }), fs)) {
+    log('WA store: save failed');
+  }
+}
+
+/** Debounced — chat and message events arrive in bursts, especially during a sync. */
+function scheduleStoreSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => { saveTimer = null; saveStoreNow(); }, 4000);
+}
+
 function resetStore() {
-  chatStore.clear();
-  messageStore.clear();
+  store.clear();
   contacts.clear();
   blockedSet.clear();
-  ackStore.clear();
+  ackTracker.clear();
+  if (storeFile) { try { fs.rmSync(storeFile, { force: true }); } catch (e) {} }
 }
 
 function broadcast(channel, data) {
@@ -195,30 +232,13 @@ function chatEntryFor(jid) {
 // ── Store maintenance ─────────────────────────────────────────────────────
 
 function upsertChat(c) {
-  if (!c?.id) return;
-  const prev = chatStore.get(c.id) || {};
-  chatStore.set(c.id, { ...prev, ...c });
+  store.upsertChat(c);
+  scheduleStoreSave();
 }
 
 function storeMessages(list) {
-  for (const m of list || []) {
-    const jid = m?.key?.remoteJid;
-    const id = m?.key?.id;
-    if (!jid || !id) continue;
-    if (!messageStore.has(jid)) messageStore.set(jid, new Map());
-    const bucket = messageStore.get(jid);
-    bucket.set(id, { ...(bucket.get(id) || {}), ...m });
-    if (bucket.size > MAX_MSGS_PER_CHAT) {
-      // drop the oldest by timestamp
-      const sorted = [...bucket.entries()].sort(
-        (a, b) => Number(a[1]?.messageTimestamp?.low ?? a[1]?.messageTimestamp ?? 0)
-                - Number(b[1]?.messageTimestamp?.low ?? b[1]?.messageTimestamp ?? 0),
-      );
-      for (let i = 0; i < sorted.length - MAX_MSGS_PER_CHAT; i += 1) bucket.delete(sorted[i][0]);
-    }
-    // Make sure a chat exists for every message we know about.
-    if (!chatStore.has(jid)) upsertChat({ id: jid, conversationTimestamp: m.messageTimestamp });
-  }
+  store.putMessages(list);
+  if (list?.length) scheduleStoreSave();
 }
 
 function sortedChatJids() {
@@ -265,6 +285,11 @@ async function init(avatarCallback, dataDir) {
 
   const authDir = sessionDir(dataDir);
   try { fs.mkdirSync(authDir, { recursive: true }); } catch (e) {}
+
+  // Restore the chat list from disk before connecting. WhatsApp will not resend the
+  // history for an already-linked device, so this is the only source of chats on
+  // every start after the initial pairing.
+  if (!store.chatCount) loadStore(dataDir);
 
   let state;
   try {
@@ -350,18 +375,24 @@ function wireEvents(dataDir) {
       connectionOpen = true;
       log('WA event', 'connected', { pushname: sock.user?.name, id: meId });
 
-      // Do NOT report 'ready' yet. Unlike whatsapp-web.js — which only fired 'ready'
-      // once its store was populated — Baileys opens the socket immediately and
-      // streams the chat history in afterwards (seconds later). Announcing ready now
-      // makes the UI fetch an almost empty chat list and cache it. Wait for the first
-      // history chunk, with a timeout so an account that has no history still starts.
-      clearTimeout(readyTimer);
-      readyTimer = setTimeout(() => {
-        if (connectionOpen && status !== 'ready') {
-          log('WA ready (history timeout)', { chats: chatStore.size });
-          announceReady();
-        }
-      }, 12000);
+      if (store.chatCount > 0) {
+        // We restored the chat list from disk, so there is something to show right
+        // away. WhatsApp will not resend the history for an already-linked device
+        // anyway — waiting for it would just stall the UI.
+        announceReady();
+      } else {
+        // First run after linking: Baileys opens the socket immediately and streams
+        // the history in afterwards. Announcing ready now would make the UI fetch an
+        // empty chat list and cache it, so wait for the first chunk — with a timeout
+        // so an account that genuinely has no history still starts.
+        clearTimeout(readyTimer);
+        readyTimer = setTimeout(() => {
+          if (connectionOpen && status !== 'ready') {
+            log('WA ready (history timeout)', { chats: chatStore.size });
+            announceReady();
+          }
+        }, 12000);
+      }
 
       // Cache our own blocklist so the contact menu can show the right entry.
       try {
@@ -411,12 +442,12 @@ function wireEvents(dataDir) {
 
     const gotSomething = (chats?.length || 0) > 0 || (contacts?.length || 0) > 0;
     if (!gotSomething) return;
-    if (!historySeen) {
-      historySeen = true;
-      announceReady();
-    } else {
-      signalChatsChanged();
-    }
+    historySeen = true;
+    scheduleStoreSave();
+    // Already ready (restored from disk, or an earlier chunk released it)? Then this
+    // chunk only adds to the list, so tell the UI to reload it.
+    if (status === 'ready') signalChatsChanged();
+    else announceReady();
   });
 
   sock.ev.on('chats.upsert', (list) => { for (const c of list || []) upsertChat(c); });
@@ -437,12 +468,16 @@ function wireEvents(dataDir) {
 
   sock.ev.on('contacts.upsert', (list) => {
     for (const c of list || []) rememberContact(c);
+    if (!list?.length) return;
+    scheduleStoreSave();
     // Contact names feed the chat list — refresh it so raw JIDs turn into names.
-    if (list?.length && status === 'ready') signalChatsChanged();
+    if (status === 'ready') signalChatsChanged();
   });
   sock.ev.on('contacts.update', (list) => {
     for (const c of list || []) rememberContact(c);
-    if (list?.length && status === 'ready') signalChatsChanged();
+    if (!list?.length) return;
+    scheduleStoreSave();
+    if (status === 'ready') signalChatsChanged();
   });
 
   // WhatsApp can send the LID↔phone mapping separately from the contact records.
@@ -809,6 +844,9 @@ async function logout() {
 
 async function shutdown() {
   clearReconnectTimer();
+  // Flush the chat list before quitting — it is the only copy that survives, since
+  // WhatsApp will not resend the history on the next start.
+  saveStoreNow();
   await closeSocket();
   status = 'disconnected';
 }
@@ -844,4 +882,6 @@ module.exports = {
   logout,
   reconnect,
   shutdown,
+  // Test-only seam (see __setBaileysForTests).
+  __setBaileysForTests,
 };

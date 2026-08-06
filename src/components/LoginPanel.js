@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './LoginPanel.css';
+import Icon from './Icon';
 
 // ── Shared QR renderer (works for both WA and TG) ────────────
 function QRDisplay({ qr }) {
@@ -30,7 +31,7 @@ function TwoFAPanel({ hint, onSubmit }) {
 
   return (
     <div className="twofa-overlay">
-      <div className="login-icon" style={{ fontSize: 28 }}>🔐</div>
+      <div className="login-icon"><Icon name="lock" size={26} /></div>
       <p className="login-hint"><b>Two-Step Verification</b></p>
       {hint && <p className="login-hint small">Hint: {hint}</p>}
       <input
@@ -75,7 +76,7 @@ function WhatsAppPanel({ waStatus, waQR }) {
               <button
                 className="win98-btn"
                 onClick={() => window.api?.wa?.reconnect?.()}
-              >🔄 Neu verbinden</button>
+              ><Icon name="refresh" /> Neu verbinden</button>
             </>
           )}
         </div>
@@ -92,7 +93,7 @@ function WhatsAppPanel({ waStatus, waQR }) {
       )}
       {waStatus === 'error' && (
         <div className="wa-error">
-          <p className="login-hint error">❌ WhatsApp konnte nicht verbunden werden.</p>
+          <p className="login-hint error"><Icon name="alert" size={14} /> WhatsApp konnte nicht verbunden werden.</p>
           <p className="login-hint small">
             Prüfe deine Internetverbindung. Falls eine Firewall oder ein Proxy
             aktiv ist, muss die Verbindung zu WhatsApp erlaubt sein.
@@ -102,11 +103,11 @@ function WhatsAppPanel({ waStatus, waQR }) {
             style={{ marginTop: 8 }}
             onClick={() => window.api?.wa?.reconnect?.()}
           >
-            🔄 Neu verbinden
+            <Icon name="refresh" /> Neu verbinden
           </button>
         </div>
       )}
-      {waStatus === 'ready' && <p className="login-hint ok">✓ Connected to WhatsApp!</p>}
+      {waStatus === 'ready' && <p className="login-hint ok"><Icon name="check" size={14} /> Connected to WhatsApp!</p>}
     </>
   );
 }
@@ -128,7 +129,7 @@ function TelegramCredentialsForm({ onSave }) {
 
   return (
     <div className="credentials-form">
-      <div className="login-icon" style={{ fontSize: 26 }}>✈️</div>
+      <div className="login-icon"><Icon name="send" size={26} /></div>
       <p className="login-hint"><b>Telegram API Credentials</b></p>
       <p className="login-hint small">
         Get them free at{' '}
@@ -198,7 +199,7 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
   }
 
   if (tgStatus === 'ready') {
-    return <p className="login-hint ok">✓ Connected to Telegram!</p>;
+    return <p className="login-hint ok"><Icon name="check" size={14} /> Connected to Telegram!</p>;
   }
 
   // 2FA overlay takes over the whole panel
@@ -213,11 +214,11 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
         <button
           className={`method-tab ${loginMethod === 'qr' ? 'active' : ''}`}
           onClick={() => setLoginMethod('qr')}
-        >📷 QR Code</button>
+        ><Icon name="qr" /> QR Code</button>
         <button
           className={`method-tab ${loginMethod === 'phone' ? 'active' : ''}`}
           onClick={() => setLoginMethod('phone')}
-        >📱 Phone</button>
+        ><Icon name="phone" /> Phone</button>
       </div>
 
       {/* QR method */}
@@ -282,7 +283,7 @@ function TelegramPanel({ tgStatus, tgQR, tg2FA, onTgAuth, onTgQRLogin, onTg2FASu
             className="win98-btn"
             style={{ background: 'transparent', border: 'none', color: 'var(--icq-text-dim)', marginTop: -4 }}
             onClick={() => setStep('phone')}
-          >← Back</button>
+          ><Icon name="arrow-left" size={13} /> Back</button>
           {error && <p className="login-hint error">{error}</p>}
         </>
       )}
@@ -298,7 +299,7 @@ export default function LoginPanel({ service, waStatus, tgStatus, waQR, tgQR, tg
     <div className="login-panel">
       <div className="login-box win98-raised">
         <div className="login-header">
-          <span className="login-icon">{isWA ? '💬' : '✈️'}</span>
+          <span className="login-icon"><Icon name={isWA ? 'chat' : 'send'} size={20} /></span>
           <span>{isWA ? 'WhatsApp' : 'Telegram'} Login</span>
         </div>
         <div className="login-body">
