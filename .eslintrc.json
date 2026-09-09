@@ -1,0 +1,43 @@
+{
+  "root": true,
+  "env": { "browser": true, "es2022": true },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "ecmaFeatures": { "jsx": true }
+  },
+  "extends": "eslint:recommended",
+  "plugins": ["react"],
+  "rules": {
+    "no-undef": "error",
+    "no-unused-vars": ["warn", { "args": "none", "varsIgnorePattern": "^_" }],
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "no-console": "off",
+    "react/jsx-uses-vars": "error",
+    "react/jsx-uses-react": "error"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.js"],
+      "globals": { "process": "readonly" }
+    },
+    {
+      "files": ["electron/**/*.js", "scripts/**/*.js", "*.config.js", "e2e/**/*.js"],
+      "env": { "node": true, "browser": false },
+      "parserOptions": { "sourceType": "script" }
+    },
+    {
+      "files": ["**/*.test.js", "e2e/**/*.js"],
+      "env": { "jest": true, "node": true }
+    },
+    {
+      "files": ["e2e/**/*.js"],
+      "env": { "browser": true }
+    },
+    {
+      "files": ["electron/whatsapp-bridge.js"],
+      "globals": { "window": "readonly" }
+    }
+  ],
+  "ignorePatterns": ["build/", "dist/", "node_modules/", "puppeteer_cache/", "site/", "data/", ".wwebjs_cache/"]
+}

@@ -33,7 +33,7 @@ function createFakeBaileys(opts = {}) {
   const meId = opts.meId || '4915100000000@s.whatsapp.net';
   // Everything the bridge tried to send, so tests can assert without a network.
   const sent = [];
-  const calls = { readMessages: [], chatModify: [], blockStatus: [], logout: 0, end: 0 };
+  const calls = { readMessages: [], chatModify: [], blockStatus: [], resyncAppState: [], logout: 0, end: 0 };
   let sockets = [];
 
   function makeSocket() {
@@ -54,6 +54,16 @@ function createFakeBaileys(opts = {}) {
       async logout() { calls.logout += 1; },
       async end() { calls.end += 1; },
 
+      // Recovery path for an already-linked device: the bridge asks for the app
+      // state when it has no stored chats. `opts.appState` decides what comes back.
+      async resyncAppState(collections, isInitialSync) {
+        calls.resyncAppState.push({ collections, isInitialSync });
+        const s = opts.appState;
+        if (!s) return;
+        if (s.contacts?.length) await ev.emit('contacts.upsert', s.contacts);
+        if (s.chats?.length) await ev.emit('chats.update', s.chats);
+      },
+
       // — lookups —
       async fetchBlocklist() { return opts.blocklist || []; },
       async profilePictureUrl(jid) {
@@ -72,11 +82,21 @@ function createFakeBaileys(opts = {}) {
 
   const namespace = {
     default: makeSocket,
-    useMultiFileAuthState: async () => ({
-      state: { creds: { me: { id: meId } }, keys: {} },
-      saveCreds: async () => {},
-    }),
+    useMultiFileAuthState: async () => {
+      // A device that has never been paired has neither `registered` nor `me` —
+      // that is what tells the bridge a history sync is still on its way. An
+      // already-linked device has both, and gets the app-state recovery path.
+      const linked = opts.registered !== false;
+      return {
+        state: {
+          creds: linked ? { me: { id: meId }, registered: true } : {},
+          keys: {},
+        },
+        saveCreds: async () => {},
+      };
+    },
     makeCacheableSignalKeyStore: (keys) => keys,
+    ALL_WA_PATCH_NAMES: ['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'],
     Browsers: { appropriate: (n) => ['Test', n, '1.0'] },
     DisconnectReason: {
       loggedOut: 401, connectionClosed: 428, connectionReplaced: 440,

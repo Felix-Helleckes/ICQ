@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './Sidebar.css';
 import { SKINS, setSkin, getSavedSkinId } from '../skins';
+import { splitChats } from '../chatOrder';
 import Icon from './Icon';
 
 const GAMES = [
@@ -222,12 +223,10 @@ export default function Sidebar({
   const groupSound = activeService === 'whatsapp' ? waGroupSound : tgGroupSound;
   const onToggleGroupSound = activeService === 'whatsapp' ? onToggleWaGroupSound : onToggleTgGroupSound;
 
-  const filtered = chats.filter(c =>
-    !search || (c.name || '').toLowerCase().includes(search.toLowerCase())
-  );
-  const groups   = filtered.filter(c => c.isGroup && !c.archived);
-  const archived = filtered.filter(c => c.archived);
-  const contacts = filtered.filter(c => !c.isGroup && !c.archived);
+  // Sections in fixed order (Gruppen → Archiviert → direct chats), each sorted with
+  // the most recent conversation first. See src/chatOrder.js.
+  const { groups, archived, contacts } = splitChats(chats, search);
+  const visibleCount = groups.length + archived.length + contacts.length;
 
   return (
     <div className="sidebar" style={{ '--contact-scale': contactScale ?? 1 }}>
@@ -351,7 +350,7 @@ export default function Sidebar({
             {chatsLoading && (
               <div className="no-contacts loading">Lädt Chats…</div>
             )}
-            {!chatsLoading && filtered.length === 0 && (
+            {!chatsLoading && visibleCount === 0 && (
               <div className="no-contacts">
                 {currentStatus === 'ready' ? 'No chats found' : 'Not connected yet'}
               </div>

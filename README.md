@@ -63,7 +63,7 @@ Or in Terminal:  `xattr -cr /Applications/ICQ\ Messenger.app`
 - **npm** 9+
 - Windows, macOS, or Linux
 
-> On **Linux**, Puppeteer (WhatsApp) needs: `libnss3 libatk-bridge2.0-0 libx11-xcb1 libdrm2 libgbm1 libasound2`
+> No browser is bundled any more - WhatsApp speaks its protocol directly, so it needs no extra Linux runtime deps.
 
 ### Install & run
 
@@ -82,7 +82,7 @@ npm start
 
 ### WhatsApp
 1. Switch to the **WhatsApp** tab
-2. Wait a moment — Puppeteer/Chrome starts in the background
+2. Wait a moment — the WhatsApp connection is established
 3. Scan the QR code with your phone → **WhatsApp → Linked Devices → Link a Device**
 4. Done — session is saved and survives restarts
 
@@ -121,7 +121,7 @@ Output goes to the `dist/` folder.
 ├── electron/
 │   ├── main.js              # Main process · IPC handlers · multi-window management
 │   ├── preload.js           # contextBridge — exposes window.api to React
-│   ├── whatsapp-bridge.js   # WhatsApp via whatsapp-web.js + Puppeteer
+│   ├── whatsapp-bridge.js   # WhatsApp via Baileys (protocol, no browser)
 │   └── telegram-bridge.js   # Telegram MTProto via GramJS
 ├── src/
 │   ├── App.js               # Sidebar / contact list window

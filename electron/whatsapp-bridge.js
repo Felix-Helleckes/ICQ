@@ -70,7 +70,7 @@ let reconnectAttempt = 0;
 let readyAtSec = 0;           // when the socket last opened — tags replayed backlog messages
 let meId = null;
 let connectionOpen = false;   // socket is up; 'ready' may still be waiting for history
-let historySeen = false;      // at least one history chunk with chats has arrived
+let hasCredentials = false;   // device already linked → no automatic history sync
 let readyTimer = null;        // fallback so an account without history still becomes ready
 let chatsChangedTimer = null; // debounces the "reload your chat list" signal
 
@@ -296,6 +296,8 @@ async function init(avatarCallback, dataDir) {
     const auth = await BA.useMultiFileAuthState(authDir);
     state = auth.state;
     saveCreds = auth.saveCreds;
+    // Already paired? Then no history/app-state sync will arrive by itself.
+    hasCredentials = !!(state?.creds?.registered || state?.creds?.me?.id);
   } catch (e) {
     log('WA auth state failed', String(e?.message || e));
     setStatus('error');
@@ -330,6 +332,31 @@ async function init(avatarCallback, dataDir) {
   }
 
   wireEvents(dataDir);
+}
+
+// Pull the chat list back from WhatsApp's app state.
+//
+// The history sync only ever runs right after a device is linked. On a normal
+// reconnect Baileys skips the app state sync too, so a device that is already linked
+// but has no local store would show an empty contact list forever. Requesting the
+// app state explicitly recovers the contacts and the chat records without re-pairing.
+async function recoverFromAppState() {
+  if (!sock) return;
+  const patches = BA.ALL_WA_PATCH_NAMES || ['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'];
+  log('WA recovery: empty store, requesting app state sync');
+  try {
+    await sock.resyncAppState(patches, true);
+  } catch (e) {
+    log('WA recovery: app state sync failed', String(e?.message || e));
+  }
+  log('WA recovery: app state sync finished', { chats: store.chatCount, contacts: contacts.size });
+  if (store.chatCount > 0) {
+    scheduleStoreSave();
+    if (status === 'ready') signalChatsChanged(); else announceReady();
+  } else if (connectionOpen && status !== 'ready') {
+    // Nothing came back — surface the empty state rather than spinning forever.
+    announceReady();
+  }
 }
 
 // Report 'ready' exactly once per connection, once there is something to show.
@@ -380,6 +407,13 @@ function wireEvents(dataDir) {
         // away. WhatsApp will not resend the history for an already-linked device
         // anyway — waiting for it would just stall the UI.
         announceReady();
+      } else if (hasCredentials) {
+        // Already linked, but nothing stored: WhatsApp replays neither the history
+        // nor the app state on a normal reconnect, so the chat list would stay empty
+        // forever. Ask for the app state explicitly — it carries the contacts and the
+        // chat records. (This is the situation after switching to this bridge, where
+        // the pairing happened before there was a store to fill.)
+        recoverFromAppState();
       } else {
         // First run after linking: Baileys opens the socket immediately and streams
         // the history in afterwards. Announcing ready now would make the UI fetch an
@@ -406,7 +440,6 @@ function wireEvents(dataDir) {
       const code = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === BA.DisconnectReason.loggedOut;
       connectionOpen = false;
-      historySeen = false;
       clearTimeout(readyTimer);
       readyTimer = null;
       log('WA event', 'disconnected', { code, loggedOut });
@@ -442,7 +475,6 @@ function wireEvents(dataDir) {
 
     const gotSomething = (chats?.length || 0) > 0 || (contacts?.length || 0) > 0;
     if (!gotSomething) return;
-    historySeen = true;
     scheduleStoreSave();
     // Already ready (restored from disk, or an earlier chunk released it)? Then this
     // chunk only adds to the list, so tell the UI to reload it.
@@ -814,7 +846,6 @@ async function getParticipants(chatId) {
 
 async function closeSocket() {
   connectionOpen = false;
-  historySeen = false;
   clearTimeout(readyTimer); readyTimer = null;
   clearTimeout(chatsChangedTimer); chatsChangedTimer = null;
   const s = sock;

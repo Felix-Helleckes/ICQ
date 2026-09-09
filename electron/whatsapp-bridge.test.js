@@ -79,7 +79,7 @@ afterEach(async () => {
 
 test('fresh link: the chat list is populated from the history sync', async () => {
   const bridge = loadBridge();
-  const fake = createFakeBaileys();
+  const fake = createFakeBaileys({ registered: false });
   await connect(bridge, fake, {
     history: {
       chats: [makeChat(ALICE), makeChat(GROUP)],
@@ -99,9 +99,11 @@ test('fresh link: the chat list is populated from the history sync', async () =>
   expect(chats.find(c => c.id === GROUP).isGroup).toBe(true);
 });
 
-test('ready is withheld until the history arrives, so the UI never caches an empty list', async () => {
+test('fresh pairing: ready is withheld until the history arrives, so the UI never caches an empty list', async () => {
   const bridge = loadBridge();
-  const fake = createFakeBaileys();
+  // registered:false → this is the first pairing, where a history sync really is
+  // on its way. (An already-linked device takes the app-state recovery path instead.)
+  const fake = createFakeBaileys({ registered: false });
   bridge.__setBaileysForTests(fake.namespace);
   await bridge.init(null, dataDir);
   await fake.socket.ev.emit('connection.update', { connection: 'open' });
@@ -147,6 +149,48 @@ test('RESTART: the chat list survives, even though WhatsApp sends no history', a
   expect(chats.map(c => c.id).sort()).toEqual([GROUP, ALICE].sort());
   expect(chats.find(c => c.id === ALICE).name).toBe('Alice Example'); // names survive too
   expect(chats.find(c => c.id === ALICE).lastMessage).toBe('see you tomorrow');
+});
+
+test('already linked with an empty store: the chat list is recovered from the app state', async () => {
+  // WhatsApp replays neither the history nor the app state on a normal reconnect, so
+  // a device linked before this bridge existed would otherwise show nothing at all.
+  const bridge = loadBridge();
+  const fake = createFakeBaileys({
+    appState: {
+      contacts: [makeContact(ALICE, 'Alice Example')],
+      chats: [{ id: ALICE, conversationTimestamp: 1700000300 }, { id: GROUP, conversationTimestamp: 1700000200 }],
+    },
+  });
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  await fake.socket.ev.emit('connection.update', { connection: 'open' });
+  await new Promise(r => setImmediate(r)); // recovery runs detached from the handler
+
+  expect(fake.calls.resyncAppState).toHaveLength(1);
+  expect(fake.calls.resyncAppState[0].isInitialSync).toBe(true);
+
+  const chats = await bridge.getChats();
+  expect(chats.map(c => c.id).sort()).toEqual([GROUP, ALICE].sort());
+  expect(chats.find(c => c.id === ALICE).name).toBe('Alice Example');
+  expect(bridge.getStatus()).toBe('ready');
+});
+
+test('recovery is skipped when the store already holds chats', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  await bridge.shutdown();
+
+  const second = loadBridge();
+  const fake2 = createFakeBaileys();
+  second.__setBaileysForTests(fake2.namespace);
+  await second.init(null, dataDir);
+  await fake2.socket.ev.emit('connection.update', { connection: 'open' });
+  await new Promise(r => setImmediate(r));
+
+  expect(fake2.calls.resyncAppState).toHaveLength(0); // nothing to recover
 });
 
 test('contacts found under the LID name a chat keyed by the phone JID', async () => {

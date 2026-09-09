@@ -21,6 +21,7 @@
     "test:unit": "react-scripts test --watchAll=false",
     "test:electron": "jest --config jest.electron.config.js",
     "test:e2e": "playwright test",
+    "lint": "eslint src electron scripts e2e --ext .js --max-warnings 20",
     "check:electron": "node scripts/check-electron.js",
     "electron": "electron .",
     "dist": "npm run dist:portable",

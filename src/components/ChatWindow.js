@@ -237,7 +237,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     // open a chat/profile for this user
     if (!member || !member.id) return;
     const svc = chat?.service || 'whatsapp';
-    api.openChat({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null, isGroup: false });
+    window.api?.openChat?.({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null, isGroup: false });
   };
 
   const getSenderName = (msg) => {
@@ -612,9 +612,6 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     })
     .slice(0, 120);
 
-  const deleteForAllLabel = chat?.service === 'telegram' ? 'Delete for all' : 'Delete for everyone';
-  const deleteForMeLabel = chat?.service === 'telegram' ? 'Delete for me only' : 'Delete for me only';
-
   if (!chat) {
     return (
       <div className="chat-empty">
@@ -688,7 +685,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
                 {!msg.fromMe && (
                   <div className="message-author-avatar">
                     {
-                      ((): any => {
+                      (() => {
                         const fromId = String(msg.from || msg.sender || msg.participant || msg.author || '');
                         const found = chat?.members?.find(m => String(m.id) === fromId || String(m.id) === String(msg.participant) || String(m.id) === String(msg.sender));
                         if (found && found.avatar) return <img src={found.avatar} alt={found.name || ''} />;

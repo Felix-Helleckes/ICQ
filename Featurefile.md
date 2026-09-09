@@ -69,6 +69,6 @@ A retro ICQ-style multi-messenger desktop application supporting WhatsApp and Te
 - **Framework**: Electron 29.0.0 (cross-platform desktop)
 - **Frontend**: React 18.2.0 with custom CSS styling
 - **Backend**: Node.js with IPC communication
-- **WhatsApp API**: whatsapp-web.js 1.23.0 (headless browser automation)
+- **WhatsApp API**: Baileys 7 (multi-device protocol over WebSocket, no browser)
 - **Telegram API**: GramJS 2.22.2 (native TDLib wrapper)
 - **Packaging**: electron-builder 24.9.1 for multi-platform builds

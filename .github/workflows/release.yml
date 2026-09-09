@@ -55,6 +55,10 @@ jobs:
         if: steps.check.outputs.should_release == 'true'
         run: npm ci
 
+      - name: Lint (catches undefined variables, which the build does not)
+        if: steps.check.outputs.should_release == 'true'
+        run: npm run lint
+
       - name: Syntax-check Electron main process
         if: steps.check.outputs.should_release == 'true'
         run: npm run check:electron

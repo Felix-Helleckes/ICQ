@@ -293,11 +293,6 @@ export default function App() {
     api?.openChat({ chatId: chat.id, chatName: chat.name || chat.id, service: activeService, avatar: chat.avatar || null, isGroup: !!chat.isGroup });
   };
 
-  const sendFromSidebar = (chatId, text) => {
-    // Badge leeren wenn Nutzer antwortet
-    setChats(prev => prev.map(c => c.id === chatId ? { ...c, unreadCount: 0 } : c));
-  };
-
   const markGroupsRead = () => {
     const groups = chats.filter(c => c.isGroup && (c.unreadCount || 0) > 0);
     groups.forEach(c => {
