@@ -101,5 +101,8 @@ Nur `store.json` ist gefahrlos löschbar.
   Liste bekommt man sicher nur durch einmaliges Neu-Koppeln.
 - Medien/Randfunktionen (archivieren, blockieren, bearbeiten, löschen) sind am
   wenigsten erprobt — neue Baileys-Pfade.
-- PR-Material in `presse/`, fertige Reddit-Posts in `marketing/reddit-kit.md`,
-  Bewertung der Monetarisierung in `docs/premium-konzept.md`.
+- **Website, Marketing, Monetarisierung → `docs/stand-marketing.md`.** Dort zuerst
+  nachsehen: Stand, offene Punkte mit genauen Schritten, und Entscheidungen, die
+  bewusst so sind (leere GA-Mess-ID, auskommentiertes `github:` in FUNDING.yml,
+  absolute Basis-URLs). Daneben `presse/` (PR-Material),
+  `marketing/reddit-kit.md` (fertige Posts), `docs/premium-konzept.md`.
