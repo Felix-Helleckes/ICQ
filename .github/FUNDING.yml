@@ -1,0 +1,9 @@
+# Blendet den "Sponsor"-Knopf am Repo ein.
+# Wirkt erst, wenn die Datei auf dem Standard-Branch liegt.
+#
+# github: Felix-Helleckes
+#   ↑ Erst eintragen, wenn GitHub Sponsors freigeschaltet ist. Vorher zeigt der
+#     Knopf auf github.com/sponsors/Felix-Helleckes — und das ist ohne Freigabe
+#     eine 404-Seite, also schlimmer als kein Knopf.
+
+custom: https://paypal.me/sparky512

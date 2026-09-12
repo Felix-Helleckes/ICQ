@@ -158,3 +158,20 @@ Output goes to the `dist/` folder.
 
 
 
+
+## Support
+
+ICQ Retrogram is free and stays free. If you want to chip in, there is a concrete
+thing the money goes to first:
+
+**A code-signing certificate — roughly `[BETRAG EINTRAGEN]` per year.**
+
+Right now every Windows download triggers a SmartScreen warning, and every macOS
+launch needs a right-click, because the builds are unsigned. That warning is the
+single biggest reason people close the page instead of trying the app. A
+certificate removes it.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-PayPal-ff7a98?style=flat-square)](https://paypal.me/sparky512)
+
+Nothing is gated behind it. There is no paid version, no pro tier, and no plan to
+add one — see [`docs/premium-konzept.md`](docs/premium-konzept.md) for why.
