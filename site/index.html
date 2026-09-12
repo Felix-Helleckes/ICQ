@@ -26,6 +26,28 @@
   <meta name="twitter:image" content="https://icq-remake.netlify.app/og.png" />
 
   <link rel="icon" href="icq-logo.png" />
+
+  <!-- Google Search Console: Verifizierung. Zwei Wege, einer reicht.
+       a) Einfachster Weg, wenn GA4 unten schon läuft: in der Search Console
+          "Google Analytics" als Verifizierungsmethode wählen — dieselbe
+          Google-Kennung verifiziert die Property ohne Änderung an dieser Datei.
+       b) Sonst die HTML-Tag-Methode wählen und das Token hier eintragen:
+       <meta name="google-site-verification" content="TOKEN-HIER" /> -->
+
+  <!-- Consent Mode v2. Muss vor allem anderen laufen: Google verlangt, dass der
+       Standard auf "denied" steht, bevor irgendein Tag geladen wird. gtag.js
+       selbst wird erst nach aktiver Zustimmung nachgeladen (siehe unten). -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('consent', 'default', {
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+      analytics_storage: 'denied',
+      wait_for_update: 500
+    });
+  </script>
   <!-- SoftwareApplication schema: lets Google show price/platform for app queries.
        No aggregateRating here on purpose — there are no real reviews to cite. -->
   <script type="application/ld+json">
@@ -146,6 +168,30 @@
 
     footer { padding:40px 0 56px; color:var(--dim); font-size:13px; border-top:1px solid var(--line); }
     footer .disc { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-top:16px; line-height:1.6; }
+
+    /* Consent banner. "Reject" is styled as prominently as "Accept" on
+       purpose: under GDPR refusing has to be as easy as agreeing. */
+    .consent { position:fixed; left:0; right:0; bottom:0; z-index:60; display:none;
+      background:var(--panel2); border-top:1px solid var(--t1);
+      box-shadow:0 -12px 34px rgba(0,0,0,.5); padding:16px 0; }
+    .consent.show { display:block; }
+    .consent .inner { max-width:1080px; margin:0 auto; padding:0 22px;
+      display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+    .consent p { flex:1; min-width:260px; font-size:13.5px; color:var(--dim); }
+    .consent .acts { display:flex; gap:10px; flex-wrap:wrap; }
+    .consent button { font:inherit; font-size:14px; font-weight:bold; cursor:pointer;
+      padding:10px 18px; border-radius:8px; border:1px solid var(--line);
+      background:var(--panel); color:var(--fg); }
+    .consent button:hover { border-color:var(--teal); }
+    /* Beide Schaltflächen bewusst identisch gestaltet. Ein optisch
+       hervorgehobener Zustimmen-Button ist das Muster, das die
+       Datenschutzkonferenz als unzulässiges Nudging beanstandet — die
+       Ablehnung muss genauso leicht fallen wie die Zustimmung. */
+    .consent button.yes { border-color:var(--line); }
+    @media (max-width:560px) {
+      .consent .acts { width:100%; }
+      .consent .acts button { flex:1; }
+    }
 
     /* Real screenshots sit next to the animated reel, not instead of it: the
        reel sells the feeling, a screenshot proves the app actually exists. */
@@ -304,9 +350,19 @@
     </section>
 
     <footer>
-      <div>© <span id="yr"></span> Felix Helleckes · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · MIT license · <a class="support" href="https://paypal.me/sparky512" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.7 4.3 13a4.9 4.9 0 0 1 6.9-6.9l.8.8.8-.8A4.9 4.9 0 0 1 19.7 13z"/></svg> Support via PayPal</a></div>
+      <div>© <span id="yr"></span> Felix Helleckes · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · MIT license · <a href="privacy.html" data-i18n="footer.privacy">Privacy</a> · <a href="#" id="consent-reopen" data-i18n="footer.cookies">Cookie settings</a> · <a class="support" href="https://paypal.me/sparky512" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.7 4.3 13a4.9 4.9 0 0 1 6.9-6.9l.8.8.8-.8A4.9 4.9 0 0 1 19.7 13z"/></svg> Support via PayPal</a></div>
       <div class="disc" data-i18n="footer.disc">Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses an unofficial interface, which may violate WhatsApp's Terms of Service. Use at your own risk.</div>
     </footer>
+  </div>
+
+  <div class="consent" id="consent" role="dialog" aria-live="polite" aria-label="Cookie consent">
+    <div class="inner">
+      <p data-i18n-html="consent.text">This site would like to measure visits with Google Analytics, which sets cookies. It is entirely optional — the downloads work either way. Details in the <a href="privacy.html">privacy policy</a>.</p>
+      <div class="acts">
+        <button type="button" id="consent-no" data-i18n="consent.no">Decline</button>
+        <button type="button" class="yes" id="consent-yes" data-i18n="consent.yes">Accept</button>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -343,6 +399,9 @@
         'faq.a3':'The builds are not code-signed \u2014 a certificate costs money a hobby project does not have. SmartScreen therefore flags every unknown publisher. Click "More info", then "Run anyway". On macOS, right-click the app and choose "Open". If that is not good enough for you, clone the repo and build it yourself.',
         'faq.q4':'Is this the real ICQ coming back?',
         'faq.a4':"No. This is an independent project with no connection to ICQ or AOL, and it does not revive ICQ's network. It rebuilds ICQ 5's interface and puts it on top of the messengers you already use \u2014 so there is no empty network, your contacts are simply already there.",
+        'footer.privacy':'Privacy','footer.cookies':'Cookie settings',
+        'consent.text':'This site would like to measure visits with Google Analytics, which sets cookies. It is entirely optional \u2014 the downloads work either way. Details in the <a href="privacy.html">privacy policy</a>.',
+        'consent.yes':'Accept','consent.no':'Decline',
         'band.h2':'Ready for the time travel?','band.p':'Download ICQ Retrogram for free and connect your WhatsApp in 60 seconds.','band.btn':'Download free now',
         'footer.disc':"Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses an unofficial interface, which may violate WhatsApp's Terms of Service. Use at your own risk."
       },
@@ -378,6 +437,9 @@
         'faq.a3':'Die Builds sind nicht signiert \u2014 ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf \u201eWeitere Informationen\u201c klicken, dann \u201eTrotzdem ausf\u00fchren\u201c. Auf macOS die App rechtsklicken und \u201e\u00d6ffnen\u201c w\u00e4hlen. Wem das nicht reicht: Repo klonen und selbst bauen.',
         'faq.q4':'Kommt hier das echte ICQ zur\u00fcck?',
         'faq.a4':'Nein. Das ist ein unabh\u00e4ngiges Projekt ohne Verbindung zu ICQ oder AOL, und es belebt ICQs Netzwerk nicht wieder. Es baut die Oberfl\u00e4che von ICQ 5 nach und legt sie \u00fcber die Messenger, die du ohnehin nutzt \u2014 es gibt also kein leeres Netzwerk, deine Kontakte sind einfach schon da.',
+        'footer.privacy':'Datenschutz','footer.cookies':'Cookie-Einstellungen',
+        'consent.text':'Diese Seite m\u00f6chte Besuche mit Google Analytics messen, daf\u00fcr werden Cookies gesetzt. Das ist v\u00f6llig freiwillig \u2014 die Downloads funktionieren so oder so. Einzelheiten in der <a href="privacy.html">Datenschutzerkl\u00e4rung</a>.',
+        'consent.yes':'Einverstanden','consent.no':'Ablehnen',
         'band.h2':'Bereit für die Zeitreise?','band.p':'Lade ICQ Retrogram kostenlos und verbinde in 60 Sekunden dein WhatsApp.','band.btn':'Jetzt kostenlos laden',
         'footer.disc':'Hinweis: ICQ Retrogram ist ein unabhängiges Hobby-Projekt und steht in keiner Verbindung zu ICQ, AOL, WhatsApp/Meta oder Telegram. Die WhatsApp-Anbindung nutzt eine inoffizielle Schnittstelle. Das kann gegen die WhatsApp-Nutzungsbedingungen verstoßen, Nutzung auf eigenes Risiko.'
       }
@@ -454,6 +516,52 @@
 
     // Apply the resolved language (set in <head>) to the static markup.
     applyLang(window.__ICQ_LANG || 'en');
+  </script>
+  <script>
+    // ── Google Analytics 4, nur nach aktiver Zustimmung ──────────────────
+    // GA4-Mess-ID hier eintragen (Format 'G-XXXXXXXXXX'). Solange sie leer ist,
+    // wird bewusst NICHTS geladen — auch dann nicht, wenn jemand zustimmt.
+    var GA_MEASUREMENT_ID = '';
+
+    (function () {
+      var KEY = 'icq-consent';
+      var box = document.getElementById('consent');
+      var loaded = false;
+
+      function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+      function remember(v) { try { localStorage.setItem(KEY, v); } catch (e) {} }
+
+      function loadGA() {
+        if (loaded || !GA_MEASUREMENT_ID) return;
+        loaded = true;
+        gtag('consent', 'update', { analytics_storage: 'granted' });
+        var sc = document.createElement('script');
+        sc.async = true;
+        sc.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA_MEASUREMENT_ID;
+        document.head.appendChild(sc);
+        gtag('js', new Date());
+        gtag('config', GA_MEASUREMENT_ID);
+      }
+
+      function show() { if (box) box.classList.add('show'); }
+      function hide() { if (box) box.classList.remove('show'); }
+
+      function decide(v) { remember(v); hide(); if (v === 'granted') loadGA(); }
+
+      var prev = stored();
+      if (prev === 'granted') loadGA();
+      else if (prev !== 'denied') show();
+
+      var yes = document.getElementById('consent-yes');
+      var no = document.getElementById('consent-no');
+      if (yes) yes.addEventListener('click', function () { decide('granted'); });
+      if (no) no.addEventListener('click', function () { decide('denied'); });
+
+      // Die Entscheidung muss widerrufbar sein — Link im Footer holt den
+      // Banner zurück, unabhängig davon, was vorher gewählt wurde.
+      var reopen = document.getElementById('consent-reopen');
+      if (reopen) reopen.addEventListener('click', function (e) { e.preventDefault(); show(); });
+    })();
   </script>
   <script src="reel.js"></script>
 </body>
