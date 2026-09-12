@@ -101,4 +101,5 @@ Nur `store.json` ist gefahrlos löschbar.
   Liste bekommt man sicher nur durch einmaliges Neu-Koppeln.
 - Medien/Randfunktionen (archivieren, blockieren, bearbeiten, löschen) sind am
   wenigsten erprobt — neue Baileys-Pfade.
-- PR-Material liegt in `presse/`.
+- PR-Material in `presse/`, fertige Reddit-Posts in `marketing/reddit-kit.md`,
+  Bewertung der Monetarisierung in `docs/premium-konzept.md`.
