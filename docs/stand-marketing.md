@@ -37,11 +37,10 @@ Nach Priorität. Die ersten drei blockieren den Reddit-Start.
 eintragen. **Solange die Konstante leer ist, lädt bewusst nichts** — auch nicht
 bei Zustimmung. Das ist kein Versehen.
 
-### 2. Anschrift in `site/privacy.html`
-Der einzige verbliebene Platzhalter, gelb markiert in beiden Sprachfassungen:
-`[STRASSE UND HAUSNUMMER]` und `[PLZ UND ORT]`. Datum und Kontaktadresse stehen
-drin. Ohne ladungsfähige Anschrift erfüllt die Seite Art. 13 DSGVO nicht — erst
-danach GA scharfschalten, nicht vorher.
+### 2. ~~Platzhalter~~ — erledigt
+`site/privacy.html` ist vollständig: Verantwortlicher mit Anschrift, Kontakt und
+Datum. Im README steht der Zertifikatsbetrag. Es sind keine Platzhalter mehr im
+Repo. Damit hängt das Scharfschalten von GA nur noch an Punkt 1.
 
 ### 3. Zwei Cloudflare-Secrets hinterlegen
 Settings → Secrets and variables → Actions → New repository secret:
