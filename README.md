@@ -164,12 +164,16 @@ Output goes to the `dist/` folder.
 ICQ Retrogram is free and stays free. If you want to chip in, there is a concrete
 thing the money goes to first:
 
-**A code-signing certificate — roughly `[BETRAG EINTRAGEN]` per year.**
+**A code-signing certificate — around €220 a year (OV; EV runs about €280).**
 
 Right now every Windows download triggers a SmartScreen warning, and every macOS
 launch needs a right-click, because the builds are unsigned. That warning is the
-single biggest reason people close the page instead of trying the app. A
-certificate removes it.
+single biggest reason people close the page instead of trying the app.
+
+Being precise about what it buys: signing makes the publisher verifiable, which
+is the prerequisite for SmartScreen to build reputation at all. It is no longer
+an instant switch — since 2026 even an EV certificate earns trust through
+download volume rather than flipping the warning off on day one.
 
 [![Sponsor](https://img.shields.io/badge/Sponsor-PayPal-ff7a98?style=flat-square)](https://paypal.me/sparky512)
 

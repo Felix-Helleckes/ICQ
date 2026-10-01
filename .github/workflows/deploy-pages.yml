@@ -1,0 +1,72 @@
+# Deployt die Landing Page nach Cloudflare Pages.
+#
+# Läuft auf GitHubs Runnern und spricht die Cloudflare-API direkt an — das legt
+# das Pages-Projekt beim ersten Lauf selbst an, ein Besuch im Dashboard ist
+# nicht nötig.
+#
+# Einmalig einzurichten: zwei Repository-Secrets unter
+# Settings → Secrets and variables → Actions → New repository secret
+#
+#   CLOUDFLARE_API_TOKEN   Token mit der Berechtigung "Cloudflare Pages: Edit"
+#                          (Cloudflare-Dashboard → My Profile → API Tokens →
+#                          Create Token → Permissions: Account / Cloudflare Pages / Edit)
+#   CLOUDFLARE_ACCOUNT_ID  steht in der Cloudflare-Seitenleiste bzw. in der
+#                          Dashboard-URL hinter dash.cloudflare.com/
+#
+# Solange die Secrets fehlen, überspringt der Workflow den Deploy mit einem
+# Hinweis statt rot zu werden.
+
+name: Deploy site
+
+on:
+  push:
+    branches: [main]
+    # Nur anfassen, was die Seite betrifft — ein Commit in electron/ muss
+    # keinen Deploy auslösen.
+    paths:
+      - 'site/**'
+      - 'wrangler.toml'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Cloudflare Pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sind die Secrets hinterlegt?
+        id: check
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$TOKEN" ] || [ -z "$ACCOUNT" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLOUDFLARE_API_TOKEN oder CLOUDFLARE_ACCOUNT_ID fehlt — Deploy übersprungen. Anleitung steht oben in dieser Workflow-Datei."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Schlägt fehl, sobald das Projekt existiert — deshalb nicht blockierend.
+      - name: Pages-Projekt anlegen, falls noch nicht vorhanden
+        if: steps.check.outputs.ready == 'true'
+        continue-on-error: true
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create icq-retrogram --production-branch=main
+
+      - name: Deploy
+        if: steps.check.outputs.ready == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site --project-name=icq-retrogram --branch=main

@@ -16,6 +16,7 @@ site/robots.txt              + sitemap.xml
 site/shots/contacts.png      echter Screenshot auf der Landing Page
 scripts/set-site-url.js      Basis-URL an 15 Stellen umschalten
 wrangler.toml                Cloudflare Pages: Ausgabeverzeichnis site/
+.github/workflows/deploy-pages.yml  Deploy nach Cloudflare, braucht 2 Secrets
 site/_headers                Sicherheits- und Cache-Header (ersetzt netlify.toml)
 netlify.toml                 Übergang: 301-Weiterleitung, noch auskommentiert
 marketing/reddit-kit.md      fertige Posts + vorbereitete Kommentar-Antworten
@@ -31,34 +32,43 @@ docs/stand-marketing.md      diese Datei
 Nach Priorität. Die ersten drei blockieren den Reddit-Start.
 
 ### 1. GA4 scharfschalten
-`site/index.html`, Konstante `GA_MEASUREMENT_ID` (derzeit `''`). GA4-Property
-anlegen, Mess-ID im Format `G-XXXXXXXXXX` eintragen. **Solange die Konstante leer
-ist, lädt bewusst nichts** — auch nicht bei Zustimmung. Das ist kein Versehen.
+`site/index.html`, Konstante `GA_MEASUREMENT_ID` (derzeit `''`). GA4-Property auf
+`https://icq-retrogram.pages.dev` anlegen, Mess-ID im Format `G-XXXXXXXXXX`
+eintragen. **Solange die Konstante leer ist, lädt bewusst nichts** — auch nicht
+bei Zustimmung. Das ist kein Versehen.
 
-### 2. Platzhalter in `site/privacy.html` ausfüllen
-Anschrift, E-Mail, Datum. Stehen als gelb markierte `[ECKIGE KLAMMERN]` in beiden
-Sprachfassungen. Ohne ladungsfähige Anschrift erfüllt die Seite Art. 13 DSGVO
-nicht. Erst danach GA scharfschalten, nicht vorher.
+### 2. Anschrift in `site/privacy.html`
+Der einzige verbliebene Platzhalter, gelb markiert in beiden Sprachfassungen:
+`[STRASSE UND HAUSNUMMER]` und `[PLZ UND ORT]`. Datum und Kontaktadresse stehen
+drin. Ohne ladungsfähige Anschrift erfüllt die Seite Art. 13 DSGVO nicht — erst
+danach GA scharfschalten, nicht vorher.
 
-### 3. Betrag im README-Support-Abschnitt
-`[BETRAG EINTRAGEN]` — Jahreskosten eines Code-Signing-Zertifikats. Bewusst nicht
-geraten, die Preise gehen je nach Typ (OV/EV) weit auseinander.
+### 3. Zwei Cloudflare-Secrets hinterlegen
+Settings → Secrets and variables → Actions → New repository secret:
 
-### 4. Umzug zu Cloudflare Pages abschließen
+- `CLOUDFLARE_API_TOKEN` — Token mit der Berechtigung *Cloudflare Pages: Edit*
+  (Cloudflare → My Profile → API Tokens → Create Token)
+- `CLOUDFLARE_ACCOUNT_ID` — steht in der Cloudflare-Seitenleiste bzw. in der
+  Dashboard-URL hinter `dash.cloudflare.com/`
+
+Mehr nicht. `.github/workflows/deploy-pages.yml` legt das Pages-Projekt beim
+ersten Lauf selbst an und deployt bei jeder Änderung unter `site/`. Ohne die
+Secrets überspringt der Workflow den Deploy mit einem Hinweis, statt rot zu
+werden. Ein Besuch im Cloudflare-Dashboard ist für das Anlegen nicht nötig.
+
+### 4. Umzug abschließen
 Im Repo ist alles umgestellt: alle 15 Basis-URLs zeigen auf
-`https://icq-retrogram.pages.dev`, `wrangler.toml` und `site/_headers` liegen
-bereit. Was noch von Hand passieren muss, **in dieser Reihenfolge**:
+`https://icq-retrogram.pages.dev`, dazu `wrangler.toml`, `site/_headers` und der
+Deploy-Workflow. (`icq.pages.dev` war bereits vergeben, daher dieser Name.)
+Nach Punkt 3, **in dieser Reihenfolge**:
 
-1. Im Cloudflare-Dashboard ein Pages-Projekt namens `icq-retrogram` anlegen und
-   mit diesem GitHub-Repo verbinden. Build command leer, Build output directory
-   `site`. (`icq.pages.dev` war bereits vergeben, daher dieser Name.)
-2. Prüfen, dass die Seite dort wirklich ausliefert.
-3. **Erst dann** den Weiterleitungsblock am Ende von `netlify.toml`
+1. Prüfen, dass `https://icq-retrogram.pages.dev` wirklich ausliefert.
+2. **Erst dann** den Weiterleitungsblock am Ende von `netlify.toml`
    entkommentieren und pushen. Vorher wäre die Seite tot — Netlify leitete auf
    einen Host weiter, den es noch nicht gibt.
-4. Website-Feld in den GitHub-Repo-Settings von Hand auf die neue URL setzen.
+3. Website-Feld in den GitHub-Repo-Settings von Hand auf die neue URL setzen.
    Über die API geht es nicht, der Proxy sperrt Repo-Settings-Schreibzugriffe.
-5. Netlify-Projekt löschen — aber **nicht sofort**. Die 301-Weiterleitung sagt
+4. Netlify-Projekt löschen — aber **nicht sofort**. Die 301-Weiterleitung sagt
    Google und jedem, der den alten Link kennt, wohin die Seite gezogen ist. Ein
    gelöschtes Projekt antwortet mit 404, und jeder gesetzte Link läuft ins
    Leere. Ein paar Monate laufen lassen.
@@ -70,9 +80,10 @@ Bei späterer eigener Domain:
 Ändert 15 Stellen in `site/index.html`, `robots.txt`, `sitemap.xml` und schreibt
 die Konstante `CURRENT` im Skript selbst fort. Nicht erfasst und von Hand
 nachzuziehen: Search-Console-Property, GA4-Datenstream, Website-Feld am Repo,
-`presse/pitch-mail.md`, `marketing/reddit-kit.md`, sowie die Retrogram-Einträge
-in den Repos `Felix-Helleckes` (readme.md) und `felix-helleckes.github.io`
-(gitprofile.config.ts und index.html, dort zweimal).
+`presse/pitch-mail.md`, `marketing/reddit-kit.md`, der Projektname in
+`wrangler.toml` und `.github/workflows/deploy-pages.yml`, sowie die
+Retrogram-Einträge in den Repos `Felix-Helleckes` (readme.md) und
+`felix-helleckes.github.io` (gitprofile.config.ts und index.html, dort zweimal).
 
 ### 5. Search Console
 Zwei Wege, beide im `<head>` von `site/index.html` dokumentiert. Der bequeme:
