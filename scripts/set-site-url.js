@@ -19,7 +19,7 @@ const SITE = path.join(__dirname, '..', 'site');
 const FILES = ['index.html', 'robots.txt', 'sitemap.xml'];
 
 // Everything currently deployed. Update this when the domain changes for good.
-const CURRENT = 'https://icq-remake.netlify.app';
+const CURRENT = 'https://icq-retrogram.pages.dev';
 
 function main() {
   const next = (process.argv[2] || '').replace(/\/+$/, '');

@@ -1,0 +1,9 @@
+# Cloudflare Pages. Die Landing Page unter site/ ist statisches HTML ohne
+# Build-Schritt — Cloudflare lädt den Ordner unverändert hoch.
+#
+# Im Dashboard beim Anlegen des Projekts entsprechend:
+#   Build command:          (leer lassen)
+#   Build output directory: site
+name = "icq-retrogram"
+pages_build_output_dir = "./site"
+compatibility_date = "2026-10-01"

@@ -71,7 +71,7 @@ jede Form von Eigenwerbung. Nur mit ausdrücklicher Mod-Freigabe versuchen.
 > Service and I cannot rule out account bans. It is on the website and in the
 > README, and I would rather say it here than have it be the top comment.
 >
-> Site: https://icq-remake.netlify.app/
+> Site: https://icq-retrogram.pages.dev/
 > Source: https://github.com/Felix-Helleckes/ICQ
 >
 > Happy to answer anything about the Baileys migration — ripping the browser out
@@ -157,7 +157,7 @@ jede Form von Eigenwerbung. Nur mit ausdrücklicher Mod-Freigabe versuchen.
 > Drittanbieter-Client. Das kann gegen die WhatsApp-AGB verstoßen, Sperren kann
 > ich nicht ausschließen. Steht so auch auf der Seite.
 >
-> https://icq-remake.netlify.app/
+> https://icq-retrogram.pages.dev/
 
 ---
 

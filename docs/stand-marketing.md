@@ -3,7 +3,8 @@
 Übergabe-Dokument. Es soll genügen, um in einem neuen Chat weiterzumachen, ohne
 die vorherige Unterhaltung zu kennen.
 
-**Stand:** 12.09.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.36 (nicht erhöht, also kein Release ausgelöst)
+**Stand:** 01.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.37 (veröffentlicht)
+**Hosting:** im Umzug von Netlify zu Cloudflare Pages → `https://icq-retrogram.pages.dev`
 
 ---
 
@@ -14,6 +15,9 @@ site/privacy.html            Datenschutzerklärung, zweisprachig (DE/EN)
 site/robots.txt              + sitemap.xml
 site/shots/contacts.png      echter Screenshot auf der Landing Page
 scripts/set-site-url.js      Basis-URL an 15 Stellen umschalten
+wrangler.toml                Cloudflare Pages: Ausgabeverzeichnis site/
+site/_headers                Sicherheits- und Cache-Header (ersetzt netlify.toml)
+netlify.toml                 Übergang: 301-Weiterleitung, noch auskommentiert
 marketing/reddit-kit.md      fertige Posts + vorbereitete Kommentar-Antworten
 docs/premium-konzept.md      Bewertung: warum keine Bezahlversion
 docs/stand-marketing.md      diese Datei
@@ -40,17 +44,35 @@ nicht. Erst danach GA scharfschalten, nicht vorher.
 `[BETRAG EINTRAGEN]` — Jahreskosten eines Code-Signing-Zertifikats. Bewusst nicht
 geraten, die Preise gehen je nach Typ (OV/EV) weit auseinander.
 
-### 4. Domain entscheiden
-Alles zeigt derzeit auf `https://icq-remake.netlify.app`. Bei eigener Domain:
+### 4. Umzug zu Cloudflare Pages abschließen
+Im Repo ist alles umgestellt: alle 15 Basis-URLs zeigen auf
+`https://icq-retrogram.pages.dev`, `wrangler.toml` und `site/_headers` liegen
+bereit. Was noch von Hand passieren muss, **in dieser Reihenfolge**:
+
+1. Im Cloudflare-Dashboard ein Pages-Projekt namens `icq-retrogram` anlegen und
+   mit diesem GitHub-Repo verbinden. Build command leer, Build output directory
+   `site`. (`icq.pages.dev` war bereits vergeben, daher dieser Name.)
+2. Prüfen, dass die Seite dort wirklich ausliefert.
+3. **Erst dann** den Weiterleitungsblock am Ende von `netlify.toml`
+   entkommentieren und pushen. Vorher wäre die Seite tot — Netlify leitete auf
+   einen Host weiter, den es noch nicht gibt.
+4. Website-Feld in den GitHub-Repo-Settings von Hand auf die neue URL setzen.
+   Über die API geht es nicht, der Proxy sperrt Repo-Settings-Schreibzugriffe.
+5. Netlify-Projekt löschen — aber **nicht sofort**. Die 301-Weiterleitung sagt
+   Google und jedem, der den alten Link kennt, wohin die Seite gezogen ist. Ein
+   gelöschtes Projekt antwortet mit 404, und jeder gesetzte Link läuft ins
+   Leere. Ein paar Monate laufen lassen.
+
+Bei späterer eigener Domain:
 
     node scripts/set-site-url.js https://neue-domain.de
 
 Ändert 15 Stellen in `site/index.html`, `robots.txt`, `sitemap.xml` und schreibt
-die Konstante `CURRENT` im Skript selbst fort. **Vor dem ersten Reddit-Post
-umstellen** — danach kostet der Wechsel Backlinks und Search-Console-Historie.
-Nicht vom Skript erfasst und von Hand nachzuziehen: Search-Console-Property,
-GA4-Datenstream, das Website-Feld in den GitHub-Repo-Settings, die Links in
-`presse/pitch-mail.md`.
+die Konstante `CURRENT` im Skript selbst fort. Nicht erfasst und von Hand
+nachzuziehen: Search-Console-Property, GA4-Datenstream, Website-Feld am Repo,
+`presse/pitch-mail.md`, `marketing/reddit-kit.md`, sowie die Retrogram-Einträge
+in den Repos `Felix-Helleckes` (readme.md) und `felix-helleckes.github.io`
+(gitprofile.config.ts und index.html, dort zweimal).
 
 ### 5. Search Console
 Zwei Wege, beide im `<head>` von `site/index.html` dokumentiert. Der bequeme:
@@ -69,10 +91,7 @@ darin (Pfad: `.github/FUNDING.yml` innerhalb dieses Repos). Die gilt als Vorgabe
 für alle Repos des Kontos, auch künftige, und wird von repo-eigenen Dateien
 überschrieben. Dann könnten die elf Einzeldateien weg.
 
-### 7. Website-Feld am GitHub-Repo
-Zeigt auf das Portfolio statt auf die Landing Page. Repo-Settings, nur von Hand.
-
-### 8. Reddit-Posts absenden
+### 7. Reddit-Posts absenden
 `marketing/reddit-kit.md`. Ein Post pro Tag, nie derselbe Text in zwei Subs.
 Danach eine Woche warten und die Zahlen unten vergleichen.
 

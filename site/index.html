@@ -6,24 +6,24 @@
   <title>ICQ Retrogram — WhatsApp &amp; Telegram, ICQ style</title>
   <meta name="description" content="Your WhatsApp and Telegram as a retro ICQ 5 messenger. Separate chat windows, the classic uh-oh sound, switchable skins. Free for Windows, macOS & Linux." />
 
-  <link rel="canonical" href="https://icq-remake.netlify.app/" />
-  <link rel="alternate" hreflang="en" href="https://icq-remake.netlify.app/" />
-  <link rel="alternate" hreflang="de" href="https://icq-remake.netlify.app/?lang=de" />
-  <link rel="alternate" hreflang="x-default" href="https://icq-remake.netlify.app/" />
+  <link rel="canonical" href="https://icq-retrogram.pages.dev/" />
+  <link rel="alternate" hreflang="en" href="https://icq-retrogram.pages.dev/" />
+  <link rel="alternate" hreflang="de" href="https://icq-retrogram.pages.dev/?lang=de" />
+  <link rel="alternate" hreflang="x-default" href="https://icq-retrogram.pages.dev/" />
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="ICQ Retrogram" />
-  <meta property="og:url" content="https://icq-remake.netlify.app/" />
+  <meta property="og:url" content="https://icq-retrogram.pages.dev/" />
   <meta property="og:title" content="ICQ Retrogram — your WhatsApp, like it's 2003" />
   <meta property="og:description" content="WhatsApp and Telegram in a retro ICQ messenger. Separate chat windows, the uh-oh! sound, switchable skins." />
   <!-- Absolute URLs: Facebook, LinkedIn and Slack drop relative og:image paths,
        which kills the link preview exactly where the page gets shared. -->
-  <meta property="og:image" content="https://icq-remake.netlify.app/og.png" />
+  <meta property="og:image" content="https://icq-retrogram.pages.dev/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="ICQ Retrogram — your WhatsApp, like it's 2003" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://icq-remake.netlify.app/og.png" />
+  <meta name="twitter:image" content="https://icq-retrogram.pages.dev/og.png" />
 
   <link rel="icon" href="icq-logo.png" />
 
@@ -33,6 +33,49 @@
           Google-Kennung verifiziert die Property ohne Änderung an dieser Datei.
        b) Sonst die HTML-Tag-Methode wählen und das Token hier eintragen:
        <meta name="google-site-verification" content="TOKEN-HIER" /> -->
+
+  <!-- FAQPage: der Text stammt wörtlich aus der sichtbaren FAQ-Sektion.
+       Auszeichnung, die von der Seite abweicht, wertet Google als Verstoß. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Can my WhatsApp account get banned?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Possibly, yes. ICQ Retrogram talks to WhatsApp's multi-device protocol directly, the same way other third-party clients do. WhatsApp's Terms of Service only permit their official apps, and they do act against unofficial clients. Nobody can promise you otherwise — do not use it on an account you cannot afford to lose."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Who can read my messages?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "There is no server of mine involved. The app connects from your machine straight to WhatsApp and Telegram, so nothing is routed through a third party. Your logins and chat cache stay in the local ICQ-Data folder. The whole source is on GitHub under MIT — you do not have to take my word for it, you can read it."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does Windows warn me when I start it?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The builds are not code-signed — a certificate costs money a hobby project does not have. SmartScreen therefore flags every unknown publisher. Click \"More info\", then \"Run anyway\". On macOS, right-click the app and choose \"Open\". If that is not good enough for you, clone the repo and build it yourself."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Is this the real ICQ coming back?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "No. This is an independent project with no connection to ICQ or AOL, and it does not revive ICQ's network. It rebuilds ICQ 5's interface and puts it on top of the messengers you already use — so there is no empty network, your contacts are simply already there."
+        }
+      }
+    ]
+  }
+  </script>
 
   <!-- Consent Mode v2. Muss vor allem anderen laufen: Google verlangt, dass der
        Standard auf "denied" steht, bevor irgendein Tag geladen wird. gtag.js
@@ -57,15 +100,15 @@
     "name": "ICQ Retrogram",
     "applicationCategory": "CommunicationApplication",
     "operatingSystem": "Windows, macOS, Linux",
-    "url": "https://icq-remake.netlify.app/",
+    "url": "https://icq-retrogram.pages.dev/",
     "downloadUrl": "https://github.com/Felix-Helleckes/ICQ/releases/latest",
     "softwareVersion": "1.0.36",
     "license": "https://opensource.org/licenses/MIT",
     "isAccessibleForFree": true,
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
     "author": { "@type": "Person", "name": "Felix Helleckes" },
-    "image": "https://icq-remake.netlify.app/og.png",
-    "screenshot": "https://icq-remake.netlify.app/shots/contacts.png",
+    "image": "https://icq-retrogram.pages.dev/og.png",
+    "screenshot": "https://icq-retrogram.pages.dev/shots/contacts.png",
     "description": "Your WhatsApp and Telegram as a retro ICQ 5 messenger. Separate chat windows, the classic uh-oh sound, switchable skins. Free for Windows, macOS and Linux."
   }
   </script>

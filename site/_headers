@@ -1,0 +1,25 @@
+# Cloudflare Pages liest diese Datei aus dem Ausgabeverzeichnis und liefert sie
+# nicht selbst aus. Ersetzt den [[headers]]-Block aus netlify.toml.
+
+/*
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff
+
+# Die Dateinamen tragen keinen Hash, ein langes immutable-Caching würde also
+# Aktualisierungen bei wiederkehrenden Besuchern verschlucken. Ein Tag ist der
+# Kompromiss: schnell genug für Core Web Vitals, kurz genug zum Nachliefern.
+/*.png
+  Cache-Control: public, max-age=86400
+/*.mp3
+  Cache-Control: public, max-age=86400
+/*.css
+  Cache-Control: public, max-age=86400
+/*.js
+  Cache-Control: public, max-age=86400
+
+# HTML immer gegenprüfen, sonst sehen Besucher nach einem Deploy die alte Seite.
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
+/
+  Cache-Control: public, max-age=0, must-revalidate

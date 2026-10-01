@@ -2,10 +2,10 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://icq-remake.netlify.app/</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="https://icq-remake.netlify.app/" />
-    <xhtml:link rel="alternate" hreflang="de" href="https://icq-remake.netlify.app/?lang=de" />
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://icq-remake.netlify.app/" />
+    <loc>https://icq-retrogram.pages.dev/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://icq-retrogram.pages.dev/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://icq-retrogram.pages.dev/?lang=de" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://icq-retrogram.pages.dev/" />
     <changefreq>monthly</changefreq>
     <priority>1.0</priority>
   </url>

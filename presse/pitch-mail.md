@@ -39,7 +39,7 @@ Drittanbieter-Client. Das kann gegen die Nutzungsbedingungen von WhatsApp
 verstoßen. Dieser Hinweis steht auch so auf der Projektseite, ich halte ihn für
 eine Pflichtangabe.
 
-Website: https://icq-remake.netlify.app/
+Website: https://icq-retrogram.pages.dev/
 Quellcode: https://github.com/Felix-Helleckes/ICQ
 Download (Windows, macOS, Linux): https://github.com/Felix-Helleckes/ICQ/releases/latest
 
