@@ -4,11 +4,13 @@
 die vorherige Unterhaltung zu kennen.
 
 **Stand:** 02.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.37 (veröffentlicht)
-**Hosting:** umgezogen. `https://icq-retrogram.pages.dev` liefert aus (Cloudflare
-Pages, Secrets hinterlegt, Deploy-Workflow grün). GA4 läuft, Search Console
-verifiziert, Sitemap eingereicht. Repo-Website-Feld zeigt auf die neue URL.
-Offen: Netlify-Redirect liegt in `netlify.toml`, deployt aber nicht — siehe
-Punkt 4.
+**Hosting:** Umzug abgeschlossen. `https://icq-retrogram.pages.dev` liefert aus
+(Cloudflare Pages, Secrets hinterlegt, Deploy-Workflow grün). GA4 läuft, Search
+Console verifiziert, Sitemap eingereicht, Repo-Website-Feld zeigt auf die neue
+URL. Netlify wird nicht mehr gebraucht — Entscheidung: kein Übergangs-Redirect,
+Netlify-Projekt direkt gelöscht, `netlify.toml` aus dem Repo entfernt. Alle
+bekannten Außenlinks (GitHub-Profil, Portfolio-Seite) zeigten beim Prüfen
+bereits auf `icq-retrogram.pages.dev`.
 
 ---
 
@@ -21,9 +23,8 @@ site/shots/contacts.png      echter Screenshot auf der Landing Page
 scripts/set-site-url.js      Basis-URL an 15 Stellen umschalten
 wrangler.toml                Cloudflare Pages: Ausgabeverzeichnis site/
 .github/workflows/deploy-pages.yml  Deploy nach Cloudflare, braucht 2 Secrets
-site/_headers                Sicherheits- und Cache-Header (ersetzt netlify.toml)
-netlify.toml                 Übergang: 301-Weiterleitung aktiv, deployt aber
-                              nicht (Netlify-Credits aufgebraucht, siehe Punkt 4)
+site/_headers                Sicherheits- und Cache-Header (ersetzt netlify.toml,
+                              das aus dem Repo entfernt wurde)
 marketing/reddit-kit.md      fertige Posts + vorbereitete Kommentar-Antworten
 docs/premium-konzept.md      Bewertung: warum keine Bezahlversion
 docs/stand-marketing.md      diese Datei
@@ -49,28 +50,28 @@ Repo.
 Pages-Projekt `icq-retrogram` selbst angelegt und deployt grün bei jeder
 Änderung unter `site/`.
 
-### 4. Umzug — bis auf einen Punkt erledigt
+### 4. ~~Umzug~~ — erledigt, Netlify komplett abgeschaltet
 Im Repo ist alles umgestellt: alle 15 Basis-URLs zeigen auf
 `https://icq-retrogram.pages.dev`, dazu `wrangler.toml`, `site/_headers` und der
 Deploy-Workflow. (`icq.pages.dev` war bereits vergeben, daher dieser Name.)
 
 1. ✅ `https://icq-retrogram.pages.dev` liefert aus, geprüft.
-2. ✅ Weiterleitungsblock in `netlify.toml` entkommentiert und gepusht
-   (Commit `431b489`).
-3. ✅ Website-Feld in den GitHub-Repo-Settings auf die neue URL gesetzt.
-4. ⚠️ **Netlify deployt den Redirect nicht.** Das Netlify-Team läuft auf
-   „operational credits" — production deploys sind pausiert, bis das
-   Billing-Cycle sich erneuert oder Credits/Upgrade nachgelegt werden
-   (`app.netlify.com/projects/icq-remake/deploys` zeigt den Push als
-   „Skipped due to account credit usage exceeded"). `netlify.toml` ist also
-   bereit, aber `icq-remake.netlify.app` leitet aktuell noch **nicht** auf
-   Cloudflare um. Das ist eine Geld-/Account-Entscheidung — hier prüfen, ob
-   das Billing-Cycle-Reset reicht oder ob Credits nachgekauft werden sollen,
-   dann ist nichts weiter zu tun, der Deploy zieht automatisch nach.
-5. Netlify-Projekt danach löschen — aber **nicht sofort**. Die
-   301-Weiterleitung sagt Google und jedem, der den alten Link kennt, wohin
-   die Seite gezogen ist. Ein gelöschtes Projekt antwortet mit 404, und jeder
-   gesetzte Link läuft ins Leere. Ein paar Monate laufen lassen.
+2. ✅ Website-Feld in den GitHub-Repo-Settings auf die neue URL gesetzt.
+3. ✅ Geprüft, wo außerhalb des Repos noch auf die Seite verlinkt wird:
+   `Felix-Helleckes/readme.md` und `felix-helleckes.github.io`
+   (`index.html`, `gitprofile.config.ts`) zeigten beim Nachsehen bereits auf
+   `icq-retrogram.pages.dev` — nichts zu ändern.
+4. ✅ **Entscheidung geändert:** Netlify wird nicht mehr gebraucht, daher kein
+   301-Übergangs-Redirect mehr. Grund für den Kurswechsel: Netlifys
+   Production-Deploys liefen ohnehin auf „operational credits" und waren
+   pausiert (`Skipped due to account credit usage exceeded`) — der Redirect
+   wäre also gar nicht live gegangen, ohne dass zusätzlich Geld investiert
+   wird. Da alle bekannten Links bereits auf Cloudflare zeigen, lohnt sich das
+   nicht mehr. `netlify.toml` aus dem Repo entfernt, Netlify-Projekt
+   `icq-remake` gelöscht. Wer über einen alten, nicht bekannten
+   `icq-remake.netlify.app`-Link kommt, bekommt jetzt ein 404 statt einer
+   Weiterleitung — akzeptiertes Risiko laut Felix, da keine aktiven Backlinks
+   bekannt sind.
 
 Bei späterer eigener Domain:
 
