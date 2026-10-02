@@ -7,7 +7,8 @@ Das Repo ist öffentlich — Standard-Runner kosten dort keine Minuten.
 Die Landingpage braucht **keine** Änderung pro Release: Die Download-Buttons lesen
 `releases/latest` per GitHub-API und wählen die Dateien nach Namen
 (`Setup*.exe`, `Portable*.exe`, `*arm64.dmg`, `*x64.dmg`, `*.AppImage`).
-Nur `softwareVersion` im JSON-LD von `site/index.html` mitziehen.
+Nur `softwareVersion` im JSON-LD von `site/index.html` mitziehen und danach
+`npm run site:build` (die deutsche Seite `site/de.html` wird daraus erzeugt).
 
 ## Schritte
 

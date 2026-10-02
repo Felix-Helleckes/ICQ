@@ -4,9 +4,19 @@
   <url>
     <loc>https://icq-retrogram.pages.dev/</loc>
     <xhtml:link rel="alternate" hreflang="en" href="https://icq-retrogram.pages.dev/" />
-    <xhtml:link rel="alternate" hreflang="de" href="https://icq-retrogram.pages.dev/?lang=de" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://icq-retrogram.pages.dev/de" />
     <xhtml:link rel="alternate" hreflang="x-default" href="https://icq-retrogram.pages.dev/" />
-    <changefreq>monthly</changefreq>
-    <priority>1.0</priority>
+    <lastmod>2026-10-02</lastmod>
+  </url>
+  <url>
+    <loc>https://icq-retrogram.pages.dev/de</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://icq-retrogram.pages.dev/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://icq-retrogram.pages.dev/de" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://icq-retrogram.pages.dev/" />
+    <lastmod>2026-10-02</lastmod>
+  </url>
+  <url>
+    <loc>https://icq-retrogram.pages.dev/privacy</loc>
+    <lastmod>2026-10-02</lastmod>
   </url>
 </urlset>

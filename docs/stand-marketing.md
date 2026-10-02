@@ -3,7 +3,7 @@
 Übergabe-Dokument. Es soll genügen, um in einem neuen Chat weiterzumachen, ohne
 die vorherige Unterhaltung zu kennen.
 
-**Stand:** 02.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.37 (veröffentlicht)
+**Stand:** 02.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.1.0 (veröffentlicht)
 **Hosting:** Umzug abgeschlossen. `https://icq-retrogram.pages.dev` liefert aus
 (Cloudflare Pages, Secrets hinterlegt, Deploy-Workflow grün). GA4 läuft, Search
 Console verifiziert, Sitemap eingereicht, Repo-Website-Feld zeigt auf die neue
@@ -111,7 +111,27 @@ darin (Pfad: `.github/FUNDING.yml` innerhalb dieses Repos). Die gilt als Vorgabe
 für alle Repos des Kontos, auch künftige, und wird von repo-eigenen Dateien
 überschrieben. Dann könnten die elf Einzeldateien weg.
 
-### 7. Reddit-Posts absenden
+### 7. SEO — Stand 02.10.2026 und was noch fehlt
+Erledigt: deutsche Seite `/de` (siehe Entscheidungen), „ICQ" in H1 und Titel,
+FAQ-Frage zur ICQ-Abschaltung 2024 („ICQ Alternative"/„ICQ eingestellt"),
+Sitemap mit `/de`, `/privacy` und `lastmod`, `reel.html` auf `noindex`.
+
+Offen, in dieser Reihenfolge:
+1. **Search Console:** nach dem Deploy unter „URL-Prüfung" `/` und `/de` prüfen
+   und „Indexierung beantragen"; Sitemap neu einreichen. Am 02.10. lieferte eine
+   Websuche nach „ICQ Retrogram" noch keinen Treffer — Indexstand im Bericht
+   „Seiten" nachsehen.
+2. **Eigene Domain** (z. B. `icq-retrogram.de`). Eine `pages.dev`-Subdomain rankt
+   schwach und sammelt keine eigene Autorität. Umstellen mit
+   `node scripts/set-site-url.js https://…` (baut `de.html` mit).
+3. **Backlinks.** Für den nackten Suchbegriff „ICQ" ist Platz 1 unrealistisch
+   (ICQ selbst, Wikipedia, News zur Abschaltung). Erreichbar sind Long-Tail-
+   Suchen („ICQ für WhatsApp", „ICQ Alternative", „ICQ 5 Nachbau") — und die
+   hängen an Links: Reddit-Posts (Punkt 8), Pressemail an Seiten, die über das
+   Fanprojekt „ICQ Reborn" berichtet haben (digitec/galaxus, ifun.de), Hacker
+   News „Show HN", AlternativeTo-Eintrag.
+
+### 8. Reddit-Posts absenden
 `marketing/reddit-kit.md`. Ein Post pro Tag, nie derselbe Text in zwei Subs.
 Danach eine Woche warten und die Zahlen unten vergleichen.
 
@@ -121,8 +141,11 @@ Danach eine Woche warten und die Zahlen unten vergleichen.
 
 Wer hier etwas „repariert", macht es kaputt.
 
-**`GA_MEASUREMENT_ID` ist leer.** Kein vergessener Platzhalter. Verhindert, dass
-GA still mitläuft, solange die Datenschutzseite noch Platzhalter hat.
+**GA zählt nur, wer zustimmt.** `GA_MEASUREMENT_ID` ist seit dem 02.10.2026
+gesetzt (`G-WFQNRSXPWR`), `gtag.js` lädt aber erst nach „Einverstanden" (Basic
+Consent Mode). Die GA-Zahlen liegen deshalb deutlich unter den echten Besuchen —
+für Vergleiche über die Zeit taugen sie, als absolute Zahl nicht. Die
+Download-Zahlen der Releases (siehe unten) sind die verlässlichere Kennzahl.
 
 **Consent Mode steht auf `denied`, bevor irgendein Tag lädt.** `gtag.js` wird
 erst nach aktivem Klick nachgeladen. Nicht auf „bequemer" umbauen.
@@ -138,6 +161,18 @@ führt der Knopf auf eine 404-Seite — schlechter als kein Knopf.
 Google verwerfen relative Pfade. Nie auf relativ zurückbauen; ändern nur über
 `scripts/set-site-url.js`, sonst bleibt ein `canonical` stehen und erklärt die
 neue Domain zum Duplikat.
+
+**Deutsch ist eine eigene Seite: `site/de.html` (URL `/de`), generiert.** Früher
+war Deutsch nur `?lang=de` mit `canonical` auf die englische Seite — Google wertet
+das als Duplikat, deutsche Suchen fanden die Seite nie. Jetzt erzeugt
+`npm run site:build` aus `index.html` + `I18N.de` eine statische deutsche Seite
+mit eigenem canonical, Titel, Description und FAQ-Schema; das FAQ-Schema beider
+Seiten wird dabei aus dem Wörterbuch neu geschrieben (muss dem sichtbaren Text
+entsprechen). **Nie `de.html` von Hand ändern** — `npm run lint` (CI) schlägt bei
+veralteter `de.html` fehl. Kopf-Texte stehen als `meta.title`, `meta.desc`,
+`og.title`, `og.desc` im Wörterbuch; Bild-Alt-Texte über `data-i18n-alt`.
+Sprachwahl = URL; die Links EN/DE sind echte Links (crawlbar), gespeichert wird
+nur eine aktive Wahl (`icq-lang`), die `/` dann nach `/de` weiterleitet.
 
 **i18n: HTML im String braucht `data-i18n-html`.** `applyLang()` setzt sonst
 `textContent`, und `<b>uh-oh!</b>` steht wörtlich auf der Seite. Genau dieser

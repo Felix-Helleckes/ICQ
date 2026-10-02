@@ -18,7 +18,8 @@ src/App.js                  Kontaktlisten-Fenster
 src/ChatApp.js              einzelnes Chat-Fenster (eigenes BrowserWindow)
 src/components/Icon.js      Linien-Icons (KEINE Emojis in Bedienelementen)
 src/chatOrder.js            Reihenfolge: Gruppen → Archiviert → Rest, je neueste zuerst
-site/index.html             Landing Page (statisch, kein Build)
+site/index.html             Landing Page (statisch); site/de.html daraus generiert:
+                            npm run site:build (Lint prüft, dass sie aktuell ist)
 ```
 
 ## Harte Regeln (teuer erkauft — nicht rückgängig machen)

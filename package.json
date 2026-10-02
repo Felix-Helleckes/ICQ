@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -21,7 +21,7 @@
     "test:unit": "react-scripts test --watchAll=false",
     "test:electron": "jest --config jest.electron.config.js",
     "test:e2e": "playwright test",
-    "lint": "eslint src electron scripts e2e --ext .js --max-warnings 20",
+    "lint": "eslint src electron scripts e2e --ext .js --max-warnings 20 && node scripts/build-site-de.js --check",
     "check:electron": "node scripts/check-electron.js",
     "electron": "electron .",
     "dist": "npm run dist:portable",
@@ -29,15 +29,12 @@
     "dist:portable": "npm run build && electron-builder --win portable --publish never",
     "dist:nsis": "npm run build && electron-builder --win nsis --publish never",
     "dist:store": "npm run build && electron-builder --win appx --publish never",
-    "make-icon": "node scripts/make-icon.js"
+    "make-icon": "node scripts/make-icon.js",
+    "site:build": "node scripts/build-site-de.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "electron-is-dev": "^2.0.0",
-    "qrcode": "^1.5.3",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1",
     "telegram": "^2.22.2"
   },
   "devDependencies": {
@@ -47,6 +44,10 @@
     "electron-builder": "^24.9.1",
     "jimp": "^1.6.1",
     "png2icons": "^2.0.1",
+    "qrcode": "^1.5.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-scripts": "5.0.1",
     "wait-on": "^7.2.0"
   },
   "browserslist": {

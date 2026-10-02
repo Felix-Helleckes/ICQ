@@ -44,6 +44,9 @@ function main() {
     total += hits;
   }
 
+  // de.html is generated from index.html — rebuild it with the new URLs.
+  require('./build-site-de').writePages();
+
   // The constant above is the record of what is deployed; leaving it stale
   // would make the next run a no-op against the wrong origin.
   const self = __filename;
