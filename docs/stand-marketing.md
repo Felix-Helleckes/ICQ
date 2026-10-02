@@ -3,8 +3,12 @@
 Übergabe-Dokument. Es soll genügen, um in einem neuen Chat weiterzumachen, ohne
 die vorherige Unterhaltung zu kennen.
 
-**Stand:** 01.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.37 (veröffentlicht)
-**Hosting:** im Umzug von Netlify zu Cloudflare Pages → `https://icq-retrogram.pages.dev`
+**Stand:** 02.10.2026 · **Branch:** in `main` gemerged · **Version:** 1.0.37 (veröffentlicht)
+**Hosting:** umgezogen. `https://icq-retrogram.pages.dev` liefert aus (Cloudflare
+Pages, Secrets hinterlegt, Deploy-Workflow grün). GA4 läuft, Search Console
+verifiziert, Sitemap eingereicht. Repo-Website-Feld zeigt auf die neue URL.
+Offen: Netlify-Redirect liegt in `netlify.toml`, deployt aber nicht — siehe
+Punkt 4.
 
 ---
 
@@ -18,7 +22,8 @@ scripts/set-site-url.js      Basis-URL an 15 Stellen umschalten
 wrangler.toml                Cloudflare Pages: Ausgabeverzeichnis site/
 .github/workflows/deploy-pages.yml  Deploy nach Cloudflare, braucht 2 Secrets
 site/_headers                Sicherheits- und Cache-Header (ersetzt netlify.toml)
-netlify.toml                 Übergang: 301-Weiterleitung, noch auskommentiert
+netlify.toml                 Übergang: 301-Weiterleitung aktiv, deployt aber
+                              nicht (Netlify-Credits aufgebraucht, siehe Punkt 4)
 marketing/reddit-kit.md      fertige Posts + vorbereitete Kommentar-Antworten
 docs/premium-konzept.md      Bewertung: warum keine Bezahlversion
 docs/stand-marketing.md      diese Datei
@@ -29,48 +34,43 @@ docs/stand-marketing.md      diese Datei
 
 ## Offen — hier weitermachen
 
-Nach Priorität. Die ersten drei blockieren den Reddit-Start.
-
-### 1. GA4 scharfschalten
-`site/index.html`, Konstante `GA_MEASUREMENT_ID` (derzeit `''`). GA4-Property auf
-`https://icq-retrogram.pages.dev` anlegen, Mess-ID im Format `G-XXXXXXXXXX`
-eintragen. **Solange die Konstante leer ist, lädt bewusst nichts** — auch nicht
-bei Zustimmung. Das ist kein Versehen.
+### 1. ~~GA4 scharfschalten~~ — erledigt
+Property „ICQ Retrogram" + Datenstream für `https://icq-retrogram.pages.dev`
+angelegt, Mess-ID `G-WFQNRSXPWR` in `GA_MEASUREMENT_ID` eingetragen, deployt.
 
 ### 2. ~~Platzhalter~~ — erledigt
 `site/privacy.html` ist vollständig: Verantwortlicher mit Anschrift, Kontakt und
 Datum. Im README steht der Zertifikatsbetrag. Es sind keine Platzhalter mehr im
-Repo. Damit hängt das Scharfschalten von GA nur noch an Punkt 1.
+Repo.
 
-### 3. Zwei Cloudflare-Secrets hinterlegen
-Settings → Secrets and variables → Actions → New repository secret:
+### 3. ~~Zwei Cloudflare-Secrets hinterlegen~~ — erledigt
+`CLOUDFLARE_API_TOKEN` (Account/Cloudflare Pages/Edit) und
+`CLOUDFLARE_ACCOUNT_ID` liegen als Repo-Secrets. Workflow hat das
+Pages-Projekt `icq-retrogram` selbst angelegt und deployt grün bei jeder
+Änderung unter `site/`.
 
-- `CLOUDFLARE_API_TOKEN` — Token mit der Berechtigung *Cloudflare Pages: Edit*
-  (Cloudflare → My Profile → API Tokens → Create Token)
-- `CLOUDFLARE_ACCOUNT_ID` — steht in der Cloudflare-Seitenleiste bzw. in der
-  Dashboard-URL hinter `dash.cloudflare.com/`
-
-Mehr nicht. `.github/workflows/deploy-pages.yml` legt das Pages-Projekt beim
-ersten Lauf selbst an und deployt bei jeder Änderung unter `site/`. Ohne die
-Secrets überspringt der Workflow den Deploy mit einem Hinweis, statt rot zu
-werden. Ein Besuch im Cloudflare-Dashboard ist für das Anlegen nicht nötig.
-
-### 4. Umzug abschließen
+### 4. Umzug — bis auf einen Punkt erledigt
 Im Repo ist alles umgestellt: alle 15 Basis-URLs zeigen auf
 `https://icq-retrogram.pages.dev`, dazu `wrangler.toml`, `site/_headers` und der
 Deploy-Workflow. (`icq.pages.dev` war bereits vergeben, daher dieser Name.)
-Nach Punkt 3, **in dieser Reihenfolge**:
 
-1. Prüfen, dass `https://icq-retrogram.pages.dev` wirklich ausliefert.
-2. **Erst dann** den Weiterleitungsblock am Ende von `netlify.toml`
-   entkommentieren und pushen. Vorher wäre die Seite tot — Netlify leitete auf
-   einen Host weiter, den es noch nicht gibt.
-3. Website-Feld in den GitHub-Repo-Settings von Hand auf die neue URL setzen.
-   Über die API geht es nicht, der Proxy sperrt Repo-Settings-Schreibzugriffe.
-4. Netlify-Projekt löschen — aber **nicht sofort**. Die 301-Weiterleitung sagt
-   Google und jedem, der den alten Link kennt, wohin die Seite gezogen ist. Ein
-   gelöschtes Projekt antwortet mit 404, und jeder gesetzte Link läuft ins
-   Leere. Ein paar Monate laufen lassen.
+1. ✅ `https://icq-retrogram.pages.dev` liefert aus, geprüft.
+2. ✅ Weiterleitungsblock in `netlify.toml` entkommentiert und gepusht
+   (Commit `431b489`).
+3. ✅ Website-Feld in den GitHub-Repo-Settings auf die neue URL gesetzt.
+4. ⚠️ **Netlify deployt den Redirect nicht.** Das Netlify-Team läuft auf
+   „operational credits" — production deploys sind pausiert, bis das
+   Billing-Cycle sich erneuert oder Credits/Upgrade nachgelegt werden
+   (`app.netlify.com/projects/icq-remake/deploys` zeigt den Push als
+   „Skipped due to account credit usage exceeded"). `netlify.toml` ist also
+   bereit, aber `icq-remake.netlify.app` leitet aktuell noch **nicht** auf
+   Cloudflare um. Das ist eine Geld-/Account-Entscheidung — hier prüfen, ob
+   das Billing-Cycle-Reset reicht oder ob Credits nachgekauft werden sollen,
+   dann ist nichts weiter zu tun, der Deploy zieht automatisch nach.
+5. Netlify-Projekt danach löschen — aber **nicht sofort**. Die
+   301-Weiterleitung sagt Google und jedem, der den alten Link kennt, wohin
+   die Seite gezogen ist. Ein gelöschtes Projekt antwortet mit 404, und jeder
+   gesetzte Link läuft ins Leere. Ein paar Monate laufen lassen.
 
 Bei späterer eigener Domain:
 
@@ -84,10 +84,19 @@ nachzuziehen: Search-Console-Property, GA4-Datenstream, Website-Feld am Repo,
 Retrogram-Einträge in den Repos `Felix-Helleckes` (readme.md) und
 `felix-helleckes.github.io` (gitprofile.config.ts und index.html, dort zweimal).
 
-### 5. Search Console
-Zwei Wege, beide im `<head>` von `site/index.html` dokumentiert. Der bequeme:
-sobald GA4 läuft, in der Search Console „Google Analytics" als
-Verifizierungsmethode wählen — keine Dateiänderung nötig.
+### 5. ~~Search Console~~ — erledigt, aber anders als geplant
+Property für `https://icq-retrogram.pages.dev` angelegt (URL-Präfix, nicht
+Domain — Cloudflare erlaubt uns keine DNS-TXT-Bestätigung auf `pages.dev`),
+Sitemap `sitemap.xml` eingereicht.
+
+Die „Google Analytics"-Verifizierungsmethode ist **nicht** der bequeme Weg,
+den dieser Absatz früher versprach — sie scheitert mit „Auf der Indexseite
+wurden keine Tracking-Codes gefunden". Grund: Consent Mode lädt `gtag.js`
+erst nach aktivem Klick nach, also steht beim Crawl kein statisches
+`<script src=.../gtag/js>` im `<head>`. Das ist dieselbe Absicht wie bei
+`GA_MEASUREMENT_ID` — nicht reparieren. Stattdessen HTML-Tag-Methode
+verwendet: Token in `site/index.html` als
+`<meta name="google-site-verification">` eingetragen, verifiziert.
 
 ### 6. GitHub Sponsors freischalten, dann `github:` eintragen
 github.com/sponsors → Antrag, Stripe-Connect-Konto, Steuerformular. Danach in
