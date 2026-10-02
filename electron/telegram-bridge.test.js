@@ -20,10 +20,20 @@ jest.mock('electron', () => ({
   },
 }));
 
-function fakeClient({ authorized = false, invoke, sendFile } = {}) {
-  const calls = { invoke: [], sendFile: [], signInWithPassword: 0, destroy: 0, handlers: 0 };
+function fakeClient({ authorized = false, invoke, sendFile, history = {}, participants = [], dialogs = [], downloadDelay = 0 } = {}) {
+  const calls = { invoke: [], sendFile: [], signInWithPassword: 0, destroy: 0, handlers: 0, downloads: [], profilePhotos: 0 };
   const client = {
     calls,
+    handler: null,
+    // gramjs answers newest first.
+    async getMessages(peer) { return [...(history[String(peer)] || [])].sort((a, b) => b.date - a.date); },
+    async downloadMedia(m) {
+      calls.downloads.push(m.id);
+      if (downloadDelay) await new Promise(r => setTimeout(r, downloadDelay));
+      return Buffer.from(`media-${m.id}`);
+    },
+    async getParticipants() { return participants; },
+    async getDialogs() { return dialogs; },
     session: { save: () => 'SESSION-STRING' },
     async connect() {},
     async isUserAuthorized() { return authorized; },
@@ -36,8 +46,8 @@ function fakeClient({ authorized = false, invoke, sendFile } = {}) {
       return {};
     },
     async getMe() { return { firstName: 'Test', lastName: 'User' }; },
-    async downloadProfilePhoto() { return null; },
-    addEventHandler() { calls.handlers += 1; },
+    async downloadProfilePhoto() { calls.profilePhotos += 1; return null; },
+    addEventHandler(fn) { calls.handlers += 1; client.handler = fn; },
     async sendFile(peer, opts) { calls.sendFile.push({ peer, opts }); if (sendFile) return sendFile(opts); return { id: 42, date: 1700000000 }; },
     async destroy() { calls.destroy += 1; },
   };
@@ -167,4 +177,119 @@ test('logout ends the session on the server and retires the old client', async (
   expect(old.calls.destroy).toBe(1);                  // no zombie client pushing messages
   expect(fs.existsSync(path.join(dataDir, 'telegram.session'))).toBe(false);
   expect(clients).toHaveLength(2);                    // a fresh client for the next login
+});
+
+// ── Opening chats, group members, live updates ────────────────────────────
+
+const bigInt = require('big-integer');
+
+/** A gramjs-like message. */
+function tgMsg(id, date, { text = '', out = false, photo = false, voice = false, sender, peer } = {}) {
+  return {
+    id, date, message: text, out,
+    photo: photo ? { id: 1 } : undefined,
+    document: voice ? { mimeType: 'audio/ogg', attributes: [{ className: 'DocumentAttributeAudio', voice: true }] } : undefined,
+    senderId: sender ? bigInt(sender.id) : undefined,
+    sender,
+    isPrivate: false,
+    peerId: peer,
+    async getSender() { return sender; },
+  };
+}
+
+const alice = { id: 11, firstName: 'Alice', lastName: 'Example' };
+const GROUP_ID = '-1001234';
+
+async function readyWith(opts) {
+  const bridge = loadBridge({ authorized: true, ...opts });
+  await bridge.init(null, null, dataDir);
+  return bridge;
+}
+
+test('opening a chat returns at once, oldest first — media follows in the background', async () => {
+  const bridge = await readyWith({
+    downloadDelay: 30,
+    history: {
+      [GROUP_ID]: [
+        tgMsg(1, 100, { text: 'first', sender: alice }),
+        tgMsg(2, 200, { photo: true, sender: alice }),
+        tgMsg(3, 300, { voice: true, sender: alice }),
+      ],
+    },
+  });
+  const msgs = await bridge.getMessages(GROUP_ID, { limit: 50 });
+  expect(msgs.map(m => m.id)).toEqual(['1', '2', '3']);          // not newest first
+  expect(msgs.map(m => m.type)).toEqual(['text', 'image', 'ptt']);
+  expect(msgs[0].senderName).toBe('Alice Example');
+  expect(msgs[1].mediaData).toBeFalsy();                         // not waited for
+
+  await new Promise(r => setTimeout(r, 120));
+  const media = broadcastsOn('tg:media');
+  expect(media.map(x => x.msgId).sort()).toEqual(['2', '3']);
+  expect(media.every(x => x.chatId === GROUP_ID)).toBe(true);
+
+  // Reopened: straight from the cache, no second download.
+  const again = await bridge.getMessages(GROUP_ID, { limit: 50 });
+  expect(again[1].mediaData).toMatch(/^data:image\/jpeg;base64,/);
+  expect(clients[0].calls.downloads.sort()).toEqual([2, 3]);
+});
+
+test('media of the same message id in two chats is kept apart', async () => {
+  const bridge = await readyWith({
+    history: { 100: [tgMsg(5, 10, { photo: true })], 200: [tgMsg(5, 10, { photo: true })] },
+  });
+  await bridge.getMessages('100');
+  await bridge.getMessages('200');
+  await new Promise(r => setTimeout(r, 20));
+  expect(broadcastsOn('tg:media').map(x => x.chatId).sort()).toEqual(['100', '200']);
+  expect(clients[0].calls.downloads).toEqual([5, 5]);
+});
+
+test('group members come with ids, names and roles (gramjs returns users)', async () => {
+  const { Api: A } = require('telegram');
+  const bridge = await readyWith({
+    participants: [
+      { id: bigInt(11), firstName: 'Alice', lastName: 'Example', participant: new A.ChannelParticipantCreator({ userId: bigInt(11), adminRights: new A.ChatAdminRights({}) }), status: new A.UserStatusOnline({ expires: 0 }) },
+      { id: bigInt(12), username: 'bob_b', participant: new A.ChannelParticipant({ userId: bigInt(12), date: 0 }) },
+      { id: bigInt(13), phone: '491700000003' },
+    ],
+  });
+  const members = await bridge.getParticipants(GROUP_ID);
+  expect(members).toEqual([
+    { id: '11', name: 'Alice Example', isAdmin: true, online: true },
+    { id: '12', name: 'bob_b', isAdmin: false, online: false },
+    { id: '13', name: '+491700000003', isAdmin: false, online: false },
+  ]);
+});
+
+test('live: a group message arrives with its sender; own messages from the phone come through too', async () => {
+  const { Api: A } = require('telegram');
+  await readyWith();
+  const handler = clients[0].handler;
+  const peer = new A.PeerChannel({ channelId: bigInt(1234) });
+  const noCachedSender = { ...tgMsg(7, 500, { text: 'hi all', sender: alice, peer }), sender: undefined };
+  await handler({ message: noCachedSender });
+  await handler({ message: tgMsg(8, 501, { text: 'sent from my phone', out: true, peer }) });
+
+  const live = broadcastsOn('tg:message');
+  expect(live[0]).toMatchObject({ chatId: '-1001234', id: '7', body: 'hi all' });
+  expect(live.find(m => m.id === '7' && m.senderName === 'Alice Example')).toBeTruthy(); // looked up after
+  expect(live.find(m => m.id === '8')).toMatchObject({ fromMe: true });
+  // The chat update only says what it knows — no fake archived:false any more.
+  const upd = broadcastsOn('tg:chat-update')[0];
+  expect(upd).toEqual({ id: '-1001234', lastMessage: 'hi all', timestamp: 500 });
+});
+
+test('the chat list loads each avatar once per session, not on every reload', async () => {
+  const dialogs = [{ id: bigInt(1), name: 'A', entity: {} }, { id: bigInt(2), name: 'B', entity: {} }];
+  const bridge = await readyWith({ dialogs });
+  await bridge.getDialogs();
+  await bridge.getDialogs();
+  await new Promise(r => setTimeout(r, 20));
+  expect(clients[0].calls.profilePhotos - 1).toBe(2); // minus getMe's own picture
+});
+
+test('one message handler per client — logging in again does not double every message', async () => {
+  await readyWith();
+  expect(clients[0].calls.handlers).toBe(1);
 });

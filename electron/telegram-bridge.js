@@ -49,6 +49,8 @@ let phoneHash = null;
 let pending2FAResolve = null;
 let pending2FAReject  = null;
 let onAvatarCb = null;
+let listenerClient = null;      // the client that already has our NewMessage handler
+const avatarsFetched = new Set(); // dialog ids whose picture was loaded this session
 
 function broadcast(channel, data) {
   BrowserWindow.getAllWindows().forEach(w => {
@@ -79,7 +81,14 @@ async function init(win, avatarCallback, dataDir) {
 
 // Test seam (like __setBaileysForTests in the WhatsApp bridge): the suite swaps in
 // a fake client so login, sending and logout run without network or account.
-let makeClient = (session) => new TelegramClient(session, API_ID, API_HASH, { connectionRetries: 5 });
+// connectionRetries: gramjs' own default (unlimited). It used to be 5 — after a
+// short outage (sleep, Wi-Fi switch) the client gave up and Telegram stayed silent
+// until the app was restarted; an app started offline never connected at all.
+let makeClient = (session) => new TelegramClient(session, API_ID, API_HASH, {
+  connectionRetries: Infinity,
+  retryDelay: 2000,
+  autoReconnect: true,
+});
 function __setTelegramForTests({ clientFactory }) { makeClient = clientFactory; }
 
 async function connect() {
@@ -221,6 +230,8 @@ function submit2FA(password) {
 }
 
 function listenForMessages() {
+  if (!tgClient || listenerClient === tgClient) return; // one handler per client
+  listenerClient = tgClient;
   tgClient.addEventHandler(async (event) => {
     const msg = event.message;
     // getPeerId gibt dieselbe kanonische ID wie d.id in getDialogs() zurück
@@ -228,40 +239,29 @@ function listenForMessages() {
     let chatId;
     try { chatId = tgUtils.getPeerId(msg.peerId)?.toString(); } catch (e) {}
     if (!chatId) chatId = msg.chatId?.toString();
-    let mediaData = null;
-    let type = 'text';
-    try {
-      const attrs = msg.document?.attributes || [];
-      const isSticker = attrs.some(a => a.className === 'DocumentAttributeSticker');
-      if (isSticker) {
-        const mime = msg.document?.mimeType || 'image/webp';
-        const buf = await tgClient.downloadMedia(msg, { outputFile: Buffer.alloc(0) });
-        if (buf && buf.length) {
-          mediaData = `data:${mime};base64,` + buf.toString('base64');
-          type = 'sticker';
-        }
-      }
-    } catch (e) { /* ignore media download errors */ }
+    if (!chatId) return;
 
-    broadcast('tg:message', {
-      chatId,
-      body: msg.message,
-      fromMe: msg.out,
-      timestamp: msg.date,
-      id: msg.id?.toString(),
-      type,
-      mediaData,
+    // Same shape as getMessages, out at once; media follows as tg:media.
+    const entry = toEntry(msg, chatId);
+    broadcast('tg:message', { chatId, ...entry });
+
+    // The sender of a group message is often not in the update itself — look it
+    // up and send the name after (the window merges by id).
+    if (!entry.senderName && !msg.out && !msg.isPrivate) {
+      try {
+        const sender = await msg.getSender();
+        const name = nameOfEntity(sender);
+        if (name) broadcast('tg:message', { chatId, ...entry, senderName: name });
+      } catch (e) { /* the name stays unknown — no reason to drop the message */ }
+    }
+
+    // Only what this event really says. It used to claim archived:false and
+    // isGroup:false for every chat, which pulled archived chats out of the archive.
+    broadcast('tg:chat-update', {
+      id: chatId,
+      lastMessage: msg.message || '',
+      timestamp: msg.date || Math.floor(Date.now() / 1000),
     });
-    try {
-      broadcast('tg:chat-update', {
-        id: chatId,
-        lastMessage: msg.message || '',
-        timestamp: msg.date || Math.floor(Date.now()/1000),
-        unreadCount: undefined,
-        isGroup: false,
-        archived: false,
-      });
-    } catch (e) {}
   }, new NewMessage({}));
 }
 
@@ -269,7 +269,7 @@ function getStatus() { return status; }
 
 async function getDialogs() {
   if (status !== 'ready') return [];
-  const dialogs = await tgClient.getDialogs({ limit: 50 });
+  const dialogs = await tgClient.getDialogs({ limit: 100 });
   // Sofort ohne Avatare zurückgeben
   const result = dialogs.map(d => ({
     id: d.id?.toString(),
@@ -279,11 +279,16 @@ async function getDialogs() {
     unreadCount: d.unreadCount,
     isGroup: d.isGroup || d.isChannel,
     archived: Boolean(d.archived || d.isArchived || d.isHidden || false),
+    pinned: !!d.pinned,
     avatar: null,
   }));
-  // Avatare im Hintergrund nachladen
+  // Avatare im Hintergrund nachladen — einmal pro Sitzung. Die Liste wird bei jeder
+  // Nachricht aus einem unbekannten Chat neu geholt; früher lud jedes Mal jedes Bild neu.
   (async () => {
     for (const d of dialogs) {
+      const id = d.id?.toString();
+      if (!id || avatarsFetched.has(id)) continue;
+      avatarsFetched.add(id);
       try {
         const buf = await tgClient.downloadProfilePhoto(d.entity, { isBig: false });
         if (buf && buf.length > 0) {
@@ -310,13 +315,94 @@ async function getContactAvatar(id) {
   return null;
 }
 
+/** A user's or chat's display name. */
+function nameOfEntity(u) {
+  if (!u) return undefined;
+  return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.title || u.username || undefined;
+}
+
 /** The sender as a name (gramjs attaches the user entity it received). */
 function senderNameOf(m) {
-  try {
-    const u = m.sender;
-    if (!u || m.out) return undefined;
-    return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.title || u.username || undefined;
-  } catch (e) { return undefined; }
+  try { return m.out ? undefined : nameOfEntity(m.sender); } catch (e) { return undefined; }
+}
+
+/**
+ * What a message carries. `mime` set = media downloaded inline (small: photo
+ * thumbnails, stickers, voice/audio); videos are only marked — too large, and
+ * they cause flood waits.
+ */
+function describeMedia(m) {
+  if (m.photo) return { type: 'image', mime: 'image/jpeg', options: { thumb: -1 } };
+  if (!m.document) return { type: 'text' };
+  const mime = m.document.mimeType || '';
+  const attrs = m.document.attributes || [];
+  const isAnimated = attrs.some(a => a.className === 'DocumentAttributeAnimated');
+  const isGif = isAnimated || mime === 'image/gif';
+  if (attrs.some(a => a.className === 'DocumentAttributeSticker')) return { type: 'sticker', mime: mime || 'image/webp', isGif };
+  const audio = attrs.find(a => a.className === 'DocumentAttributeAudio');
+  if (audio || mime.startsWith('audio/')) return { type: audio?.voice ? 'ptt' : 'audio', mime: mime || 'audio/ogg', isGif };
+  if (mime.startsWith('video/') || isGif) return { type: 'video', isGif };
+  return { type: 'text' };
+}
+
+// Telegram message ids are only unique within a chat — always key by both.
+const mediaKey = (chatId, id) => `${chatId}:${id}`;
+
+// Background downloads, two at a time. Opening a chat used to wait for every
+// photo, sticker and voice note of the last 50 messages, ONE AFTER ANOTHER, before
+// showing anything — a busy group sat empty for many seconds.
+const downloadQueue = [];
+const queuedDownloads = new Set();
+let activeDownloads = 0;
+
+function queueMedia(chatId, m, media) {
+  const key = mediaKey(chatId, m.id);
+  if (!media.mime || queuedDownloads.has(key) || mediaCache.get(key) || mediaCache.recentlyFailed(key)) return;
+  queuedDownloads.add(key);
+  downloadQueue.push(async () => {
+    try {
+      const client = tgClient;
+      if (!client || status !== 'ready') return;
+      const buf = await client.downloadMedia(m, { outputFile: Buffer.alloc(0), ...(media.options || {}) });
+      if (!buf || !buf.length) { mediaCache.markFailed(key); return; }
+      const mediaData = `data:${media.mime};base64,${Buffer.from(buf).toString('base64')}`;
+      mediaCache.set(key, mediaData);
+      broadcast('tg:media', { chatId: String(chatId), msgId: String(m.id), mediaData });
+    } catch (e) {
+      mediaCache.markFailed(key);
+    } finally {
+      queuedDownloads.delete(key);
+    }
+  });
+  pumpDownloads();
+}
+
+function pumpDownloads() {
+  while (activeDownloads < 2 && downloadQueue.length) {
+    const job = downloadQueue.shift();
+    activeDownloads += 1;
+    job().finally(() => { activeDownloads -= 1; pumpDownloads(); });
+  }
+}
+
+/** A gramjs message → the flat shape the chat window renders. Never waits for media. */
+function toEntry(m, chatId) {
+  const media = describeMedia(m);
+  const entry = {
+    id: m.id?.toString(),
+    body: m.message || '',
+    fromMe: !!m.out,
+    timestamp: m.date,
+    // senderId also covers posts made "as the channel" (fromId is then a channel).
+    author: m.senderId?.toString?.() || m.fromId?.userId?.toString() || '',
+    // Shown above group messages; the bare user id meant nothing to anyone.
+    senderName: senderNameOf(m),
+    type: media.type,
+    isGif: !!media.isGif,
+    mediaData: mediaCache.get(mediaKey(chatId, m.id)),
+  };
+  if (!entry.mediaData) queueMedia(chatId, m, media);
+  return entry;
 }
 
 async function getMessages(chatId, opts = {}) {
@@ -324,66 +410,8 @@ async function getMessages(chatId, opts = {}) {
   const limit = Number.isFinite(opts.limit) ? Math.max(1, Math.min(100, opts.limit)) : 50;
   const minId = opts.minId ? Number(opts.minId) : 0;
   const messages = await tgClient.getMessages(toPeer(chatId), { limit, minId });
-
-  const results = [];
-  for (const m of messages) {
-    let mediaData = null;
-    let mediaType = null;
-    let isGif = false;
-    const cacheKey = `${chatId}:${m.id}`;
-    // Download once; later refreshes reuse it, failures are not retried every time.
-    const download = async (mime, options = {}) => {
-      const hit = mediaCache.get(cacheKey);
-      if (hit) return hit;
-      if (mediaCache.recentlyFailed(cacheKey)) return null;
-      try {
-        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0), ...options });
-        if (!buf || !buf.length) { mediaCache.markFailed(cacheKey); return null; }
-        const url = `data:${mime};base64,` + buf.toString('base64');
-        mediaCache.set(cacheKey, url);
-        return url;
-      } catch (e) { mediaCache.markFailed(cacheKey); throw e; }
-    };
-    try {
-      if (m.photo) {
-        // Only download small photos to avoid flood wait
-        mediaData = await download('image/jpeg', { thumb: -1 });
-        mediaType = 'image';
-      } else if (m.document) {
-        const mime = m.document.mimeType || '';
-        const attrs = m.document.attributes || [];
-        const isSticker = attrs.some(a => a.className === 'DocumentAttributeSticker');
-        const isAnimated  = attrs.some(a => a.className === 'DocumentAttributeAnimated');
-        isGif = isAnimated || mime === 'image/gif';
-        const isVoice = attrs.some(a => a.className === 'DocumentAttributeAudio' && a.voice);
-        const isAudio = attrs.some(a => a.className === 'DocumentAttributeAudio');
-        if (isSticker) {
-          mediaType = 'sticker';
-          mediaData = await download(mime || 'image/webp');
-        } else if (isVoice || isAudio || mime.startsWith('audio/')) {
-          // Only download audio/voice — skip large video on initial load
-          mediaType = isVoice ? 'ptt' : 'audio';
-          mediaData = await download(mime || 'audio/ogg');
-        } else if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
-          // Mark as video but don't download inline — too large, causes flood wait
-          mediaType = 'video';
-        }
-      }
-    } catch (e) { /* skip media errors */ }
-    results.push({
-      id: m.id?.toString(),
-      body: m.message || '',
-      fromMe: m.out,
-      timestamp: m.date,
-      author: m.fromId?.userId?.toString() || '',
-      // Shown above group messages; the bare user id meant nothing to anyone.
-      senderName: senderNameOf(m),
-      type: mediaType || 'text',
-      isGif,
-      mediaData,
-    });
-  }
-  return results;
+  // gramjs answers newest first; the window (like WhatsApp's) expects oldest first.
+  return [...messages].map(m => toEntry(m, chatId)).sort((a, b) => (a.timestamp - b.timestamp) || (Number(a.id) - Number(b.id)));
 }
 
 async function sendMessage(chatId, text, quotedMessageId = null) {
@@ -610,6 +638,16 @@ async function getRecentStickers(limit = 24) {
   return out;
 }
 
+function mapParticipant(u) {
+  const role = String(u?.participant?.className || '');
+  return {
+    id: u?.id?.toString?.() || '',
+    name: nameOfEntity(u) || (u?.phone ? `+${u.phone}` : ''),
+    isAdmin: /Admin|Creator/.test(role),
+    online: String(u?.status?.className || '').includes('UserStatusOnline'),
+  };
+}
+
 async function getParticipants(chatId) {
   if (status !== 'ready') return [];
   const { Api } = require('telegram');
@@ -617,12 +655,10 @@ async function getParticipants(chatId) {
     // Try high-level helper if available
     if (typeof tgClient.getParticipants === 'function') {
       const list = await tgClient.getParticipants(toPeer(chatId), { limit: 200 });
-      return (list || []).map(p => ({
-        id: p.userId?.toString?.() || String(p.user?.id || ''),
-        name: `${p.user?.firstName || ''} ${p.user?.lastName || ''}`.trim(),
-        isAdmin: !!p.rank,
-        online: !!(p.user?.status && String((p.user.status && p.user.status.className) || '').includes('UserStatusOnline')),
-      }));
+      // gramjs returns the USERS, each with its membership as `.participant`. This
+      // read p.userId / p.user, which do not exist — every member came back with an
+      // empty id and name, so the member list and its avatars were blank.
+      return (list || []).map(u => mapParticipant(u)).filter(p => p.id);
     }
     // Fallback: try messages.GetFullChat for small groups
     try {
@@ -678,6 +714,8 @@ async function logout() {
   try { if (tgClient) await tgClient.invoke(new Api.auth.LogOut()); } catch (e) { /* offline: local logout still happens */ }
   try { fs.unlinkSync(SESSION_FILE); } catch (e) {}
   mediaCache.clear();
+  avatarsFetched.clear();
+  downloadQueue.length = 0;
   status = 'needs-auth';
   await retireClient();
   // Reinitialize an unauthenticated client so the next login attempt works immediately

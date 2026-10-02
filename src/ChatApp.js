@@ -5,6 +5,26 @@ import './App.css';
 
 const api = window.api;
 
+/**
+ * Member pictures, four requests at a time. Firing all of them at once (up to 200
+ * in a big group) ran into the messengers' rate limits and slowed everything else.
+ */
+async function withMemberAvatars(members, service, concurrency = 4) {
+  const out = members.map(m => ({ ...m, avatar: m.avatar || null }));
+  let next = 0;
+  const worker = async () => {
+    while (next < out.length) {
+      const i = next++;
+      if (out[i].avatar || !out[i].id) continue;
+      try {
+        out[i].avatar = (service === 'whatsapp' ? await api.wa.getAvatar(out[i].id) : await api.tg.getAvatar(out[i].id)) || null;
+      } catch (e) { out[i].avatar = null; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, out.length) }, worker));
+  return out;
+}
+
 export default function ChatApp({ chatId, chatName, service, isGroup }) {
   const [messages, setMessages] = useState([]);
   const [chatAvatar, setChatAvatar] = useState(null);
@@ -97,7 +117,9 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
         const msgs = service === 'whatsapp'
           ? await api.wa.getMessages(chatId, { refresh: true })
           : await api.tg.getMessages(chatId, { limit: 50 });
-        setMessages(msgs || []);
+        // Through mergeById: it sorts oldest first and keeps anything that arrived
+        // live while the load was running (Telegram answers newest first).
+        setMessages(prev => mergeById(prev, msgs || []));
         markChatReadNow();
       } catch (e) { console.error('[ChatApp load]', e); }
     }
@@ -119,12 +141,10 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
             (async () => {
               try {
                 const list = service === 'whatsapp' ? await api.wa.getParticipants(chatId) : await api.tg.getParticipants(chatId);
-                const arr = Array.isArray(list) ? list : [];
-                const withAvatars = await Promise.all(arr.map(async (m) => {
-                  let avatar = null;
-                  try { avatar = service === 'whatsapp' ? await api.wa.getAvatar(m.id) : await api.tg.getAvatar(m.id); } catch (e) { avatar = null; }
-                  return { ...m, avatar };
-                }));
+                // Keep the pictures we already have; only new members are fetched.
+                const known = new Map(stored.map(m => [String(m.id), m.avatar]));
+                const arr = (Array.isArray(list) ? list : []).map(m => ({ ...m, avatar: known.get(String(m.id)) || null }));
+                const withAvatars = await withMemberAvatars(arr, service);
                 setMembers(withAvatars);
                 try { await api.setStoredParticipants?.(chatId, withAvatars); } catch (e) {}
               } catch (e) {}
@@ -134,15 +154,9 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
 
           const list = service === 'whatsapp' ? await api.wa.getParticipants(chatId) : await api.tg.getParticipants(chatId);
           const arr = Array.isArray(list) ? list : [];
-          // Fetch avatars for participants (cache-aware)
-          const withAvatars = await Promise.all(arr.map(async (m) => {
-            let avatar = null;
-            try {
-              if (service === 'whatsapp') avatar = await api.wa.getAvatar(m.id);
-              else avatar = await api.tg.getAvatar(m.id);
-            } catch (e) { avatar = null; }
-            return { ...m, avatar };
-          }));
+          // Names first, pictures as they come in.
+          setMembers(arr);
+          const withAvatars = await withMemberAvatars(arr, service);
           setMembers(withAvatars);
           try { await api.setStoredParticipants?.(chatId, withAvatars); } catch (e) {}
         } catch (e) { setMembers([]); }
@@ -164,7 +178,9 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
       } catch (e) { /* keep UI responsive on transient bridge errors */ }
     };
     const warmup = setTimeout(reconcile, 2200);
-    const interval = setInterval(reconcile, 8000);
+    // WhatsApp answers from the local store; Telegram asks the server each time,
+    // and its live events already deliver new messages — poll it far less often.
+    const interval = setInterval(reconcile, service === 'telegram' ? 30000 : 8000);
     return () => {
       stopped = true;
       clearTimeout(warmup);
@@ -221,12 +237,20 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
         })
       : null;
     const removeTg = api.tg.onMessage(msg => {
-      // fromMe-Nachrichten werden optimistisch beim Senden eingefügt → kein Duplikat
-      if (service === 'telegram' && String(msg.chatId) === String(chatId) && !msg.fromMe) {
-        setMessages(prev => mergeById(prev, [msg]));
-        markChatReadNow();
-      }
+      if (service !== 'telegram' || String(msg.chatId) !== String(chatId)) return;
+      // Own messages too: sent from the phone they only showed up after a refresh.
+      // What this window sent itself merges by id, so nothing appears twice.
+      setMessages(prev => mergeById(prev, [msg]));
+      if (!msg.fromMe) markChatReadNow();
     });
+    // Telegram media follows its message (downloaded in the background). Message ids
+    // are only unique per chat, so match the chat too.
+    const removeTgMedia = service === 'telegram' && api.tg.onMedia
+      ? api.tg.onMedia(({ chatId: cid, msgId, mediaData }) => {
+          if (String(cid) !== String(chatId)) return;
+          setMessages(prev => prev.map(m => (String(m.id) === String(msgId) ? { ...m, mediaData } : m)));
+        })
+      : null;
     const removeAck = service === 'whatsapp'
       ? api.wa.onAck(({ id, ack }) => {
           setMessages(prev => prev.map(m => m.id === id ? { ...m, ack } : m));
@@ -242,7 +266,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           }
         })
       : null;
-    return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeAck?.(); removeTyping?.(); };
+    return () => { removeWa?.(); removeWaMedia?.(); removeTg?.(); removeTgMedia?.(); removeAck?.(); removeTyping?.(); };
   }, [chatId, markChatReadNow, mergeById, service]);
 
   // Returns true when the message really went out. WhatsApp sends are never
@@ -263,7 +287,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           timestamp: sent?.timestamp || Math.floor(Date.now() / 1000),
           type: 'text',
         };
-        setMessages(prev => [...prev, localMsg]);
+        setMessages(prev => mergeById(prev, [localMsg]));
       }
       // Sidebar sofort benachrichtigen
       const ts = Math.floor(Date.now() / 1000);
@@ -298,7 +322,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           mediaData: preview,
           isGif: ext === 'gif',
         };
-        setMessages(prev => [...prev, localMsg]);
+        setMessages(prev => mergeById(prev, [localMsg]));
       }
       const ts = Math.floor(Date.now() / 1000);
       const name = filePath.split(/[\\/]/).pop();
@@ -317,7 +341,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
         await api.wa.sendVoice(chatId, base64, mime, waveform);
       } else {
         const sent = await api.tg.sendVoice(chatId, base64, mime, waveform);
-        setMessages(prev => [...prev, {
+        setMessages(prev => mergeById(prev, [{
           id: sent?.id || Date.now().toString(),
           body: '',
           fromMe: true,
@@ -325,7 +349,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           type: 'ptt',
           // The recording plays fine locally as it was recorded.
           mediaData: `data:${mime || 'audio/webm'};base64,${base64}`,
-        }]);
+        }]));
       }
       api.notifySent?.({ chatId, body: '🎤 Sprachnachricht', timestamp: ts, service });
     } catch (e) {
@@ -349,7 +373,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
           type: 'sticker',
           mediaData: null,
         };
-        setMessages(prev => [...prev, localMsg]);
+        setMessages(prev => mergeById(prev, [localMsg]));
       }
       const ts = Math.floor(Date.now() / 1000);
       api.notifySent?.({ chatId, body: 'Sticker', timestamp: ts, service });

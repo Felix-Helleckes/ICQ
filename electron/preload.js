@@ -108,6 +108,12 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.on('tg:chat-update', handler);
       return () => ipcRenderer.removeListener('tg:chat-update', handler);
     },
+    // Media arrives after the message (downloaded in the background).
+    onMedia:      (cb)               => {
+      const handler = (_, d) => cb(d);
+      ipcRenderer.on('tg:media', handler);
+      return () => ipcRenderer.removeListener('tg:media', handler);
+    },
     onQR:         (cb)               => ipcRenderer.on('tg:qr',       (_, d) => cb(d)),
     onReady:      (cb)               => ipcRenderer.on('tg:ready',    (_, d) => cb(d)),
     on2FANeeded:  (cb)               => ipcRenderer.on('tg:2fa-needed',(_, d) => cb(d)),
