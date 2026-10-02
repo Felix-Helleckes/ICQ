@@ -116,11 +116,20 @@ Erledigt: deutsche Seite `/de` (siehe Entscheidungen), „ICQ" in H1 und Titel,
 FAQ-Frage zur ICQ-Abschaltung 2024 („ICQ Alternative"/„ICQ eingestellt"),
 Sitemap mit `/de`, `/privacy` und `lastmod`, `reel.html` auf `noindex`.
 
+Geprüft am 02.10.2026 (Search Console + GA4 im Konto):
+- `/` ist indexiert („URL ist auf Google"), HTTPS ok. Berichte zeigen noch „Daten
+  werden verarbeitet" (Property neu).
+- Sitemap neu eingereicht; Status stand noch auf „Konnte nicht abgerufen werden"
+  (vom Umzugstag). Technisch ok: liefert auch für Googlebot-UA 200 + gültiges XML.
+- GA4 zählt nachweislich: Test mit Zustimmung → Echtzeit 1 Nutzer, `page_view`.
+  **Felix' eigener Chrome zählt nie** — uBlock Origin Lite und ein zweiter
+  Blocker ersetzen gtag.js durch eine Attrappe. Zum Testen einen Browser ohne
+  Blocker nehmen.
+
 Offen, in dieser Reihenfolge:
-1. **Search Console:** nach dem Deploy unter „URL-Prüfung" `/` und `/de` prüfen
-   und „Indexierung beantragen"; Sitemap neu einreichen. Am 02.10. lieferte eine
-   Websuche nach „ICQ Retrogram" noch keinen Treffer — Indexstand im Bericht
-   „Seiten" nachsehen.
+1. **Search Console:** `/de` → „URL-Prüfung" → „Indexierung beantragen". Am
+   02.10. abgelehnt mit „Kontingent überschritten" (Tageslimit) — ab 03.10.
+   erneut. Danach Sitemap-Status und Bericht „Seiten" ansehen.
 2. **Eigene Domain** (z. B. `icq-retrogram.de`). Eine `pages.dev`-Subdomain rankt
    schwach und sammelt keine eigene Autorität. Umstellen mit
    `node scripts/set-site-url.js https://…` (baut `de.html` mit).
