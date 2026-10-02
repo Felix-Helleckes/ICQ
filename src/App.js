@@ -15,6 +15,8 @@ export default function App() {
   const [activeService, setActiveService] = useState('whatsapp');
   const [chats, setChats]       = useState([]);
   const [chatsLoading, setChatsLoading] = useState(false);
+  // WhatsApp catch-up sync after every start (offline backlog + other devices' changes).
+  const [waSyncing, setWaSyncing] = useState(false);
   const [myProfile, setMyProfile] = useState({ name: null, avatar: null });
   const [contactScale, setContactScale] = useState(() => {
     const saved = Number(localStorage.getItem('icq-contact-scale'));
@@ -129,13 +131,15 @@ export default function App() {
     if (!api) return;
     api.wa.onQR(qr  => setWaQR(qr));
     api.wa.onReady(async (data) => {
+      // Drop the old list FIRST: the load effect runs on the status change, and
+      // with the cache still set it showed the stale list — and live updates
+      // patched a cache that was about to be thrown away.
+      waCacheRef.current = null;
       setWaStatus('ready');
       setWaQR(null);
       const profile = await api.wa.getMyProfile().catch(() => null);
       if (profile) { waProfileRef.current = profile; if (activeServiceRef.current === 'whatsapp') setMyProfile(profile); }
       else if (data?.name) { waProfileRef.current = p => ({ ...p, name: data.name }); if (activeServiceRef.current === 'whatsapp') setMyProfile(p => ({ ...p, name: data.name })); }
-      // Force reload WA cache on reconnect
-      waCacheRef.current = null;
     });
     api.tg.onQR(qr  => setTgQR(qr));
     api.tg.onReady(async (data) => {
@@ -197,6 +201,19 @@ export default function App() {
       if (waCacheRef.current) { scheduleReload('whatsapp'); return; }
       setWaReloadTick(t => t + 1);
     });
+    const removeWaSync = api.wa.onSync?.(({ active }) => setWaSyncing(!!active));
+    // Archived / read elsewhere (phone, other computer, context menu): move the
+    // chat between sections and fix its badge without waiting for a reload.
+    const onSvcChatUpdate = (service) => (u) => {
+      if (!u?.id) return;
+      const patch = {};
+      if (typeof u.archived === 'boolean') patch.archived = u.archived;
+      if (typeof u.unreadCount === 'number') patch.unreadCount = u.unreadCount;
+      if (Object.keys(patch).length) patchChat(service, String(u.id), patch);
+    };
+    const removeWaChatUpdate = api.wa.onChatUpdate?.(onSvcChatUpdate('whatsapp'));
+    const removeTgChatUpdate = api.tg.onChatUpdate?.(onSvcChatUpdate('telegram'));
+    api.wa.getSync?.().then(active => setWaSyncing(!!active)).catch(() => {});
     // Avatare nachträglich einspielen (werden im Hintergrund geladen)
     const removeWaAvatar = api.wa.onAvatar(({ id, avatar }) => {
       patchChat('whatsapp', id, { avatar });
@@ -226,23 +243,28 @@ export default function App() {
       if (!msg?.chatId) return;
       patchChat(service, String(msg.chatId), { unreadCount: 0 });
     });
-    return () => { removeWaMsg?.(); removeWaChatsUpdated?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); Object.values(reloadTimers).forEach(t => t && clearTimeout(t)); };
+    return () => { removeWaMsg?.(); removeWaChatsUpdated?.(); removeWaSync?.(); removeWaChatUpdate?.(); removeTgChatUpdate?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); Object.values(reloadTimers).forEach(t => t && clearTimeout(t)); };
   }, []);
 
   // Load chats when service / status changes — use cache if available
   useEffect(() => {
     if (!api) return;
+    // Switching tabs while a load is still waiting must not put the other
+    // service's chats (or profile) on screen.
+    let cancelled = false;
+    const stale = (svc) => cancelled || activeServiceRef.current !== svc;
     async function load() {
       if (activeService === 'whatsapp' && waStatus === 'ready') {
         // Restore cached profile
         if (waProfileRef.current) setMyProfile(waProfileRef.current);
         // Show cache immediately if available
-        if (waCacheRef.current) { setChats(waCacheRef.current); return; }
+        if (waCacheRef.current) { setChats(waCacheRef.current); setChatsLoading(false); return; }
         setChatsLoading(true);
         const [chatsResult, profile] = await Promise.all([
           api.wa.getChats().catch(() => []),
           api.wa.getMyProfile().catch(() => null),
         ]);
+        if (stale('whatsapp')) return;
         if (profile) { waProfileRef.current = profile; setMyProfile(profile); }
         const list = Array.isArray(chatsResult) ? chatsResult : [];
         if (list.length > 0) {
@@ -266,16 +288,19 @@ export default function App() {
         }
       } else if (activeService === 'telegram' && tgStatus === 'ready') {
         if (tgProfileRef.current) setMyProfile(tgProfileRef.current);
-        if (tgCacheRef.current) { setChats(tgCacheRef.current); return; }
+        if (tgCacheRef.current) { setChats(tgCacheRef.current); setChatsLoading(false); return; }
         setChatsLoading(true);
         const [dialogs, me] = await Promise.all([
-          api.tg.getDialogs().catch(() => []),
+          api.tg.getDialogs().catch(() => null),
           api.tg.getMe().catch(() => null),
         ]);
+        if (stale('telegram')) return;
         if (me) { tgProfileRef.current = me; setMyProfile(me); }
-        // Keep the order provided by the service (server-side ordering)
-        tgCacheRef.current = (dialogs || []).slice();
-        setChats(tgCacheRef.current);
+        // A failed fetch is not cached — the next load tries again instead of
+        // showing 'No chats found' until a message happens to arrive.
+        const list = Array.isArray(dialogs) ? dialogs.slice() : [];
+        if (Array.isArray(dialogs)) tgCacheRef.current = list;
+        setChats(list);
         setChatsLoading(false);
       } else {
         setChats([]);
@@ -283,6 +308,7 @@ export default function App() {
       }
     }
     load();
+    return () => { cancelled = true; };
     // NOTE: no background prefetching here on purpose. After the QR scan the
     // contact list must load on its own — group participants + their avatars used
     // to be pulled for the top groups right after, which hammered the single
@@ -336,7 +362,8 @@ export default function App() {
   };
 
   const currentStatus = activeService === 'whatsapp' ? waStatus : tgStatus;
-  const needsLogin = ['disconnected', 'loading', 'qr', 'needs-auth'].includes(currentStatus);
+  // 'error' too: the login panel has the error view with its reconnect button.
+  const needsLogin = ['disconnected', 'loading', 'qr', 'needs-auth', 'error'].includes(currentStatus);
 
   // Login panel is rendered inside the sidebar when not connected
   const loginPanel = needsLogin ? (
@@ -376,6 +403,16 @@ export default function App() {
           tgStatus={tgStatus}
           chats={chats}
           chatsLoading={chatsLoading}
+          waSyncing={waSyncing}
+          onWaReconnect={() => api?.wa.reconnect?.().catch(() => {})}
+          onWaPairNewDevice={() => {
+            // Drops only THIS computer's WhatsApp login; the other computer keeps its own.
+            const ok = window.confirm(
+              'Dieser Computer bekommt eine eigene WhatsApp-Kopplung (neuer QR-Code).\n'
+              + 'Der andere Computer bleibt angemeldet. Fortfahren?'
+            );
+            if (ok) api?.wa.pairNewDevice?.().catch(() => {});
+          }}
           avatarsEnabled={!chatsLoading}
           onSelectChat={openChat}
           loginPanel={loginPanel}

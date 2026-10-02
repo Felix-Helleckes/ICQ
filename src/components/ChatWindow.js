@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import './ChatWindow.css';
 import Icon from './Icon';
+import { waveformFromRecording } from '../voiceWaveform';
 
 function formatTime(ts) {
   const d = new Date(ts * 1000);
@@ -152,7 +153,7 @@ function VoicePlayer({ src }) {
   );
 }
 
-export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
+export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendVoice, onEditMessage, onDeleteMessage, onForwardMessage, isTyping }) {
   const [text, setText] = useState('');
   const [groupWidth, setGroupWidth] = useState(() => {
     const v = parseInt(localStorage.getItem('group-members-width') || '220', 10);
@@ -170,6 +171,10 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const streamRef = useRef(null);
   const [clipboardImage, setClipboardImage] = useState(null); // { dataUrl, ext }
   const [replyToMsgId, setReplyToMsgId] = useState(null);
+  const [replyTo, setReplyTo] = useState(null); // { id, name, body } for the reply bar
+  const startingRecRef = useRef(false);         // a mic click is already starting up
+  const sendingClipboardRef = useRef(false);
+  const forwardingRef = useRef(false);
   const [sendFailed, setSendFailed] = useState(false);
 // messageContext removed: use native context menu via main process
   const [editDialog, setEditDialog] = useState({ open: false, msg: null, text: '' });
@@ -240,17 +245,23 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     window.api?.openChat?.({ chatId: member.id, chatName: member.name || member.id, service: svc, avatar: member.avatar || null, isGroup: false });
   };
 
+  // A raw JID ("4917…@s.whatsapp.net", "…@lid") must never reach the UI.
+  const readableId = (id) => {
+    const s = String(id || '');
+    if (!s.includes('@')) return s;
+    const local = s.split('@')[0].split(':')[0];
+    return s.endsWith('@s.whatsapp.net') ? `+${local}` : local;
+  };
+
   const getSenderName = (msg) => {
     if (!msg) return 'Unbekannt';
     if (msg.fromMe) return 'Du';
-    if (msg.senderName) return msg.senderName;
-    if (msg.author) return msg.author;
-    const fromId = String(msg.from || msg.sender || msg.participant || msg.author || '');
-    if (chat?.members && fromId) {
-      const found = chat.members.find(m => String(m.id) === fromId || String(m.id) === String(msg.participant) || String(m.id) === String(msg.sender));
-      if (found) return found.name || found.pushname || found.id;
-    }
-    return msg.pushName || msg.pushname || fromId || 'Unbekannt';
+    if (msg.senderName) return msg.senderName; // resolved by the bridge
+    // In a group `from` is the group itself — the author is who wrote it.
+    const ids = [msg.author, msg.participant, msg.sender, msg.from].filter(Boolean).map(String);
+    const found = chat?.members?.find(m => ids.includes(String(m.id)));
+    if (found) return found.name || found.pushname || readableId(found.id);
+    return readableId(msg.pushName || msg.pushname || ids[0]) || 'Unbekannt';
   };
 
   // Header avatar: ensure we show stored/fetched avatar for the chat (works for 1:1 chats)
@@ -369,9 +380,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     if (!text.trim()) return;
     const pending = text;
     const pendingReply = replyToMsgId;
+    const pendingReplyInfo = replyTo;
     // Clear optimistically so typing feels instant…
     setText('');
     setReplyToMsgId(null);
+    setReplyTo(null);
     setSendFailed(false);
     inputRef.current?.focus();
 
@@ -382,6 +395,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     if (ok === false) {
       setText(prev => (prev ? prev : pending));
       setReplyToMsgId(prev => (prev ? prev : pendingReply));
+      setReplyTo(prev => (prev ? prev : pendingReplyInfo));
       setSendFailed(true);
       inputRef.current?.focus();
     }
@@ -397,7 +411,8 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       window.api?.window?.close?.();
       return;
     }
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // While an IME is composing (Japanese, Chinese, …) Enter confirms the word.
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent?.isComposing) {
       e.preventDefault();
       if (clipboardImage) {
         sendClipboardImage();
@@ -419,7 +434,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const startRecording = async () => {
-    if (isRecording) return;
+    // isRecording only flips after the awaits below (permission prompt on macOS):
+    // a second click in between started a second recorder and leaked the first mic.
+    if (isRecording || startingRecRef.current) return;
+    startingRecRef.current = true;
+    let stream = null;
     try {
       // Try to pick a stable default microphone explicitly so recordings
       // always come from the expected input device (helps portable setups)
@@ -434,7 +453,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
         }
       } catch (e) { /* ignore enumerate errors and fallback to default */ }
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
       streamRef.current = stream;
       // Choose best available mime type for voice notes (prefer opus/webm or ogg)
       let mime = '';
@@ -448,34 +467,36 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
       const chunks = [];
       mr.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       mr.onstop = async () => {
-        try {
-          const blob = new Blob(chunks, { type: chunks[0]?.type || 'audio/ogg' });
-          const array = await blob.arrayBuffer();
-          let base64 = '';
-          const bytes = new Uint8Array(array);
-          let binary = '';
-          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-          base64 = btoa(binary);
-          const mime = blob.type || 'audio/ogg';
-          // Send to appropriate bridge based on chat.service
-          if (chat?.service === 'telegram') {
-            try { await window.api?.tg?.sendVoice?.(chat.id, base64, mime); } catch (e) { console.error('[tg sendVoice]', e); }
-          } else {
-            try { await window.api?.wa?.sendVoice?.(chat.id, base64, mime); } catch (e) { console.error('[wa sendVoice]', e); }
-          }
-        } catch (e) { console.error('[record stop]', e); }
-        // cleanup
-        try { streamRef.current?.getTracks()?.forEach(t => t.stop()); } catch (e) {}
+        // Release the microphone first — the send below can take a few seconds.
+        try { stream.getTracks().forEach(t => t.stop()); } catch (e) {}
         streamRef.current = null;
         recorderRef.current = null;
         setIsRecording(false);
+        try {
+          const blob = new Blob(chunks, { type: chunks[0]?.type || mime || 'audio/webm' });
+          if (!blob.size) return; // stopped before anything was recorded
+          const array = await blob.arrayBuffer();
+          const bytes = new Uint8Array(array);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          const base64 = btoa(binary);
+          // The bridge turns Chromium's WebM into the Ogg/Opus both messengers need.
+          const waveform = await waveformFromRecording(array);
+          await onSendVoice?.(base64, blob.type || 'audio/webm', waveform);
+        } catch (e) { console.error('[record stop]', e); }
       };
       recorderRef.current = mr;
       mr.start();
       setIsRecording(true);
     } catch (e) {
       console.error('[startRecording]', e);
+      // Never leave the microphone running after a failed start.
+      try { stream?.getTracks().forEach(t => t.stop()); } catch (e2) {}
+      streamRef.current = null;
+      recorderRef.current = null;
       alert('Mikrofon-Zugriff benötigt');
+    } finally {
+      startingRecRef.current = false;
     }
   };
 
@@ -502,13 +523,17 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   };
 
   const sendClipboardImage = async () => {
-    if (!clipboardImage) return;
-    const base64 = clipboardImage.dataUrl.split(',')[1];
+    // A double click / key repeat used to send the picture twice.
+    if (!clipboardImage || sendingClipboardRef.current) return;
+    sendingClipboardRef.current = true;
+    const image = clipboardImage;
+    setClipboardImage(null);
+    const base64 = image.dataUrl.split(',')[1];
     try {
-      const tmpPath = await window.api.saveTempImage(base64, clipboardImage.ext);
+      const tmpPath = await window.api.saveTempImage(base64, image.ext);
       onSendFile?.(tmpPath);
     } catch (e) { console.error('[paste send]', e); }
-    setClipboardImage(null);
+    finally { sendingClipboardRef.current = false; }
   };
 
   // Drag & Drop
@@ -529,7 +554,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     if (window.api?.showMessageContext) window.api.showMessageContext({ chatId: chat.id, msg, service: chat.service });
   };
 
-  const canEditMessage = (msg) => Boolean(msg?.id && msg?.fromMe && msg?.type === 'text' && (msg?.body || '').trim());
+  const canEditMessage = (msg) => Boolean(msg?.id && msg?.fromMe && (msg?.type === 'text' || msg?.type === 'chat') && (msg?.body || '').trim());
 
   const handleEditMessage = (msg) => {
     if (!canEditMessage(msg)) return;
@@ -563,18 +588,17 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
     } catch (e) {}
   };
 
+  // Replies use the messenger's own quote (both WhatsApp and Telegram show it).
+  // A text quote typed into the message as well used to appear twice — and with
+  // a literal "\n" and "Unbekannt" as the sender.
   const handleReplyMessage = (msg) => {
-    const body = (msg?.body || '').trim();
-    if (!body) return;
-
-    // Include sender information for received messages
-    const senderInfo = msg.fromMe ? '' : `${msg.senderName || 'Unbekannt'}: `;
-    const quote = `> ${senderInfo}${body.replace(/\\n/g, '\\n> ')}\\n`;
-
-    setText(prev => (prev ? `${quote}${prev}` : quote));
+    if (!msg?.id) return;
+    setReplyTo({ id: msg.id, name: getSenderName(msg), body: (msg.body || '').trim() || `[${msg.type || 'Nachricht'}]` });
     setReplyToMsgId(msg.id);
     inputRef.current?.focus();
   };
+
+  const cancelReply = () => { setReplyTo(null); setReplyToMsgId(null); };
 
   const handleForwardMessage = async (msg) => {
     if (!msg?.body?.trim()) return;
@@ -592,8 +616,11 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
   const closeForwardDialog = () => setForwardDialog({ open: false, msg: null, chats: [], loading: false, query: '' });
 
   const chooseForwardTarget = async (targetChat) => {
-    if (!targetChat?.id || !forwardDialog.msg) return;
-    const ok = await onForwardMessage?.(forwardDialog.msg, String(targetChat.id));
+    if (!targetChat?.id || !forwardDialog.msg || forwardingRef.current) return;
+    forwardingRef.current = true;
+    let ok;
+    try { ok = await onForwardMessage?.(forwardDialog.msg, String(targetChat.id)); }
+    finally { forwardingRef.current = false; }
     if (!ok) {
       window.alert('Failed to forward message.');
       return;
@@ -789,6 +816,15 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onEditM
         {sendFailed && (
           <div className="send-failed" role="alert">
             <Icon name="alert" size={14} /> Nachricht konnte nicht gesendet werden. Der Text steht noch da, bitte erneut senden.
+          </div>
+        )}
+        {replyTo && (
+          <div className="reply-bar">
+            <div className="reply-bar-text">
+              <b>Antwort an {replyTo.name}</b>
+              <span>{replyTo.body}</span>
+            </div>
+            <button className="reply-bar-close" onClick={cancelReply} title="Antwort abbrechen"><Icon name="x" size={12} /></button>
           </div>
         )}
         <div className="input-row">

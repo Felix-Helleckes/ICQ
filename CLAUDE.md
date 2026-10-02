@@ -54,6 +54,13 @@ Antwort unter der LID kommt. Mapping-Quellen: History, `remoteJidAlt`, Chat-Feld
 **Phantom-Chats:** die History liefert ~100+ Chats mit nur einem E2E-Hinweis — die
 erschienen als nackte Nummern. Gelistet wird nur, was `store.isListed()` sagt.
 
+**Sprachnachrichten = Ogg/Opus.** Chromium nimmt WebM auf; WhatsApp und Telegram
+spielen nur Ogg/Opus als Sprachnachricht. `lib/ogg-opus.js` packt verlustfrei um.
+Telegram: gramjs erkennt Audio nur am Dateinamen → `lib/tg-voice.js` (voice.ogg).
+
+**Ungelesen-Zähler von Baileys sind Deltas** (`chats.update`: >0 = +N, 0 = gelesen,
+-1 = als ungelesen markiert, null = nichts). Siehe `withResolvedUnread`.
+
 **Emojis nur als Inhalt.** Bedienelemente nutzen `Icon.js`. Emoji-Picker,
 Chat-Emojis, Spiele-Einträge und die Marken-Blume `✿` bleiben. E2E-Test wacht.
 
@@ -62,10 +69,10 @@ Chat-Emojis, Spiele-Einträge und die Marken-Blume `✿` bleiben. E2E-Test wacht
 ```
 npm run lint          # fängt undefinierte Variablen — der Build allein tut das NICHT
 npm run check:electron
-npm run test:electron # 110 Tests, inkl. Bridge-Durchlauf gegen lib/fake-baileys.js
-npm run test:unit     # 24 Tests (Renderer)
+npm run test:electron # 167 Tests, inkl. beider Bridges gegen Fakes (fake-baileys, Fake-gramjs)
+npm run test:unit     # 30 Tests (Renderer)
 npm run build
-npx playwright test   # 5 E2E, startet echte Electron-App
+npx playwright test   # 6 E2E, echte Electron-App, inkl. Sprachnachricht mit Fake-Mikrofon
 ```
 
 **Bridge testen ohne echtes Konto:** `electron/whatsapp-bridge.test.js` fährt die
@@ -88,17 +95,22 @@ Neue Bridge-Logik dort abdecken, nicht manuell testen.
 
 ## Release
 
-Push auf `main` mit **erhöhter** Version in `package.json` → Workflow taggt
-`v<version>` und veröffentlicht Win (Setup+Portable), macOS dmg, Linux
-AppImage+deb. Ohne Versionsbump passiert bewusst nichts. Tests sind Gate.
+Bevorzugt **lokal** (Windows) + nur macOS/Linux in CI → `docs/release.md`.
+Vollautomatik als Fallback: Push auf `main` mit **erhöhter** Version → `release.yml`
+baut alles. Ohne Versionsbump passiert bewusst nichts. Tests sind Gate.
 **Vor dem Bump testen — der Release geht sofort an Nutzer.**
+Die Landingpage holt die Download-Links selbst aus `releases/latest`.
 
 ## Daten (nicht löschen beim Debuggen)
 
-`ICQ-Data/` (portable: neben der .exe, Setup: `%APPDATA%`):
-`telegram.session` (Telegram-Login!), `whatsapp/baileys-auth/` (WA-Session),
-`whatsapp/store.json` (Chatliste), `avatars/`.
-Nur `store.json` ist gefahrlos löschbar.
+Portable: `ICQ-Data/` neben der .exe. Installiert (Setup, macOS, Linux): Electrons
+userData — `%APPDATA%\icq-messenger`, `~/Library/Application Support/icq-messenger`,
+`~/.config/icq-messenger`. **Nie** der Installationsordner: Updates löschen ihn
+(alte Daten dort werden einmalig übernommen, siehe `lib/data-dir.js`).
+Inhalt: `telegram.session` (Telegram-Login!), `whatsapp/baileys-auth/` (WA-Session),
+`whatsapp/store.json` (Chatliste), `avatars/`. Nur `store.json` ist gefahrlos löschbar.
+**Ein Login-Ordner pro Rechner:** kopiertes `ICQ-Data` parallel → WhatsApp 440
+(„Anderswo aktiv"), die App reconnectet dann bewusst nicht.
 
 ## Offen / bekannt
 

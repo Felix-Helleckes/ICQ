@@ -1,0 +1,97 @@
+name: Build macOS/Linux for a release
+
+# Windows builds are made locally and published with `gh release create` (see
+# docs/release.md). macOS can only be built on a Mac and Linux needs Linux tools
+# (mksquashfs for the AppImage, fpm for the .deb), so these two run here and attach
+# their files to the release that already exists — usually still a draft.
+#
+#   gh workflow run build-platforms.yml -f tag=v1.1.0
+#
+# Public repository: standard GitHub runners cost no minutes.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag the files are attached to, e.g. v1.1.0'
+        required: true
+      platforms:
+        description: 'Which builds: mac, linux or mac,linux'
+        required: true
+        default: 'mac,linux'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-platforms-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    if: contains(inputs.platforms, 'mac')
+    name: macOS (arm64 + x64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Version matches the tag
+        run: |
+          V="v$(node -p "require('./package.json').version")"
+          [ "$V" = "${{ inputs.tag }}" ] || { echo "::error::package.json is $V, tag is ${{ inputs.tag }}"; exit 1; }
+      - run: npm ci
+      - name: Tests (gate)
+        run: npm run lint && npm run test:electron && npm run test:unit
+        env:
+          CI: "true"
+      - name: Build renderer
+        run: npm run build
+        env:
+          CI: "false"
+      - name: Build dmg (Apple Silicon + Intel)
+        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.tag }}" dist/*.dmg --clobber
+
+  linux:
+    if: contains(inputs.platforms, 'linux')
+    name: Linux (AppImage + deb)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Version matches the tag
+        run: |
+          V="v$(node -p "require('./package.json').version")"
+          [ "$V" = "${{ inputs.tag }}" ] || { echo "::error::package.json is $V, tag is ${{ inputs.tag }}"; exit 1; }
+      - name: System packages (Electron runtime for the E2E smoke, fpm deps)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libnss3 libatk-bridge2.0-0 libdrm2 libgbm1 \
+            libasound2t64 libxss1 libxtst6 libxrandr2 libx11-xcb1 libgtk-3-0 rpm || true
+      - run: npm ci
+      - name: Tests (gate)
+        run: npm run lint && npm run test:electron && npm run test:unit
+        env:
+          CI: "true"
+      - name: Build renderer
+        run: npm run build
+        env:
+          CI: "false"
+      - name: E2E smoke on Linux (boot, skins, voice recording)
+        run: xvfb-run -a npx playwright test
+      - name: Build AppImage + deb
+        run: npx electron-builder --linux AppImage deb --publish never
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.tag }}" dist/*.AppImage dist/*.deb --clobber

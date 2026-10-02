@@ -101,7 +101,7 @@
     "operatingSystem": "Windows, macOS, Linux",
     "url": "https://icq-retrogram.pages.dev/",
     "downloadUrl": "https://github.com/Felix-Helleckes/ICQ/releases/latest",
-    "softwareVersion": "1.0.36",
+    "softwareVersion": "1.1.0",
     "license": "https://opensource.org/licenses/MIT",
     "isAccessibleForFree": true,
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "EUR" },
@@ -295,7 +295,21 @@
               </a>
             </div>
           </div>
-          <a class="btn alt" id="dl-mac" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">macOS</a>
+          <div class="btn-menu" id="mac-menu">
+            <button class="btn alt" id="dl-mac" type="button" aria-haspopup="true" aria-expanded="false">
+              macOS <span class="caret">▾</span>
+            </button>
+            <div class="menu" role="menu">
+              <a id="dl-mac-arm" role="menuitem" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">
+                <b data-i18n="hero.macArm">Apple Silicon</b>
+                <small data-i18n="hero.macArmSub">M1, M2, M3, M4 …</small>
+              </a>
+              <a id="dl-mac-intel" role="menuitem" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">
+                <b data-i18n="hero.macIntel">Intel</b>
+                <small data-i18n="hero.macIntelSub">Macs with an Intel processor</small>
+              </a>
+            </div>
+          </div>
           <a class="btn alt" id="dl-linux" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">Linux</a>
         </div>
         <p class="note" data-i18n="hero.note">Free &amp; open source · Windows · macOS · Linux · no sign-up needed</p>
@@ -418,6 +432,7 @@
         'hero.note':'Free & open source · Windows · macOS · Linux · no sign-up needed',
         'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installs like a normal app',
         'hero.winPortable':'Portable','hero.winPortableSub':'Single .exe · login stays in its folder',
+        'hero.macArm':'Apple Silicon','hero.macArmSub':'M1, M2, M3, M4 …','hero.macIntel':'Intel','hero.macIntelSub':'Macs with an Intel processor',
         'feat.h2':'One messenger. Two services. A 2003 feeling.',
         'feat.lead':'Everything modern messengers do, wrapped in the look you miss.',
         'f1t':'WhatsApp + Telegram','f1d':'Both accounts in one app, cleanly split by tab. QR login, your real chats.',
@@ -456,6 +471,7 @@
         'hero.note':'Kostenlos & Open Source · Windows · macOS · Linux · keine Anmeldung nötig',
         'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installiert sich wie eine normale App',
         'hero.winPortable':'Portable','hero.winPortableSub':'Eine .exe · Login bleibt im Ordner daneben',
+        'hero.macArm':'Apple Silicon','hero.macArmSub':'M1, M2, M3, M4 …','hero.macIntel':'Intel','hero.macIntelSub':'Macs mit Intel-Prozessor',
         'feat.h2':'Ein Messenger. Zwei Dienste. 2003er Gefühl.',
         'feat.lead':'Alles was moderne Messenger können, verpackt im Look, den du vermisst.',
         'f1t':'WhatsApp + Telegram','f1d':'Beide Konten in einer App, sauber getrennt per Tab. QR-Login, deine echten Chats.',
@@ -509,6 +525,20 @@
 
     document.getElementById('yr').textContent = new Date().getFullYear();
 
+    // Which Mac is this? Browsers do not say it in the user agent (Safari claims
+    // "Intel" on every Mac), so ask the GPU: Apple Silicon reports an "Apple" GPU.
+    // Unsure → the releases page, never a build that will not start.
+    function macForThisMachine(arm, intel, fallback) {
+      try {
+        var gl = document.createElement('canvas').getContext('webgl');
+        var ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+        var gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
+        if (/Apple (M\d|GPU)/i.test(gpu)) return arm;
+        if (/Intel|AMD|Radeon|NVIDIA/i.test(gpu)) return intel;
+      } catch (e) { /* no WebGL */ }
+      return fallback;
+    }
+
     // Wire download buttons to the latest release asset per platform.
     (function () {
       var repo = 'Felix-Helleckes/ICQ';
@@ -528,22 +558,22 @@
           // specific asset is missing, so a link is never mislabeled.
           var winSetup = pick(/Setup.*\.exe$/i);
           var winPortable = pick(/Portable.*\.exe$/i);
-          var mac = pick(/\.dmg$/i);
+          var macArm = pick(/arm64\.dmg$/i, /\.dmg$/i);
+          var macIntel = pick(/x64\.dmg$/i);
           var linux = pick(/\.AppImage$/i, /\.deb$/i);
           var set = function (id, url) { var e = document.getElementById(id); if (e) e.href = url; };
           set('dl-win-setup', winSetup); set('dl-win-portable', winPortable);
-          set('dl-mac', mac); set('dl-linux', linux);
+          set('dl-mac-arm', macArm); set('dl-mac-intel', macIntel); set('dl-linux', linux);
           var ua = navigator.userAgent;
-          set('dl-cta', /Win/.test(ua) ? winSetup : /Mac/.test(ua) ? mac : /Linux/.test(ua) ? linux : page);
+          set('dl-cta', /Win/.test(ua) ? winSetup : /Mac/.test(ua) ? macForThisMachine(macArm, macIntel, page) : /Linux/.test(ua) ? linux : page);
         })
         .catch(function () { /* keep the releases-page fallback hrefs */ });
     })();
 
-    // Windows Setup/Portable chooser dropdown.
-    (function () {
-      var menu = document.getElementById('win-menu');
-      if (!menu) return;
-      var btn = document.getElementById('dl-win');
+    // Download choosers: Windows (Setup/Portable) and macOS (Apple Silicon/Intel).
+    document.querySelectorAll('.btn-menu').forEach(function (menu) {
+      var btn = menu.querySelector('button');
+      if (!btn) return;
       var close = function () { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
       btn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
@@ -554,7 +584,7 @@
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
       // Let the chosen download proceed, then close the menu.
       menu.querySelectorAll('.menu a').forEach(function (a) { a.addEventListener('click', close); });
-    })();
+    });
 
     // Apply the resolved language (set in <head>) to the static markup.
     applyLang(window.__ICQ_LANG || 'en');

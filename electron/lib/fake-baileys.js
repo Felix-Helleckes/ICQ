@@ -33,7 +33,7 @@ function createFakeBaileys(opts = {}) {
   const meId = opts.meId || '4915100000000@s.whatsapp.net';
   // Everything the bridge tried to send, so tests can assert without a network.
   const sent = [];
-  const calls = { readMessages: [], chatModify: [], blockStatus: [], resyncAppState: [], lidLookups: [], logout: 0, end: 0 };
+  const calls = { readMessages: [], chatModify: [], blockStatus: [], resyncAppState: [], lidLookups: [], downloads: 0, groupMetadata: [], logout: 0, end: 0 };
   let sockets = [];
 
   function makeSocket() {
@@ -71,6 +71,7 @@ function createFakeBaileys(opts = {}) {
         throw new Error('no picture');
       },
       async groupMetadata(jid) {
+        calls.groupMetadata.push(jid);
         if (opts.groups && opts.groups[jid]) return opts.groups[jid];
         throw new Error('not a group');
       },
@@ -96,8 +97,9 @@ function createFakeBaileys(opts = {}) {
     return sock;
   }
 
+  let lastConfig = null;
   const namespace = {
-    default: makeSocket,
+    default: (config) => { lastConfig = config; return makeSocket(); },
     useMultiFileAuthState: async () => {
       // A device that has never been paired has neither `registered` nor `me` —
       // that is what tells the bridge a history sync is still on its way. An
@@ -123,7 +125,7 @@ function createFakeBaileys(opts = {}) {
       if (!msg) return undefined;
       return Object.keys(msg).find(k => k.endsWith('Message') || k === 'conversation');
     },
-    downloadMediaMessage: async () => Buffer.from('fake-media'),
+    downloadMediaMessage: async () => { calls.downloads += 1; return Buffer.from('fake-media'); },
     proto: {
       WebMessageInfo: {
         Status: { ERROR: 0, PENDING: 1, SERVER_ACK: 2, DELIVERY_ACK: 3, READ: 4, PLAYED: 5 },
@@ -139,6 +141,8 @@ function createFakeBaileys(opts = {}) {
     /** The socket the bridge most recently created. */
     get socket() { return sockets[sockets.length - 1]; },
     get socketCount() { return sockets.length; },
+    /** The config the bridge handed to the most recent socket. */
+    get lastConfig() { return lastConfig; },
     reset() { sent.length = 0; sockets = []; },
   };
 }

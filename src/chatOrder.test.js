@@ -82,3 +82,36 @@ describe('splitChats', () => {
     expect(input.map(c => c.id)).toEqual(before);
   });
 });
+
+describe('byPriority — what is new or waiting comes first', () => {
+  test('unread chats sit above read ones, each tier newest first', () => {
+    const list = [
+      chat('readNewest', { timestamp: 900 }),
+      chat('unreadOld', { timestamp: 100, unreadCount: 2 }),
+      chat('readOld', { timestamp: 200 }),
+      chat('unreadNew', { timestamp: 500, unreadCount: 1 }),
+    ];
+    expect(splitChats(list).contacts.map(c => c.id))
+      .toEqual(['unreadNew', 'unreadOld', 'readNewest', 'readOld']);
+  });
+
+  test('pinned chats stay on top, as on the phone', () => {
+    const list = [
+      chat('unread', { timestamp: 900, unreadCount: 3 }),
+      chat('pinned', { timestamp: 10, pinned: true }),
+    ];
+    expect(splitChats(list).contacts.map(c => c.id)).toEqual(['pinned', 'unread']);
+  });
+
+  test('the same rule applies inside groups and archived', () => {
+    const list = [
+      chat('g1', { isGroup: true, timestamp: 900 }),
+      chat('g2', { isGroup: true, timestamp: 100, unreadCount: 5 }),
+      chat('a1', { archived: true, timestamp: 900 }),
+      chat('a2', { archived: true, timestamp: 100, unreadCount: 1 }),
+    ];
+    const { groups, archived } = splitChats(list);
+    expect(groups.map(c => c.id)).toEqual(['g2', 'g1']);
+    expect(archived.map(c => c.id)).toEqual(['a2', 'a1']);
+  });
+});

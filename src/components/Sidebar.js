@@ -14,7 +14,7 @@ const DONATE_URL = 'https://paypal.me/sparky512';
 
 const STATUS_COLOR = {
   ready: '#44DD44', 'needs-auth': '#F5C400', 'no-credentials': '#F5C400',
-  disconnected: '#CC3333', qr: '#F5C400',
+  disconnected: '#CC3333', qr: '#F5C400', conflict: '#F5C400',
 };
 
 function statusLabel(s) {
@@ -25,6 +25,7 @@ function statusLabel(s) {
     'no-credentials': 'No API key',
     disconnected: 'Offline',
     qr: 'Scan QR',
+    conflict: 'Anderswo aktiv',
   }[s] || s;
 }
 
@@ -172,6 +173,7 @@ export default function Sidebar({
   activeService, setActiveService,
   waStatus, tgStatus,
   chats, chatsLoading, avatarsEnabled, onSelectChat,
+  waSyncing, onWaReconnect, onWaPairNewDevice,
   loginPanel,
   myProfile,
   onLogout,
@@ -345,6 +347,23 @@ export default function Sidebar({
             {activeService === 'whatsapp' && currentStatus === 'loading' && (
               <div className="service-reconnecting" role="status" aria-live="polite">
                 WhatsApp verbindet neu…
+              </div>
+            )}
+            {activeService === 'whatsapp' && currentStatus === 'ready' && waSyncing && (
+              <div className="service-reconnecting" role="status" aria-live="polite">
+                Synchronisiere Chats…
+              </div>
+            )}
+            {activeService === 'whatsapp' && currentStatus === 'conflict' && (
+              <div className="service-conflict" role="alert">
+                <div>
+                  Diese WhatsApp-Anmeldung ist gerade auf einem anderen Computer aktiv
+                  (kopierter ICQ-Data-Ordner). Jeder Computer braucht eine eigene Kopplung.
+                </div>
+                <div className="service-conflict-actions">
+                  <button onClick={onWaPairNewDevice}>Hier eigene Kopplung</button>
+                  <button onClick={onWaReconnect}>Hier übernehmen</button>
+                </div>
               </div>
             )}
             {chatsLoading && (

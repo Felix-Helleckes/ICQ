@@ -133,7 +133,7 @@ jobs:
 
       - name: Build Electron - macOS
         if: matrix.os == 'macos-latest'
-        run: npx electron-builder --mac dmg --arm64 --publish never
+        run: npx electron-builder --mac dmg --arm64 --x64 --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
@@ -189,7 +189,8 @@ jobs:
             |-----------|-------|---------|
             | Windows | `ICQ-Messenger-Setup-*.exe` | Installer (empfohlen) |
             | Windows | `ICQ-Messenger-*-Portable.exe` | Portable - Login bleibt im `ICQ-Data`-Ordner daneben |
-            | macOS | `ICQ-Messenger-*.dmg` | arm64 (M1/M2/M3 nativ, Intel via Rosetta 2) |
+            | macOS | `ICQ-Messenger-*-arm64.dmg` | Apple Silicon (M1–M4) |
+            | macOS | `ICQ-Messenger-*-x64.dmg` | Intel-Macs |
             | Linux | `ICQ-Messenger-*.AppImage` | Portable, direkt ausfuehrbar |
             | Linux | `icq-messenger_*.deb` | Debian/Ubuntu |
 

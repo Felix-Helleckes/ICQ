@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage: (chatId, text, quotedMessageId)  => ipcRenderer.invoke('wa:send-message', chatId, text, quotedMessageId),
     sendFile:    (chatId, path)  => ipcRenderer.invoke('wa:send-file', chatId, path),
     sendSticker: (chatId, path)  => ipcRenderer.invoke('wa:send-sticker', chatId, path),
-    sendVoice:   (chatId, base64, mime) => ipcRenderer.invoke('wa:send-voice', chatId, base64, mime),
+    sendVoice:   (chatId, base64, mime, waveform) => ipcRenderer.invoke('wa:send-voice', chatId, base64, mime, waveform),
     getParticipants: (chatId) => ipcRenderer.invoke('wa:get-participants', chatId),
     editMessage: (chatId, messageId, newText) => ipcRenderer.invoke('wa:edit-message', chatId, messageId, newText),
     deleteMessage: (chatId, messageId, forEveryone = true) => ipcRenderer.invoke('wa:delete-message', chatId, messageId, forEveryone),
@@ -19,6 +19,13 @@ contextBridge.exposeInMainWorld('api', {
     getAvatar:   (id)            => ipcRenderer.invoke('wa:get-avatar', id),
     logout:      ()              => ipcRenderer.invoke('wa:logout'),
     reconnect:   ()              => ipcRenderer.invoke('wa:reconnect'),
+    pairNewDevice: ()            => ipcRenderer.invoke('wa:pair-new-device'),
+    getSync:     ()              => ipcRenderer.invoke('wa:get-sync'),
+    onSync:      (cb)            => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('wa:sync', handler);
+      return () => ipcRenderer.removeListener('wa:sync', handler);
+    },
     onQR:        (cb)            => ipcRenderer.on('wa:qr', (_, data) => cb(data)),
     onReady:     (cb)            => ipcRenderer.on('wa:ready', (_, data) => cb(data)),
     onMessage:   (cb)            => {
@@ -75,7 +82,7 @@ contextBridge.exposeInMainWorld('api', {
     sendMessage:  (chatId, text, quotedMessageId)     => ipcRenderer.invoke('tg:send-message', chatId, text, quotedMessageId),
     sendFile:     (chatId, path)     => ipcRenderer.invoke('tg:send-file', chatId, path),
     sendSticker:  (chatId, path)     => ipcRenderer.invoke('tg:send-sticker', chatId, path),
-    sendVoice:    (chatId, base64, mime) => ipcRenderer.invoke('tg:send-voice', chatId, base64, mime),
+    sendVoice:    (chatId, base64, mime, waveform) => ipcRenderer.invoke('tg:send-voice', chatId, base64, mime, waveform),
     getParticipants: (chatId) => ipcRenderer.invoke('tg:get-participants', chatId),
     editMessage:  (chatId, messageId, newText) => ipcRenderer.invoke('tg:edit-message', chatId, messageId, newText),
     deleteMessage:(chatId, messageId, revoke = true) => ipcRenderer.invoke('tg:delete-message', chatId, messageId, revoke),

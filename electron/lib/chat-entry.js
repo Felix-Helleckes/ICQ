@@ -21,6 +21,7 @@ function mapChatEntry(c) {
     unreadCount: c?.unreadCount || 0,
     isGroup: !!c?.isGroup || (typeof id === 'string' && id.endsWith('@g.us')),
     archived: !!(c?.archived ?? c?.archive),
+    pinned: !!c?.pinned,
     avatar: null,
   };
 }

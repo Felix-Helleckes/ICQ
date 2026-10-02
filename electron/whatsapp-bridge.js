@@ -18,11 +18,13 @@ const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { mapMessageEntry, isBacklogMessage, isRealMessage } = require('./lib/message-entry');
+const { mapMessageEntry, isBacklogMessage, isRealMessage, unwrapContent } = require('./lib/message-entry');
 const { mapChatEntry } = require('./lib/chat-entry');
 const { createContactDirectory, normalizeJid, isLid, isPn } = require('./lib/contact-names');
 const { ackFromStatus, statusFromReceipt, createAckTracker } = require('./lib/ack');
 const { createWaStore, loadSnapshot, saveSnapshot } = require('./lib/wa-store');
+const { toVoiceNote, normalizeWaveform } = require('./lib/ogg-opus');
+const { createMediaCache } = require('./lib/media-cache');
 
 // Logging helper: append to temp startup log for easier debugging across restarts.
 // Not under Jest — the test suite would otherwise fill the real app log.
@@ -77,6 +79,14 @@ let pairingPending = false;   // a QR was shown / pairing succeeded: the history
 let readyTimer = null;        // fallback so an account without history still becomes ready
 let chatsChangedTimer = null; // debounces the "reload your chat list" signal
 let lidLookupTimer = null;    // debounces the LID → phone lookup in Baileys' own key store
+let startSyncDone = false;    // the once-per-connection catch-up sync has run
+let startSyncTimer = null;    // fallback if WhatsApp never reports the offline backlog done
+let syncing = false;          // catch-up sync in progress — the UI shows "Synchronisiere…"
+let initGeneration = 0;       // bumps per init(); a superseded init stops before opening a socket
+// Chats that got incoming messages from the offline backlog on this connection.
+// The catch-up sync can deliver an OLDER 'read' for them (see onChats).
+const backlogIncoming = new Set();
+const groupNameTried = new Set(); // groups whose title we already asked WhatsApp for
 
 // The list shows at most this many chats (the store keeps 300 on disk).
 const MAX_LISTED_CHATS = 300;
@@ -89,10 +99,17 @@ const MAX_LISTED_CHATS = 300;
 const contacts = createContactDirectory(); // names + LID↔phone mapping
 // Every chat is filed under one id per person, so the LID twin of a phone-number
 // chat folds into it instead of appearing as a second entry.
-const store = createWaStore({ canonical: (jid) => contacts.canonicalFor(jid) });
+const store = createWaStore({
+  canonical: (jid) => contacts.canonicalFor(jid),
+  // Any newly learned mapping re-files the store before its next use.
+  revision: () => contacts.mappingRevision,
+});
 const chatStore = store.chats;             // canonical jid → chat record
 const ackTracker = createAckTracker();     // highest delivery state seen per message
 const blockedSet = new Set();
+// Downloaded media by message id. The chat window refreshes every 8 s; without this
+// every refresh downloaded all visible photos, videos and voice notes again.
+const mediaCache = createMediaCache();
 
 let storeFile = null;
 let saveTimer = null;
@@ -129,6 +146,7 @@ function scheduleStoreSave() {
 function resetStore() {
   store.clear();
   contacts.clear();
+  mediaCache.clear();
   blockedSet.clear();
   ackTracker.clear();
   if (storeFile) { try { fs.rmSync(storeFile, { force: true }); } catch (e) {} }
@@ -145,6 +163,24 @@ function setStatus(next) {
   if (status === next) return;
   status = next;
   broadcast('wa:status', next);
+}
+
+function setSyncing(active) {
+  if (syncing === active) return;
+  syncing = active;
+  broadcast('wa:sync', { active });
+}
+
+/**
+ * How this install shows up under "Linked devices" on the phone. Every Retrogram
+ * install is a linked device of its own (WhatsApp allows four besides the phone),
+ * and a name per computer is what lets the user tell them apart and remove the
+ * right one. Only read when a device is paired; existing pairings keep their name.
+ */
+function deviceBrowser() {
+  const os = { win32: 'Windows', darwin: 'macOS', linux: 'Linux' }[process.platform] || process.platform;
+  const release = BA.Browsers.appropriate('Desktop')[2];
+  return [`Retrogram (${os})`, 'Desktop', release];
 }
 
 // ── Conversions ───────────────────────────────────────────────────────────
@@ -166,13 +202,19 @@ function applyAck(jid, id, status, fromMe) {
 }
 
 // Baileys message content type → the type strings the UI switches on
+// Disappearing-message chats wrap everything in ephemeralMessage (view-once and
+// captioned documents have wrappers too); reading the wrapper showed their media
+// as empty text bubbles.
+const contentOf = (m) => unwrapContent(m?.message) || {};
+
 function typeOf(m) {
-  const t = BA.getContentType(m?.message || {});
+  const c = contentOf(m);
+  const t = BA.getContentType(c);
   switch (t) {
     case 'imageMessage': return 'image';
-    case 'videoMessage': return m?.message?.videoMessage?.gifPlayback ? 'video' : 'video';
+    case 'videoMessage': return 'video';
     case 'stickerMessage': return 'sticker';
-    case 'audioMessage': return m?.message?.audioMessage?.ptt ? 'ptt' : 'audio';
+    case 'audioMessage': return c.audioMessage?.ptt ? 'ptt' : 'audio';
     case 'documentMessage':
     case 'documentWithCaptionMessage': return 'document';
     default: return 'chat';
@@ -208,10 +250,17 @@ function toMessageEntry(m) {
     timestamp: tsOf(m),
     author: m?.key?.participant || m?.participant || m?.key?.remoteJid,
     type,
-    isGif: !!m?.message?.videoMessage?.gifPlayback,
+    isGif: !!contentOf(m).videoMessage?.gifPlayback,
     ack: ackOf(m),
     hasMedia: MEDIA_TYPES.has(type),
   });
+}
+
+/** Who wrote it, as the chat window shows it — never a raw JID. */
+function senderNameOf(m) {
+  if (m?.key?.fromMe) return null;
+  const author = m?.key?.participant || m?.participant || m?.key?.remoteJid;
+  return displayNameFor(author) || m?.pushName || prettyIdFor(author);
 }
 
 // Name lookup lives in lib/contact-names.js (LID↔phone handling is subtle enough to
@@ -234,9 +283,11 @@ function chatEntryFor(jid) {
     id: { _serialized: jid },
     name,
     lastMessage: last ? { body: bodyOf(last), t: tsOf(last) } : null,
-    unreadCount: Math.max(0, Number(c.unreadCount) || 0),
+    // 'Marked as unread' on the phone carries no count — show it as one.
+    unreadCount: Math.max(0, Number(c.unreadCount) || 0) || (c.markedAsUnread ? 1 : 0),
     isGroup,
     archive: !!c.archived,
+    pinned: !!c.pinned,
     t: store.activityOf(jid),
   });
 }
@@ -308,7 +359,7 @@ function learnFromMessage(m) {
  */
 function refileIfMappingsChanged(revisionBefore) {
   if (contacts.mappingRevision === revisionBefore) return 0;
-  const moved = store.rekey();
+  const moved = store.sync();
   if (moved) log('WA merged chats', { moved });
   return moved;
 }
@@ -339,14 +390,82 @@ async function resolveUnmappedLids() {
 
 function scheduleLidLookup() {
   clearTimeout(lidLookupTimer);
-  lidLookupTimer = setTimeout(() => { lidLookupTimer = null; resolveUnmappedLids(); }, 2000);
+  lidLookupTimer = setTimeout(() => {
+    lidLookupTimer = null;
+    resolveUnmappedLids().then(resolveGroupNames).catch(() => {});
+  }, 2000);
+}
+
+/**
+ * Groups joined after pairing arrive without a title (being added only produces a
+ * chats.update), so they showed as "120363…". Ask WhatsApp once per group and
+ * session — one at a time, a limited number per run, so a big account does not
+ * fire a burst of metadata requests.
+ */
+async function resolveGroupNames(limit = 25) {
+  if (!sock || status !== 'ready') return;
+  const unnamed = [...chatStore.keys()].filter(j => j.endsWith('@g.us')
+    && !groupNameTried.has(j) && !chatStore.get(j)?.name && !displayNameFor(j) && store.isListed(j));
+  let named = 0;
+  for (const jid of unnamed.slice(0, limit)) {
+    groupNameTried.add(jid);
+    try {
+      const meta = await sock.groupMetadata(jid);
+      if (meta?.subject) {
+        upsertChat({ id: jid, name: meta.subject });
+        named += 1;
+      }
+    } catch (e) { /* left the group, or no access — keep the fallback */ }
+    if (!sock) return;
+  }
+  if (named) {
+    log('WA group names', { asked: Math.min(unnamed.length, limit), named });
+    signalChatsChanged();
+  }
 }
 
 // ── Store maintenance ─────────────────────────────────────────────────────
 
+/**
+ * Baileys' chats.update speaks in changes, not totals: unreadCount > 0 means "this
+ * many MORE" (one per incoming message), 0 means read, -1 means "marked as unread"
+ * on another device, null means no change. Storing the raw number showed "1" for
+ * a chat with five unread messages after every list reload.
+ */
+function withResolvedUnread(c) {
+  const { unreadCount, ...rest } = c;
+  if (typeof unreadCount !== 'number') return rest;
+  const prev = chatStore.get(store.keyFor(c.id));
+  const current = Math.max(0, Number(prev?.unreadCount) || 0);
+  if (unreadCount > 0) return { ...rest, unreadCount: current + unreadCount };
+  if (unreadCount < 0) return { ...rest, unreadCount: Math.max(1, current), markedAsUnread: true };
+  return { ...rest, unreadCount: 0, markedAsUnread: false };
+}
+
 function upsertChat(c) {
   store.upsertChat(c);
   scheduleStoreSave();
+}
+
+const READ_STATUS = 4; // proto.WebMessageInfo.Status.READ
+
+function isMe(jid) {
+  const j = normalizeJid(jid);
+  if (!j) return false;
+  return j === meId || j === normalizeJid(sock?.user?.lid) || j === normalizeJid(sock?.authState?.creds?.me?.lid);
+}
+
+/** Chats read on another device (usually the phone) lose their unread badge here too. */
+function markReadElsewhere(jids) {
+  let changed = false;
+  for (const jid of jids) {
+    const c = chatStore.get(store.keyFor(jid));
+    if (!c || (!(Number(c.unreadCount) > 0) && !c.markedAsUnread)) continue;
+    upsertChat({ id: jid, unreadCount: 0, markedAsUnread: false });
+    broadcast('chat:read-broadcast', { chatId: store.keyFor(jid), service: 'whatsapp' });
+    changed = true;
+  }
+  if (changed && status === 'ready') signalChatsChanged();
 }
 
 function storeMessages(list) {
@@ -379,6 +498,12 @@ async function init(avatarCallback, dataDir) {
   lastDataDir = dataDir;
   clearReconnectTimer();
   setStatus('loading');
+  // A second init (double click on "reconnect", or one while a scheduled reconnect
+  // is still starting up) supersedes this one. Without this both would open a
+  // socket on the same login: WhatsApp kicks one with 440, the orphan then reports
+  // a false "active elsewhere" while the other is live, and both write the creds.
+  const generation = ++initGeneration;
+  const superseded = () => generation !== initGeneration;
 
   try {
     await loadBaileys();
@@ -387,6 +512,7 @@ async function init(avatarCallback, dataDir) {
     setStatus('error');
     return;
   }
+  if (superseded()) return;
 
   const authDir = sessionDir(dataDir);
   try { fs.mkdirSync(authDir, { recursive: true }); } catch (e) {}
@@ -408,8 +534,13 @@ async function init(avatarCallback, dataDir) {
     setStatus('error');
     return;
   }
+  if (superseded()) return;
 
   log('WA init', { dataDir, authDir });
+
+  // Never two live sockets: drop one a previous init may have left.
+  if (sock) await closeSocket();
+  if (superseded()) return;
 
   try {
     sock = BA.default({
@@ -418,8 +549,8 @@ async function init(avatarCallback, dataDir) {
         keys: BA.makeCacheableSignalKeyStore(state.keys, waLogger),
       },
       logger: waLogger,
-      // Identify as a desktop client so WhatsApp lists it sensibly under linked devices.
-      browser: BA.Browsers.appropriate('Desktop'),
+      // A desktop client with a recognisable name under "Linked devices".
+      browser: deviceBrowser(),
       markOnlineOnConnect: false, // don't steal notifications from the phone
       syncFullHistory: false,     // recent history is enough and syncs far quicker
       generateHighQualityLinkPreview: false,
@@ -464,6 +595,38 @@ async function recoverFromAppState() {
   }
 }
 
+// Catch up on every start, like WhatsApp Desktop's "Nachrichten werden
+// synchronisiert": once WhatsApp has delivered the offline backlog (messages that
+// came in while the app was closed), pull everything the other devices changed in
+// the meantime — read/unread, archive, pin, mute, new address-book names. Baileys
+// would only do that when the server happens to flag a collection as dirty. The
+// pull is incremental (from the stored versions), so it costs a few small requests.
+async function runStartSync(reason) {
+  if (startSyncDone || !sock || !connectionOpen) return;
+  startSyncDone = true;
+  clearTimeout(startSyncTimer);
+  startSyncTimer = null;
+  setSyncing(true);
+  const t0 = Date.now();
+  const before = { chats: chatStore.size, contacts: contacts.size };
+  try {
+    await sock.resyncAppState(BA.ALL_WA_PATCH_NAMES || ['critical_block', 'critical_unblock_low', 'regular_high', 'regular_low', 'regular'], false);
+  } catch (e) {
+    log('WA start sync: app state failed', String(e?.message || e));
+  }
+  await resolveUnmappedLids();
+  await resolveGroupNames();
+  setSyncing(false);
+  log('WA start sync', {
+    reason, ms: Date.now() - t0,
+    chats: chatStore.size, newChats: chatStore.size - before.chats,
+    contacts: contacts.size, newContacts: contacts.size - before.contacts,
+  });
+  scheduleStoreSave();
+  // Fresh previews, order and unread counts for the list on screen.
+  if (status === 'ready') signalChatsChanged();
+}
+
 // Report 'ready' exactly once per connection, once there is something to show.
 function announceReady() {
   if (status === 'ready') return;
@@ -487,10 +650,13 @@ function signalChatsChanged() {
 }
 
 function wireEvents(dataDir) {
+  const mySock = sock;
   sock.ev.on('creds.update', () => { try { saveCreds?.(); } catch (e) {} });
 
   sock.ev.on('connection.update', async (u) => {
-    const { connection, lastDisconnect, qr, isNewLogin } = u;
+    // A socket that has been replaced must not change the state of the live one.
+    if (sock !== mySock) return;
+    const { connection, lastDisconnect, qr, isNewLogin, receivedPendingNotifications } = u;
 
     if (qr) {
       currentQR = qr;
@@ -509,6 +675,10 @@ function wireEvents(dataDir) {
       readyAtSec = Math.floor(Date.now() / 1000);
       meId = sock.user?.id ? BA.jidNormalizedUser(sock.user.id) : null;
       connectionOpen = true;
+      backlogIncoming.clear();
+      // Only a restored list catches up (below). A fresh pairing gets Baileys' own
+      // full sync, and the recovery path runs one itself.
+      startSyncDone = true;
       log('WA event', 'connected', { pushname: sock.user?.name, id: meId });
 
       if (pairingPending || !hasCredentials) {
@@ -531,7 +701,15 @@ function wireEvents(dataDir) {
         // away. WhatsApp will not resend the history for an already-linked device
         // anyway — waiting for it would just stall the UI.
         announceReady();
+        // Names first: Baileys' local LID table is a disk read, no network needed.
         resolveUnmappedLids();
+        // WhatsApp now delivers what came in while the app was closed; the catch-up
+        // sync runs once that backlog is through (receivedPendingNotifications).
+        // The timer covers a server that never says so.
+        startSyncDone = false;
+        setSyncing(true);
+        clearTimeout(startSyncTimer);
+        startSyncTimer = setTimeout(() => runStartSync('timeout'), 15000);
       } else {
         // Already linked, but nothing stored: WhatsApp replays neither the history
         // nor the app state on a normal reconnect, so the chat list would stay empty
@@ -549,15 +727,33 @@ function wireEvents(dataDir) {
       } catch (e) { /* not fatal */ }
     }
 
+    // The offline backlog is through (runStartSync ignores this unless the
+    // connection restored a list — see startSyncDone above).
+    if (receivedPendingNotifications && connectionOpen) runStartSync('backlog-done');
+
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === BA.DisconnectReason.loggedOut;
       connectionOpen = false;
       clearTimeout(readyTimer);
       readyTimer = null;
+      clearTimeout(startSyncTimer);
+      startSyncTimer = null;
+      setSyncing(false);
       log('WA event', 'disconnected', { code, loggedOut });
 
       if (waManualLogout) { setStatus('disconnected'); return; }
+
+      if (code === BA.DisconnectReason.connectionReplaced) {
+        // 440: the SAME linked device connected somewhere else — this login folder
+        // (ICQ-Data) was copied to another computer and runs there too. Reconnecting
+        // would kick the other copy, which reconnects and kicks us: an endless
+        // ping-pong in which both copies' encryption state drifts apart until
+        // WhatsApp logs the device out. Stop and let the user decide.
+        log('WA conflict: this login is active on another computer');
+        setStatus('conflict');
+        return;
+      }
 
       if (loggedOut) {
         // The session was revoked (unlinked on the phone). Wipe it so the next
@@ -616,22 +812,38 @@ function wireEvents(dataDir) {
       if (hint) contacts.rememberMapping(hint);
     }
     const moved = refileIfMappingsChanged(rev);
+    let unreadChanged = false;
     for (const c of list || []) {
       if (!c?.id) continue;
-      upsertChat(c);
+      let next = live ? withResolvedUnread(c) : c;
+      if (live && next.unreadCount === 0 && syncing && backlogIncoming.has(store.keyFor(c.id))) {
+        // The catch-up sync delivers every read made elsewhere while the app was
+        // closed — including one from BEFORE the messages that just came in from
+        // the backlog. Baileys drops the 'only if still current' check outside the
+        // first sync, so this would zero a chat with fresh unread messages. If the
+        // new ones were read too, their read receipts clear the badge anyway.
+        const { unreadCount: _u, markedAsUnread: _m, ...keep } = next;
+        next = keep;
+      }
+      if (live && (next.unreadCount !== undefined || c.archived !== undefined || c.pinned !== undefined)) unreadChanged = true;
+      upsertChat(next);
       if (!live) continue;
       broadcast('wa:chat-update', {
         id: store.keyFor(c.id),
         archived: c.archived ?? undefined,
-        unreadCount: typeof c.unreadCount === 'number' ? Math.max(0, c.unreadCount) : undefined,
+        unreadCount: next.unreadCount,
       });
     }
-    if (moved && status === 'ready') signalChatsChanged();
+    // Read on the phone, archived elsewhere…: the list must re-sort and re-badge.
+    if ((moved || unreadChanged) && status === 'ready') signalChatsChanged();
   };
   sock.ev.on('chats.upsert', (list) => onChats(list, { live: false }));
   sock.ev.on('chats.update', (list) => onChats(list, { live: true }));
   sock.ev.on('chats.delete', (ids) => {
     for (const id of ids || []) store.deleteChat(id);
+    if (!ids?.length) return;
+    scheduleStoreSave();
+    if (status === 'ready') signalChatsChanged(); // deleted on the phone → gone here too
   });
 
   const onContacts = (list) => {
@@ -647,6 +859,19 @@ function wireEvents(dataDir) {
   };
   sock.ev.on('contacts.upsert', onContacts);
   sock.ev.on('contacts.update', onContacts);
+
+  // Joined a group / a group was renamed: keep its title current.
+  const onGroups = (list) => {
+    let changed = false;
+    for (const g of list || []) {
+      if (!g?.id || !g.subject) continue;
+      upsertChat({ id: g.id, name: g.subject });
+      changed = true;
+    }
+    if (changed && status === 'ready') signalChatsChanged();
+  };
+  sock.ev.on('groups.upsert', onGroups);
+  sock.ev.on('groups.update', onGroups);
 
   // WhatsApp can send the LID↔phone mapping separately from the contact records.
   sock.ev.on('lid-mapping.update', (m) => {
@@ -678,6 +903,7 @@ function wireEvents(dataDir) {
       // 'append' means history/backfill; 'notify' is live. Either way, anything
       // older than our connect time is replayed backlog: no sound, no unread bump.
       const isBacklog = type !== 'notify' || isBacklogMessage(ts, readyAtSec);
+      if (isBacklog && !m.key.fromMe) backlogIncoming.add(jid);
 
       broadcast('wa:message', {
         from: m.key.fromMe ? (meId || jid) : jid,
@@ -685,6 +911,9 @@ function wireEvents(dataDir) {
         // The chat this belongs to, and every id an open chat window may know it by.
         chatId: jid,
         chatAliases: contacts.aliasesFor(raw),
+        // In a group `from` is the group; these say who actually wrote it.
+        author: entry.author,
+        senderName: senderNameOf(m),
         body: entry.body,
         timestamp: ts,
         id: entry.id,
@@ -692,7 +921,7 @@ function wireEvents(dataDir) {
         isGif: entry.isGif,
         fromMe: entry.fromMe,
         ack: entry.ack,
-        mediaData: null,
+        mediaData: mediaCache.get(entry.id),
         isBacklog,
       });
 
@@ -716,27 +945,43 @@ function wireEvents(dataDir) {
   });
 
   sock.ev.on('messages.update', (updates) => {
+    const readElsewhere = new Set();
     for (const u of updates || []) {
       const jid = u?.key?.remoteJid;
       const id = u?.key?.id;
       if (!jid || !id) continue;
       const bucket = store.messagesFor(jid);
-      if (bucket?.has(id)) bucket.set(id, { ...bucket.get(id), ...(u.update || {}) });
-      if (u.update?.status != null) applyAck(jid, id, u.update.status, !!u.key?.fromMe);
+      // Receipts carry the RECEIPT time as messageTimestamp — merged blindly, a
+      // message read hours later jumped to "now", dragging its chat to the top. The
+      // status goes through applyAck, which only ever moves it forward.
+      const { messageTimestamp: _receiptTime, status: _status, ...rest } = u.update || {};
+      if (bucket?.has(id) && Object.keys(rest).length) bucket.set(id, { ...bucket.get(id), ...rest });
+      if (u.update?.status == null) continue;
+      // READ on someone else's message = one of our devices (the phone) read it.
+      if (!u.key.fromMe && Number(u.update.status) >= READ_STATUS) readElsewhere.add(jid);
+      else applyAck(jid, id, u.update.status, !!u.key?.fromMe);
     }
+    markReadElsewhere(readElsewhere);
   });
 
   // Per-recipient delivery/read receipts. In groups this is the only path that
   // reports delivery, and in 1:1 chats it is a second chance at the confirmation
   // that messages.update may not have carried.
   sock.ev.on('message-receipt.update', (updates) => {
+    const readElsewhere = new Set();
     for (const u of updates || []) {
       const jid = u?.key?.remoteJid;
       const id = u?.key?.id;
       if (!jid || !id) continue;
+      // In a group, our own read receipt on someone else's message: read on the phone.
+      if (!u.key.fromMe && u.receipt?.readTimestamp && isMe(u.receipt.userJid)) {
+        readElsewhere.add(jid);
+        continue;
+      }
       const status = statusFromReceipt(u.receipt);
       if (status != null) applyAck(jid, id, status, !!u.key?.fromMe);
     }
+    markReadElsewhere(readElsewhere);
   });
 
   sock.ev.on('messages.delete', (item) => {
@@ -745,6 +990,8 @@ function wireEvents(dataDir) {
     } else if (item?.jid) {
       store.messages.delete(store.keyFor(item.jid));
     }
+    scheduleStoreSave();
+    if (status === 'ready') signalChatsChanged(); // the preview may have been that message
   });
 
   sock.ev.on('presence.update', ({ id, presences }) => {
@@ -771,17 +1018,29 @@ function wireEvents(dataDir) {
 async function downloadMediaFor(m) {
   const type = typeOf(m);
   if (!MEDIA_TYPES.has(type)) return null;
-  const content = m?.message?.[`${type === 'ptt' ? 'audio' : type}Message`]
-    || m?.message?.imageMessage || m?.message?.videoMessage
-    || m?.message?.stickerMessage || m?.message?.audioMessage || m?.message?.documentMessage;
+  const id = m?.key?.id;
+  const cached = mediaCache.get(id);
+  if (cached) return cached;
+  // An expired link would otherwise be re-requested from the phone every refresh.
+  if (mediaCache.recentlyFailed(id)) return null;
+  const c = contentOf(m);
+  const content = c[`${type === 'ptt' ? 'audio' : type}Message`]
+    || c.imageMessage || c.videoMessage || c.stickerMessage || c.audioMessage || c.documentMessage;
   const mimetype = content?.mimetype || 'application/octet-stream';
-  const buffer = await BA.downloadMediaMessage(
-    m, 'buffer', {},
-    { logger: waLogger, reuploadRequest: sock.updateMediaMessage },
-  );
-  if (!buffer) return null;
+  let buffer;
+  try {
+    buffer = await BA.downloadMediaMessage(
+      m, 'buffer', {},
+      { logger: waLogger, reuploadRequest: sock.updateMediaMessage },
+    );
+  } catch (e) {
+    mediaCache.markFailed(id);
+    throw e;
+  }
+  if (!buffer) { mediaCache.markFailed(id); return null; }
   const dataUrl = `data:${mimetype};base64,${buffer.toString('base64')}`;
-  broadcast('wa:media', { msgId: m.key.id, mediaData: dataUrl });
+  mediaCache.set(id, dataUrl);
+  broadcast('wa:media', { msgId: id, mediaData: dataUrl });
   return dataUrl;
 }
 
@@ -805,19 +1064,29 @@ async function getMessages(chatId, opts = {}) {
 
   const entries = all
     .filter(m => m?.message && isRealMessage(m))
-    .map(toMessageEntry)
+    .map(m => {
+      const e = toMessageEntry(m);
+      const senderName = senderNameOf(m);
+      if (senderName) e.senderName = senderName;
+      // Already downloaded → straight into the entry, no second download.
+      if (e.hasMedia) e.mediaData = mediaCache.get(e.id);
+      return e;
+    })
     .sort((a, b) => a.timestamp - b.timestamp);
   const result = entries.slice(-limit);
 
-  // Fill in media for what we're about to show (background, non-blocking).
+  // Fetch what is still missing (background, non-blocking; failures are not
+  // retried on every refresh — see mediaCache).
   if (!opts.skipMedia) {
-    (async () => {
-      for (const e of result) {
-        if (!e.hasMedia || e.type === 'document') continue;
-        const m = bucket?.get(e.id);
-        if (m) { try { await downloadMediaFor(m); } catch (err) { /* ignore */ } }
-      }
-    })();
+    const missing = result.filter(e => e.hasMedia && !e.mediaData && e.type !== 'document' && !mediaCache.recentlyFailed(e.id));
+    if (missing.length) {
+      (async () => {
+        for (const e of missing) {
+          const m = bucket?.get(e.id);
+          if (m) { try { await downloadMediaFor(m); } catch (err) { /* ignore */ } }
+        }
+      })();
+    }
   }
 
   log('WA getMessages', { chatId, count: result.length, stored: all.length });
@@ -893,17 +1162,34 @@ async function sendSticker(chatId, filePath) {
   }
 }
 
-async function sendVoice(chatId, base64Data, mimeType) {
+async function sendVoice(chatId, base64Data, mimeType, waveform) {
   const s = requireSock();
-  const mt = mimeType || 'audio/ogg; codecs=opus';
-  const buffer = Buffer.from(String(base64Data || ''), 'base64');
+  // Chromium records WebM; a WhatsApp voice note must be Ogg/Opus or it will not
+  // play on the phone. The remux is lossless (lib/ogg-opus.js). Duration and
+  // waveform go along, since Baileys could only compute them with extra decoders.
+  let voice;
   try {
-    await s.sendMessage(chatId, { audio: buffer, mimetype: mt, ptt: true });
-    return true;
+    voice = toVoiceNote(Buffer.from(String(base64Data || ''), 'base64'), mimeType);
+  } catch (e) {
+    log('WA voice conversion failed', String(e?.message || e), mimeType);
+    throw e;
+  }
+  const content = { audio: voice.buffer, mimetype: voice.mimetype, ptt: true };
+  if (voice.seconds) content.seconds = voice.seconds;
+  const wf = normalizeWaveform(waveform);
+  if (wf) content.waveform = wf;
+  let sent;
+  try {
+    sent = await s.sendMessage(chatId, content);
   } catch (e) {
     log('WA send failed', 'sendVoice', chatId, String(e?.message || e));
     throw e;
   }
+  // Our own voice note plays right away instead of after the next refresh.
+  if (sent?.key?.id) {
+    broadcast('wa:media', { msgId: sent.key.id, mediaData: `data:audio/ogg;base64,${voice.buffer.toString('base64')}` });
+  }
+  return true;
 }
 
 /** Newest stored message of a chat, by timestamp. */
@@ -925,6 +1211,7 @@ async function setArchive(chatId, archive) {
   await s.chatModify({ archive: !!archive, lastMessages }, newest?.key?.remoteJid || chatId);
   upsertChat({ id: chatId, archived: !!archive });
   broadcast('wa:chat-update', { id: store.keyFor(chatId), archived: !!archive });
+  signalChatsChanged(); // move it to/from the Archiviert section right away
   return true;
 }
 
@@ -965,7 +1252,7 @@ async function markChatRead(chatId) {
     if (!bucket || !bucket.size) return;
     const unread = [...bucket.values()].filter(m => !m.key?.fromMe).slice(-20).map(m => m.key);
     if (unread.length) await sock.readMessages(unread);
-    upsertChat({ id: chatId, unreadCount: 0 });
+    upsertChat({ id: chatId, unreadCount: 0, markedAsUnread: false });
   } catch (e) { /* ignore */ }
 }
 
@@ -995,9 +1282,14 @@ async function getParticipants(chatId) {
     const list = meta?.participants || [];
     // Group metadata pairs each member's LID with their number — learn it, so the
     // member list (and any 1:1 chat with them) can show a name instead of a LID.
+    const rev = contacts.mappingRevision;
     for (const p of list) {
       const pair = pairOf(p.id, p.phoneNumber || p.lid);
       if (pair) contacts.rememberMapping(pair);
+    }
+    if (refileIfMappingsChanged(rev) || contacts.mappingRevision !== rev) {
+      scheduleStoreSave();
+      signalChatsChanged();
     }
     return list.map(p => ({
       id: p.id,
@@ -1017,11 +1309,32 @@ async function closeSocket() {
   clearTimeout(readyTimer); readyTimer = null;
   clearTimeout(chatsChangedTimer); chatsChangedTimer = null;
   clearTimeout(lidLookupTimer); lidLookupTimer = null;
+  clearTimeout(startSyncTimer); startSyncTimer = null;
+  setSyncing(false);
   const s = sock;
   sock = null;
   if (!s) return;
   try { s.ev.removeAllListeners(); } catch (e) {}
   try { s.end(undefined); } catch (e) {}
+}
+
+/**
+ * After a conflict (440): give THIS computer a linked device of its own. Only the
+ * local credentials go — never sock.logout(), which would unlink the device the
+ * other computer is still using. The chat list stays; the new pairing's history
+ * sync tops it up.
+ */
+async function pairAsNewDevice() {
+  clearReconnectTimer();
+  waManualLogout = false;
+  reconnectAttempt = 0;
+  await closeSocket();
+  try { fs.rmSync(sessionDir(lastDataDir), { recursive: true, force: true }); } catch (e) {}
+  currentQR = null;
+  meId = null;
+  log('WA pairing this computer as a separate device');
+  setStatus('loading');
+  return init(onAvatarCb, lastDataDir);
 }
 
 async function logout() {
@@ -1079,6 +1392,8 @@ module.exports = {
   getMyProfile,
   getContactAvatar,
   getParticipants,
+  getSyncState: () => syncing,
+  pairAsNewDevice,
   logout,
   reconnect,
   shutdown,

@@ -54,6 +54,14 @@ Nur die Punkte, die die Automation nicht erreicht. Pro Plattform der Reihe nach.
 - Mit jemandem schreiben, der antwortet → der Kontakt steht **einmal** in der Liste
   (nicht zusätzlich als zweiter Eintrag unter einer langen LID-Nummer).
   Im Log: `WA merged chats` / `WA lid lookup` zeigen die Zusammenführung.
+- **Sprachnachricht** (Mikrofon im Chatfenster) an WhatsApp UND Telegram schicken →
+  kommt am Handy als abspielbare Sprachnachricht mit Dauer an (nicht als Datei).
+- **Start-Sync:** App schließen, am Handy Nachrichten bekommen/lesen, App starten →
+  „Synchronisiere Chats…" erscheint kurz, danach stimmen Vorschau, Reihenfolge
+  (angeheftet → ungelesen → neueste) und Zähler. Log: `WA start sync`.
+- **Zweiter Rechner:** auf einem weiteren Rechner (Mac/Linux) eigene QR-Kopplung →
+  beide laufen parallel. Am Handy unter „Verknüpfte Geräte" heißt es „Retrogram (…)".
+- **Setup-Update (Windows):** Login bleibt nach Installation der neuen Version erhalten.
 
 ## Wenn etwas hakt
 - **Startup-/Bridge-Log:** `%TEMP%\icq-startup.log` (Win) bzw. `$TMPDIR/icq-startup.log` — zeigt gewähltes Datenverzeichnis, den History-Sync und jedes WA-Event (`qr-generated`, `ready`, `disconnected`).

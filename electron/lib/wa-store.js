@@ -56,7 +56,8 @@ function mergeChatRecords(a, b) {
   const [older, newer] = num(a.conversationTimestamp) > num(b.conversationTimestamp) ? [b, a] : [a, b];
   const merged = { ...older, ...newer };
   merged.conversationTimestamp = Math.max(num(a.conversationTimestamp), num(b.conversationTimestamp)) || undefined;
-  merged.unreadCount = Math.max(Number(a.unreadCount) || 0, Number(b.unreadCount) || 0);
+  // Two ids, two sets of messages: what is unread under each adds up.
+  merged.unreadCount = Math.max(0, Number(a.unreadCount) || 0) + Math.max(0, Number(b.unreadCount) || 0);
   for (const k of ['name', 'displayName', 'username']) merged[k] = newer[k] || older[k] || undefined;
   return merged;
 }
@@ -71,13 +72,27 @@ function isProtocolOnly(m) {
 function createWaStore(options = {}) {
   const opts = { ...DEFAULTS, ...options };
   const canonical = typeof opts.canonical === 'function' ? opts.canonical : (j) => j;
+  // When the id mapping changes (a LID learned its number), everything filed under
+  // the old id must move — no matter which code path learned it. A chat left under
+  // its old id is invisible (lookups resolve to the new id) and is dropped from
+  // the next snapshot. So every entry point re-files lazily when this changed.
+  const revision = typeof opts.revision === 'function' ? opts.revision : () => 0;
+  let filedAt = revision();
   const chats = new Map();     // canonical jid → chat record
   const messages = new Map();  // canonical jid → Map<msgId, WAMessage>
 
   const keyFor = (jid) => (jid ? canonical(jid) || jid : jid);
 
+  function sync() {
+    const r = revision();
+    if (r === filedAt) return 0;
+    filedAt = r;
+    return rekey();
+  }
+
   function upsertChat(c) {
     if (!c?.id) return;
+    sync();
     const id = keyFor(c.id);
     const patch = { ...pickChatFields(c), id };
     const prev = chats.get(id);
@@ -91,6 +106,7 @@ function createWaStore(options = {}) {
   }
 
   function messagesFor(jid) {
+    sync();
     return messages.get(keyFor(jid)) || null;
   }
 
@@ -104,6 +120,7 @@ function createWaStore(options = {}) {
   }
 
   function putMessages(list) {
+    sync();
     for (const m of list || []) {
       const raw = m?.key?.remoteJid;
       const id = m?.key?.id;
@@ -129,6 +146,7 @@ function createWaStore(options = {}) {
    * LID↔phone mappings; returns how many entries moved.
    */
   function rekey() {
+    filedAt = revision();
     let moved = 0;
     for (const jid of [...chats.keys()]) {
       const target = keyFor(jid);
@@ -154,6 +172,7 @@ function createWaStore(options = {}) {
 
   /** Newest message that carries real content, or null. */
   function lastRealMessage(jid) {
+    sync();
     const bucket = messages.get(keyFor(jid));
     let best = null;
     if (bucket) {
@@ -178,6 +197,7 @@ function createWaStore(options = {}) {
    * trusted when it has a timestamp or an archive/pin/mute state.
    */
   function isListed(jid) {
+    sync();
     const id = keyFor(jid);
     if (!id || id === 'status@broadcast' || id.endsWith('@newsletter') || id.endsWith('@broadcast')) return false;
     if (id.endsWith('@g.us')) return chats.has(id);
@@ -192,11 +212,13 @@ function createWaStore(options = {}) {
 
   /** Chat ids, newest activity first. */
   function chatJidsByRecency() {
+    sync();
     const ts = new Map([...chats.keys()].map(j => [j, activityOf(j)]));
     return [...chats.keys()].sort((a, b) => ts.get(b) - ts.get(a));
   }
 
   function deleteChat(jid) {
+    sync();
     const id = keyFor(jid);
     chats.delete(id);
     messages.delete(id);
@@ -209,6 +231,7 @@ function createWaStore(options = {}) {
 
   /** Plain object ready for JSON. `extra` is merged in (contacts, lid mappings…). */
   function snapshot(extra = {}) {
+    sync();
     const order = chatJidsByRecency().filter(isListed);
     const keptChats = order.slice(0, opts.maxChats);
     const msgOut = {};
@@ -283,6 +306,7 @@ function createWaStore(options = {}) {
     activityOf,
     isListed,
     rekey,
+    sync,
     deleteChat,
     chatJidsByRecency,
     snapshot,

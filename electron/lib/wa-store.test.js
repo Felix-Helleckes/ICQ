@@ -272,3 +272,17 @@ describe('what goes on disk', () => {
     expect(s.lastRealMessage(A).message.conversation).toBe('nested');
   });
 });
+
+test('a mapping learned anywhere re-files the store before its next use — no orphaned chat', () => {
+  // Learned outside the store's own events (e.g. from a group's member list):
+  // the chat under the LID must not vanish from the list or from the next save.
+  const contacts = createContactDirectory();
+  const s = createWaStore({ canonical: (j) => contacts.canonicalFor(j), revision: () => contacts.mappingRevision });
+  s.putMessages([msg(LID, 'L1', 100, 'hello')]);
+  contacts.rememberMapping({ lid: LID, pn: PN });
+
+  expect(s.isListed(LID)).toBe(true);
+  expect(s.isListed(PN)).toBe(true);
+  expect(s.messagesFor(LID).get('L1')).toBeTruthy();
+  expect(s.snapshot().chats.map(c => c.id)).toEqual([PN]);
+});

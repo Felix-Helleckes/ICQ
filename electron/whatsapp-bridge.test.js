@@ -621,3 +621,317 @@ test('sending still goes exactly once to the id the window was opened with', asy
   expect(fake.sent).toHaveLength(1);
   expect(fake.sent[0].jid).toBe(BOB_LID);
 });
+
+// ── Every start catches up; unread counts; several computers ──────────────
+
+/** Pair once, persist, then start a second time like a normal app start. */
+async function restartWithStore(history, fakeOpts = {}) {
+  const first = loadBridge();
+  await connect(first, createFakeBaileys(), { history });
+  await first.shutdown();
+  global.__waBroadcasts = [];
+  const bridge = loadBridge();
+  const fake = createFakeBaileys(fakeOpts);
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  await fake.socket.ev.emit('connection.update', { connection: 'open' });
+  return { bridge, fake, sock: fake.socket };
+}
+
+test('every start catches up once the offline backlog is through (like WhatsApp Desktop)', async () => {
+  const { bridge, fake, sock } = await restartWithStore({
+    chats: [makeChat(ALICE)], contacts: [makeContact(ALICE, 'Alice')], messages: [], isLatest: true,
+  });
+  expect(bridge.getStatus()).toBe('ready');                // the stored list shows at once
+  expect(broadcastsOn('wa:sync')).toEqual([{ active: true }]);
+  expect(fake.calls.resyncAppState).toHaveLength(0);       // not before the backlog
+
+  await sock.ev.emit('connection.update', { receivedPendingNotifications: true });
+  await new Promise(r => setImmediate(r));
+
+  expect(fake.calls.resyncAppState).toEqual([
+    { collections: expect.arrayContaining(['critical_unblock_low', 'regular_low']), isInitialSync: false },
+  ]);
+  expect(broadcastsOn('wa:sync').pop()).toEqual({ active: false });
+
+  await sock.ev.emit('connection.update', { receivedPendingNotifications: true });
+  await new Promise(r => setImmediate(r));
+  expect(fake.calls.resyncAppState).toHaveLength(1);       // once per connection
+});
+
+test('a fresh pairing gets no extra catch-up sync (Baileys runs its own full one)', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  await fake.socket.ev.emit('connection.update', { qr: 'QR' });
+  await fake.socket.ev.emit('connection.update', { connection: 'open' });
+  await fake.socket.ev.emit('messaging-history.set', {
+    chats: [makeChat(ALICE)], contacts: [], messages: [makeMessage(ALICE, 'M', 'x')], isLatest: true,
+  });
+  await fake.socket.ev.emit('connection.update', { receivedPendingNotifications: true });
+  await new Promise(r => setImmediate(r));
+  expect(fake.calls.resyncAppState).toHaveLength(0);
+});
+
+test('unread counts add up — Baileys reports +1 per incoming message, not a total', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE, { unreadCount: 2 })], contacts: [], messages: [makeMessage(ALICE, 'M', 'x')], isLatest: true },
+  });
+  const unread = async () => (await bridge.getChats())[0].unreadCount;
+  expect(await unread()).toBe(2);
+
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: 1 }]);
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: 1 }]);
+  expect(await unread()).toBe(4);
+
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: null, archived: false }]);
+  expect(await unread()).toBe(4);                          // null = no change
+
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: 0 }]);
+  expect(await unread()).toBe(0);                          // read elsewhere
+
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: -1 }]);
+  expect(await unread()).toBe(1);                          // "marked as unread" on the phone
+});
+
+test('reading a chat on the phone clears the badge here (1:1 and group)', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(ALICE, { unreadCount: 3 }), makeChat(GROUP, { unreadCount: 5 })],
+      contacts: [],
+      messages: [makeMessage(ALICE, 'IN1', 'hi'), makeMessage(GROUP, 'G1', 'hey')],
+      isLatest: true,
+    },
+  });
+  // Our phone read Alice's message: a READ status on a message that is not ours.
+  await sock.ev.emit('messages.update', [{ key: { remoteJid: ALICE, id: 'IN1', fromMe: false }, update: { status: 4 } }]);
+  // In a group it arrives as our own read receipt.
+  await sock.ev.emit('message-receipt.update', [{
+    key: { remoteJid: GROUP, id: 'G1', fromMe: false },
+    receipt: { userJid: fake.meId, readTimestamp: 1700000600 },
+  }]);
+
+  const chats = await bridge.getChats();
+  expect(chats.find(c => c.id === ALICE).unreadCount).toBe(0);
+  expect(chats.find(c => c.id === GROUP).unreadCount).toBe(0);
+  expect(broadcastsOn('chat:read-broadcast').map(b => b.chatId).sort()).toEqual([GROUP, ALICE].sort());
+  expect(broadcastsOn('wa:ack')).toHaveLength(0);          // not mistaken for a delivery tick
+});
+
+test('the same login running on another computer (440) does not start a reconnect ping-pong', async () => {
+  const logSpy = jest.spyOn(console, 'log');
+  try {
+    const bridge = loadBridge();
+    const fake = createFakeBaileys();
+    const sock = await connect(bridge, fake, {
+      history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+    });
+    await sock.ev.emit('connection.update', {
+      connection: 'close', lastDisconnect: { error: { output: { statusCode: 440 } } },
+    });
+    expect(bridge.getStatus()).toBe('conflict');
+    expect(logSpy.mock.calls.some(c => String(c[0]).includes('reconnect scheduled'))).toBe(false);
+    await expect(bridge.sendMessage(ALICE, 'x')).rejects.toThrow(); // nothing goes out
+    expect(fake.sent).toHaveLength(0);
+  } finally {
+    logSpy.mockRestore();
+  }
+});
+
+test('"pair this computer separately" drops only the local login — the other computer stays linked', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  const authDir = path.join(dataDir, 'whatsapp', 'baileys-auth');
+  fs.writeFileSync(path.join(authDir, 'creds.json'), '{}');
+  await sock.ev.emit('connection.update', {
+    connection: 'close', lastDisconnect: { error: { output: { statusCode: 440 } } },
+  });
+
+  await bridge.pairAsNewDevice();
+
+  expect(fake.calls.logout).toBe(0);                       // never unlink the shared device
+  expect(fs.existsSync(path.join(authDir, 'creds.json'))).toBe(false);
+  expect(fake.socketCount).toBe(2);                        // a fresh socket, waiting for a QR
+  expect((await bridge.getChats())).toEqual([]);           // not ready until paired
+});
+
+test('each computer pairs under a recognisable name ("Retrogram (Windows)" etc.)', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  const [name, kind] = fake.lastConfig.browser;
+  expect(name).toMatch(/^Retrogram \((Windows|macOS|Linux|\w+)\)$/);
+  expect(kind).toBe('Desktop');                            // keeps the desktop device type
+});
+
+// ── Voice messages ────────────────────────────────────────────────────────
+
+const VOICE_WEBM_B64 = fs.readFileSync(path.join(__dirname, 'lib', 'fixtures', 'voice-chromium.webm')).toString('base64');
+
+test('a recorded voice note goes out once, as Ogg/Opus with duration and waveform', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  await bridge.sendVoice(ALICE, VOICE_WEBM_B64, 'audio/webm;codecs=opus', Array.from({ length: 64 }, (_, i) => i));
+
+  expect(fake.sent).toHaveLength(1);
+  const { jid, content } = fake.sent[0];
+  expect(jid).toBe(ALICE);
+  expect(content.ptt).toBe(true);
+  expect(content.mimetype).toBe('audio/ogg; codecs=opus');
+  expect(content.audio.toString('ascii', 0, 4)).toBe('OggS');   // no longer Chromium's WebM
+  expect(content.seconds).toBe(2);
+  expect(content.waveform).toBeInstanceOf(Uint8Array);
+  expect(content.waveform).toHaveLength(64);
+  // Our own voice note is playable at once.
+  expect(broadcastsOn('wa:media')[0]).toEqual({ msgId: 'SENT1', mediaData: expect.stringMatching(/^data:audio\/ogg;base64,T2dnUw/) });
+});
+
+test('a recording that cannot become a voice note is refused — nothing is sent', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  await expect(bridge.sendVoice(ALICE, Buffer.from('garbage').toString('base64'), 'audio/mpeg')).rejects.toThrow();
+  expect(fake.sent).toHaveLength(0);
+  expect(bridge.getStatus()).toBe('ready');
+});
+
+// ── Findings from the QA review ───────────────────────────────────────────
+
+test('two inits at once (double click on "reconnect") open ONE socket', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  bridge.__setBaileysForTests(fake.namespace);
+  await Promise.all([bridge.init(null, dataDir), bridge.init(null, dataDir)]);
+  expect(fake.socketCount).toBe(1);
+});
+
+test('a read receipt does not move the message to the receipt time (chat stays in place)', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(ALICE), makeChat(BOB_PN)],
+      contacts: [],
+      messages: [
+        makeMessage(ALICE, 'OLD', 'from yesterday', { fromMe: true, ts: 1700000000 }),
+        makeMessage(BOB_PN, 'NEWER', 'later chat', { ts: 1700005000 }),
+      ],
+      isLatest: true,
+    },
+  });
+  // Baileys puts the receipt's own time into messageTimestamp.
+  await sock.ev.emit('messages.update', [{ key: { remoteJid: ALICE, id: 'OLD', fromMe: true }, update: { status: 4, messageTimestamp: 1700099999 } }]);
+
+  const msgs = await bridge.getMessages(ALICE, { skipMedia: true });
+  expect(msgs[0].timestamp).toBe(1700000000);
+  expect(msgs[0].ack).toBe(3);
+  expect((await bridge.getChats()).map(c => c.id)).toEqual([BOB_PN, ALICE]);
+});
+
+test('media is downloaded once, then served from the cache on every refresh', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const img = { key: { remoteJid: ALICE, id: 'IMG', fromMe: false }, messageTimestamp: 1700000000, message: { imageMessage: { mimetype: 'image/jpeg', caption: 'pic' } } };
+  await connect(bridge, fake, { history: { chats: [makeChat(ALICE)], contacts: [], messages: [img], isLatest: true } });
+
+  await bridge.getMessages(ALICE);
+  await new Promise(r => setImmediate(r));
+  const second = await bridge.getMessages(ALICE);
+  await bridge.getMessages(ALICE);
+  await new Promise(r => setImmediate(r));
+
+  expect(fake.calls.downloads).toBe(1);
+  expect(second[0].mediaData).toMatch(/^data:image\/jpeg;base64,/);
+});
+
+test('media inside a disappearing-messages chat is recognised as media, not an empty bubble', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const wrapped = {
+    key: { remoteJid: ALICE, id: 'EPH', fromMe: false }, messageTimestamp: 1700000000,
+    message: { ephemeralMessage: { message: { imageMessage: { mimetype: 'image/jpeg', caption: 'secret' } } } },
+  };
+  await connect(bridge, fake, { history: { chats: [makeChat(ALICE)], contacts: [], messages: [wrapped], isLatest: true } });
+  const [m] = await bridge.getMessages(ALICE, { skipMedia: true });
+  expect(m.type).toBe('image');
+  expect(m.hasMedia).toBe(true);
+});
+
+test('group messages carry the sender\'s name — never a raw JID', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(GROUP, { name: 'Family' })], contacts: [makeContact(ALICE, 'Alice Example')], messages: [], isLatest: true },
+  });
+  const m = makeMessage(GROUP, 'G1', 'hi all', { ts: now() });
+  m.key.participant = ALICE;
+  const unknown = makeMessage(GROUP, 'G2', 'me too', { ts: now() });
+  unknown.key.participant = '491799999999@s.whatsapp.net';
+  await sock.ev.emit('messages.upsert', { type: 'notify', messages: [m, unknown] });
+
+  const live = broadcastsOn('wa:message');
+  expect(live.find(x => x.id === 'G1').senderName).toBe('Alice Example');
+  expect(live.find(x => x.id === 'G2').senderName).toBe('+491799999999');
+  const stored = await bridge.getMessages(GROUP, { skipMedia: true });
+  expect(stored.map(x => x.senderName)).toEqual(['Alice Example', '+491799999999']);
+});
+
+test('the catch-up sync cannot zero a chat that just got new messages from the backlog', async () => {
+  const { bridge, sock } = await restartWithStore({
+    chats: [makeChat(ALICE)], contacts: [], messages: [makeMessage(ALICE, 'M0', 'old')], isLatest: true,
+  });
+  // Offline backlog: a new message (+1) …
+  await sock.ev.emit('messages.upsert', { type: 'append', messages: [makeMessage(ALICE, 'NEW', 'while you were away', { ts: now() - 600 })] });
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: 1 }]);
+  // … then the app-state catch-up replays a read from BEFORE that message.
+  await sock.ev.emit('chats.update', [{ id: ALICE, unreadCount: 0 }]);
+  expect((await bridge.getChats())[0].unreadCount).toBe(1);
+
+  // The phone really reading the new message (read receipt) still clears it.
+  await sock.ev.emit('messages.update', [{ key: { remoteJid: ALICE, id: 'NEW', fromMe: false }, update: { status: 4 } }]);
+  expect((await bridge.getChats())[0].unreadCount).toBe(0);
+});
+
+test('groups without a title get it from WhatsApp once, after the catch-up', async () => {
+  const { bridge, fake, sock } = await restartWithStore(
+    { chats: [makeChat(GROUP)], contacts: [], messages: [makeMessage(GROUP, 'G', 'x')], isLatest: true },
+    { groups: { [GROUP]: { id: GROUP, subject: 'Climbing Crew', participants: [] } } },
+  );
+  expect((await bridge.getChats())[0].name).toBe('120363000000000001');
+  await sock.ev.emit('connection.update', { receivedPendingNotifications: true });
+  await new Promise(r => setTimeout(r, 20));
+  expect((await bridge.getChats())[0].name).toBe('Climbing Crew');
+  expect(fake.calls.groupMetadata).toEqual([GROUP]);
+});
+
+test('editing one of my messages sends one edit to the chat the message lives in', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(BOB_PN)], contacts: [makeContact(BOB_PN, 'Bob', { lid: BOB_LID })],
+      messages: [makeMessage(BOB_LID, 'MINE', 'typo', { fromMe: true }), makeMessage(BOB_LID, 'THEIRS', 'hi')],
+      isLatest: true,
+    },
+  });
+  await bridge.editMessage(BOB_PN, 'MINE', 'fixed');
+  expect(fake.sent).toHaveLength(1);
+  expect(fake.sent[0].jid).toBe(BOB_LID);
+  expect(fake.sent[0].content).toEqual({ text: 'fixed', edit: { remoteJid: BOB_LID, id: 'MINE', fromMe: true } });
+  await expect(bridge.editMessage(BOB_PN, 'THEIRS', 'nope')).rejects.toThrow(/own messages/);
+  expect(fake.sent).toHaveLength(1);
+});

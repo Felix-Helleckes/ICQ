@@ -10,6 +10,13 @@ const { BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { buildTelegramVoice } = require('./lib/tg-voice');
+const { createMediaCache } = require('./lib/media-cache');
+
+// Downloaded media by chat+message. The chat window refreshes every 8 s and this
+// used to download every photo, sticker and voice note of the last 40 messages
+// again each time — heavy traffic that runs into Telegram's flood-wait limits.
+const mediaCache = createMediaCache();
 
 let SESSION_FILE     = path.join(__dirname, '../data/telegram.session');
 let CREDENTIALS_FILE = path.join(__dirname, '../data/telegram-credentials.json');
@@ -70,11 +77,14 @@ async function init(win, avatarCallback, dataDir) {
   await connect();
 }
 
+// Test seam (like __setBaileysForTests in the WhatsApp bridge): the suite swaps in
+// a fake client so login, sending and logout run without network or account.
+let makeClient = (session) => new TelegramClient(session, API_ID, API_HASH, { connectionRetries: 5 });
+function __setTelegramForTests({ clientFactory }) { makeClient = clientFactory; }
+
 async function connect() {
   const session = new StringSession(loadSession());
-  tgClient = new TelegramClient(session, API_ID, API_HASH, {
-    connectionRetries: 5,
-  });
+  tgClient = makeClient(session);
 
   await tgClient.connect();
   if (await tgClient.isUserAuthorized()) {
@@ -89,11 +99,20 @@ async function connect() {
   }
 }
 
+/** End a client for good — a merely dropped one keeps its connection and its
+ *  message handler, which then pushes messages into the UI after a logout. */
+async function retireClient() {
+  const old = tgClient;
+  tgClient = null;
+  if (!old) return;
+  try { await (old.destroy ? old.destroy() : old.disconnect()); } catch (e) { /* already gone */ }
+}
+
 async function setCredentials(apiId, apiHash) {
   API_ID   = parseInt(apiId, 10);
   API_HASH = apiHash;
   saveCredentials(API_ID, API_HASH);
-  tgClient = null;
+  await retireClient();
   status = 'disconnected';
   await connect();
 }
@@ -106,10 +125,46 @@ async function requestCode(phone) {
   return result.phoneCodeHash;
 }
 
+// The 2FA prompt shared by both login paths: the UI asks, submit2FA() answers.
+function askFor2FA(hint) {
+  broadcast('tg:2fa-needed', { hint: hint || '' });
+  return new Promise((resolve, reject) => {
+    pending2FAResolve = resolve;
+    pending2FAReject  = reject;
+  });
+}
+
 async function signIn(phone, code, hash) {
-  await tgClient.signIn({ phoneNumber: phone, phoneCode: code, phoneCodeHash: hash || phoneHash });
+  if (!tgClient) throw new Error('Telegram not initialized');
+  // gramjs has no client.signIn — this path threw a TypeError since the first
+  // release. The raw auth.signIn matches the UI's two steps (code requested
+  // first, entered later).
+  const { Api } = require('telegram');
+  try {
+    const result = await tgClient.invoke(new Api.auth.SignIn({
+      phoneNumber: String(phone),
+      phoneCodeHash: hash || phoneHash,
+      phoneCode: String(code),
+    }));
+    if (result instanceof Api.auth.AuthorizationSignUpRequired) {
+      throw new Error('Für diese Nummer gibt es noch kein Telegram-Konto — bitte erst in der Telegram-App registrieren.');
+    }
+  } catch (err) {
+    if (err?.errorMessage !== 'SESSION_PASSWORD_NEEDED') throw err;
+    // Two-step verification: the same prompt as the QR login.
+    await tgClient.signInWithPassword(
+      { apiId: API_ID, apiHash: API_HASH },
+      {
+        password: askFor2FA,
+        // Wrong password → ask again (false = keep trying).
+        onError: async (e) => { console.error('[TG 2FA]', e?.message || e); return false; },
+      },
+    );
+  }
   saveSession(tgClient.session.save());
   status = 'ready';
+  const me = await getMe();
+  broadcast('tg:ready', me || {});
   listenForMessages();
   return { success: true };
 }
@@ -255,6 +310,15 @@ async function getContactAvatar(id) {
   return null;
 }
 
+/** The sender as a name (gramjs attaches the user entity it received). */
+function senderNameOf(m) {
+  try {
+    const u = m.sender;
+    if (!u || m.out) return undefined;
+    return [u.firstName, u.lastName].filter(Boolean).join(' ') || u.title || u.username || undefined;
+  } catch (e) { return undefined; }
+}
+
 async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
   const limit = Number.isFinite(opts.limit) ? Math.max(1, Math.min(100, opts.limit)) : 50;
@@ -266,11 +330,24 @@ async function getMessages(chatId, opts = {}) {
     let mediaData = null;
     let mediaType = null;
     let isGif = false;
+    const cacheKey = `${chatId}:${m.id}`;
+    // Download once; later refreshes reuse it, failures are not retried every time.
+    const download = async (mime, options = {}) => {
+      const hit = mediaCache.get(cacheKey);
+      if (hit) return hit;
+      if (mediaCache.recentlyFailed(cacheKey)) return null;
+      try {
+        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0), ...options });
+        if (!buf || !buf.length) { mediaCache.markFailed(cacheKey); return null; }
+        const url = `data:${mime};base64,` + buf.toString('base64');
+        mediaCache.set(cacheKey, url);
+        return url;
+      } catch (e) { mediaCache.markFailed(cacheKey); throw e; }
+    };
     try {
       if (m.photo) {
         // Only download small photos to avoid flood wait
-        const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0), thumb: -1 });
-        if (buf && buf.length) mediaData = 'data:image/jpeg;base64,' + buf.toString('base64');
+        mediaData = await download('image/jpeg', { thumb: -1 });
         mediaType = 'image';
       } else if (m.document) {
         const mime = m.document.mimeType || '';
@@ -282,13 +359,11 @@ async function getMessages(chatId, opts = {}) {
         const isAudio = attrs.some(a => a.className === 'DocumentAttributeAudio');
         if (isSticker) {
           mediaType = 'sticker';
-          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
-          if (buf && buf.length) mediaData = `data:${mime || 'image/webp'};base64,` + buf.toString('base64');
+          mediaData = await download(mime || 'image/webp');
         } else if (isVoice || isAudio || mime.startsWith('audio/')) {
           // Only download audio/voice — skip large video on initial load
           mediaType = isVoice ? 'ptt' : 'audio';
-          const buf = await tgClient.downloadMedia(m, { outputFile: Buffer.alloc(0) });
-          if (buf && buf.length) mediaData = `data:${mime || 'audio/ogg'};base64,` + buf.toString('base64');
+          mediaData = await download(mime || 'audio/ogg');
         } else if (mime.startsWith('video/') || mime === 'image/gif' || isAnimated) {
           // Mark as video but don't download inline — too large, causes flood wait
           mediaType = 'video';
@@ -301,6 +376,8 @@ async function getMessages(chatId, opts = {}) {
       fromMe: m.out,
       timestamp: m.date,
       author: m.fromId?.userId?.toString() || '',
+      // Shown above group messages; the bare user id meant nothing to anyone.
+      senderName: senderNameOf(m),
       type: mediaType || 'text',
       isGif,
       mediaData,
@@ -340,42 +417,36 @@ async function sendFile(chatId, filePath) {
 async function sendSticker(chatId, filePath) {
   if (status !== 'ready') throw new Error('Telegram not ready');
   const { Api } = require('telegram');
-  try {
-    const msg = await tgClient.sendFile(toPeer(chatId), {
+  // Decide BEFORE sending, and send exactly once. This used to retry as a plain
+  // file whenever the first send threw — but a send can throw after the server
+  // already accepted it (timeout, lost reply), and then the sticker arrived twice.
+  // Telegram takes .webp (and animated .tgs / video .webm) as stickers; anything
+  // else goes out as a picture, like on WhatsApp.
+  const ext = (String(filePath).split('.').pop() || '').toLowerCase();
+  const asSticker = ['webp', 'tgs', 'webm'].includes(ext);
+  const msg = await tgClient.sendFile(toPeer(chatId), asSticker
+    ? {
       file: filePath,
       forceDocument: true,
-      attributes: [
-        new Api.DocumentAttributeSticker({
-          alt: '',
-          stickerset: new Api.InputStickerSetEmpty(),
-        }),
-      ],
-    });
-    return {
-      id: msg?.id?.toString?.() || null,
-      timestamp: msg?.date || Math.floor(Date.now() / 1000),
-      fromMe: true,
-      body: msg?.message || '',
-      type: 'sticker',
-    };
-  } catch (e) {
-    // Fallback: send as a regular file if sticker attributes are rejected by server.
-    const msg = await tgClient.sendFile(toPeer(chatId), { file: filePath });
-    return {
-      id: msg?.id?.toString?.() || null,
-      timestamp: msg?.date || Math.floor(Date.now() / 1000),
-      fromMe: true,
-      body: msg?.message || '',
-      type: 'file',
-    };
-  }
+      attributes: [new Api.DocumentAttributeSticker({ alt: '', stickerset: new Api.InputStickerSetEmpty() })],
+    }
+    : { file: filePath });
+  return {
+    id: msg?.id?.toString?.() || null,
+    timestamp: msg?.date || Math.floor(Date.now() / 1000),
+    fromMe: true,
+    body: msg?.message || '',
+    type: asSticker ? 'sticker' : 'image',
+  };
 }
 
-async function sendVoice(chatId, base64Data, mimeType) {
+async function sendVoice(chatId, base64Data, mimeType, waveform) {
   if (status !== 'ready') throw new Error('Telegram not ready');
-  const buf = Buffer.from(base64Data || '', 'base64');
-  // GramJS sendFile supports voiceNote option
-  const msg = await tgClient.sendFile(toPeer(chatId), { file: buf, voiceNote: true });
+  // A bare Buffer went out as an 'unnamed' file — see lib/tg-voice.js.
+  const { Api } = require('telegram');
+  const { CustomFile } = require('telegram/client/uploads');
+  const voice = buildTelegramVoice(base64Data, mimeType, waveform, { CustomFile, Api });
+  const msg = await tgClient.sendFile(toPeer(chatId), voice);
   return {
     id: msg?.id?.toString?.() || null,
     timestamp: msg?.date || Math.floor(Date.now() / 1000),
@@ -600,10 +671,15 @@ async function getMe() {
 }
 
 async function logout() {
-  try { await tgClient.invoke(new (require('telegram/tl').functions.auth.LogOutRequest)()); } catch (e) {}
+  // Ends the session on Telegram's side too. The old call referenced an API that
+  // does not exist, so the session stayed valid on the server — any copy of
+  // telegram.session (a copied portable folder, a backup) kept working.
+  const { Api } = require('telegram');
+  try { if (tgClient) await tgClient.invoke(new Api.auth.LogOut()); } catch (e) { /* offline: local logout still happens */ }
   try { fs.unlinkSync(SESSION_FILE); } catch (e) {}
+  mediaCache.clear();
   status = 'needs-auth';
-  tgClient = null;
+  await retireClient();
   // Reinitialize an unauthenticated client so the next login attempt works immediately
   await connect();
 }
@@ -614,6 +690,7 @@ async function shutdown() {
 }
 
 module.exports = {
+  __setTelegramForTests,
   init,
   requestCode,
   signIn,

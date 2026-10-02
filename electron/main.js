@@ -3,7 +3,7 @@ const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
-const { resolveDataDir } = require('./lib/data-dir');
+const { resolveDataDir, findLegacyDataDir, migrateLegacyData } = require('./lib/data-dir');
 // E2E smoke mode (set by the Playwright CI test): load the built renderer
 // and skip messenger bridge init so the app boots deterministically with
 // no network / Puppeteer dependency.
@@ -15,6 +15,20 @@ function logStartup(msg, err) {
     const detail = err ? ` | ${err.stack || err.message || String(err)}` : '';
     fs.appendFileSync(STARTUP_LOG, `[${new Date().toISOString()}] ${msg}${detail}\n`, 'utf8');
   } catch (e) {}
+}
+
+// Only web links leave the app. Popups from game sites (and their ads) could
+// otherwise hand file:, search-ms: or other protocol handlers to the OS.
+function openExternalSafe(url) {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
+}
+
+// Avatar cache files are named after chat ids — keep them inside the folder and
+// free of characters Windows treats specially (':' would make an NTFS stream).
+// Real ids ("4917…@s.whatsapp.net", "-100123") pass through unchanged, so the
+// existing cache keeps working.
+function avatarFileName(id) {
+  return `${String(id).replace(/[^A-Za-z0-9@._+-]/g, '_').replace(/\.{2,}/g, '_')}.img`;
 }
 
 function wireWindowDiagnostics(win, label) {
@@ -52,13 +66,11 @@ if (!singleInstanceLock) {
 
 // ── User-data directory ───────────────────────────────────────
 // Portable builds keep the login/session in `ICQ-Data` next to the .exe so the
-// folder is self-contained; installed builds try the same but fall back to the
-// OS default (%APPDATA%) when the install location isn't writable. The decision
-// logic lives in electron/lib/data-dir.js so it can be unit-tested.
+// folder is self-contained; installed builds (Windows setup, macOS, Linux) use the
+// OS user-data folder — never the install folder, which every update deletes.
+// The decision logic lives in electron/lib/data-dir.js so it can be unit-tested.
 const dataDecision = resolveDataDir({
   portableExecDir: process.env.PORTABLE_EXECUTABLE_DIR,
-  isPackaged: app.isPackaged,
-  execPath: process.execPath,
   fs,
 });
 if (dataDecision) {
@@ -66,33 +78,27 @@ if (dataDecision) {
   app.setPath('sessionData', dataDecision.sessionDataDir);
   appDataDir = dataDecision.userDataDir;
   logStartup(`Data dir active (${dataDecision.source}): userData=${dataDecision.userDataDir}`);
-  // The installed-build fallback moves the data dir off the original %APPDATA%
-  // location, so migrate any avatars a previous version cached there.
-  if (dataDecision.source === 'portable-fallback') {
-    migrateAvatars(ORIGINAL_USER_DATA, dataDecision.userDataDir);
-  }
 } else {
   logStartup(`Using default userData: ${ORIGINAL_USER_DATA}`);
-}
-
-// Copy avatar cache from a previous (default) userData location into the active
-// portable data dir, so switching to the fallback path doesn't lose avatars.
-function migrateAvatars(srcUserData, dstUserData) {
-  try {
-    const srcAv = path.join(srcUserData, 'avatars');
-    const dstAv = path.join(dstUserData, 'avatars');
-    if (!fs.existsSync(srcAv)) return;
-    fs.mkdirSync(dstAv, { recursive: true });
-    const files = fs.readdirSync(srcAv, { withFileTypes: true });
-    for (const f of files) {
-      if (!f.isFile()) continue;
-      const src = path.join(srcAv, f.name);
-      const dst = path.join(dstAv, f.name);
-      if (fs.existsSync(dst)) continue;
-      try { fs.copyFileSync(src, dst); logStartup(`Migrated avatar ${f.name}`); }
-      catch (e) { logStartup(`Avatar migrate failed ${f.name}`, e); }
+  // Older installed builds kept ICQ-Data in the install folder. Bring it over once
+  // (only the primary instance — a second one is about to quit).
+  if (singleInstanceLock) {
+    const legacy = findLegacyDataDir({
+      portableExecDir: process.env.PORTABLE_EXECUTABLE_DIR,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      userDataDir: ORIGINAL_USER_DATA,
+      // Where installer/installer.nsh rescues an old ICQ-Data before an update.
+      extraCandidates: [path.join(app.getPath('appData'), 'ICQ Messenger', 'legacy-ICQ-Data')],
+      fs,
+    });
+    if (legacy) {
+      try {
+        const r = migrateLegacyData({ from: legacy, to: ORIGINAL_USER_DATA, fs });
+        logStartup(`Legacy data migration from ${legacy}: ${r.reason}`);
+      } catch (e) { logStartup(`Legacy data migration from ${legacy} failed`, e); }
     }
-  } catch (e) { logStartup('Avatar migration failed', e); }
+  }
 }
 
 // Contactlist/Chat windows
@@ -100,7 +106,6 @@ let contactListWindow = null;
 const chatWindows = new Map(); // chatId → BrowserWindow
 const avatarStore  = new Map(); // chatId → avatar data URL
 const participantsStore = new Map(); // chatId → participants array
-const waMessageCache = new Map(); // chatId → { messages, timestamp } — short-lived, replace-only
 // appDataDir declared early at top of file (before portable blocks)
 
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
@@ -314,7 +319,7 @@ ipcMain.handle('open-game', async (e, url, title) => {
       }
     } catch (_) {}
     // Open anything else in the real browser
-    shell.openExternal(popUrl);
+    openExternalSafe(popUrl);
     return { action: 'deny' };
   });
 
@@ -343,7 +348,7 @@ ipcMain.handle('get-stored-avatar', async (e, id) => {
   try {
     const userData = appDataDir || app.getPath('userData');
     const dir = path.join(userData, 'avatars');
-    const fname = path.join(dir, `${key}.img`);
+    const fname = path.join(dir, avatarFileName(key));
     if (fs.existsSync(fname)) {
       const buf = fs.readFileSync(fname);
       // Skip broken/empty files written by old bug (HTTP URL stored as empty bytes)
@@ -366,36 +371,13 @@ ipcMain.handle('wa:reconnect',    async ()             => {
 });
 ipcMain.handle('wa:get-chats',    async ()             => whatsappBridge.getChats());
 
-// ── WhatsApp message cache (in-memory, short-lived) ────────────────────────
-// Deliberately simple: it REPLACES a chat's entry, it never merges. A previous
-// version kept a merged, persistent on-disk history — and because merging never
-// drops anything, malformed entries from older builds stayed forever and showed up
-// as duplicate messages in the chat window. Live data is always authoritative; this
-// only spares WhatsApp a re-query for the periodic reconcile.
-const WA_CACHE_TTL = 10000;
-const WA_CACHE_SIZE = 8;
-
+// No message cache here (there used to be a 10 s one): the Baileys bridge answers
+// from its own in-memory store, so there is no WhatsApp round trip to save. The
+// cache outlived the 8 s reconcile in the chat window and handed it snapshots from
+// before the latest receipt or deletion — ticks fell back, deleted messages returned.
 ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
-  // ChatApp sends refresh:true when a chat is opened, and polls without it for its
-  // periodic reconcile. Opening always hits WhatsApp; only the reconcile may reuse a
-  // very fresh entry, so we don't re-query every 8s per open chat.
-  const cached = waMessageCache.get(chatId);
-  if (!opts.refresh && cached && Date.now() - cached.timestamp < WA_CACHE_TTL) {
-    return cached.messages;
-  }
-
   const messages = await whatsappBridge.getMessages(chatId, opts).catch(() => []);
-
-  // Never cache an empty result over a good one — a transient failure would
-  // otherwise blank the chat window for the next 10 seconds.
-  if (Array.isArray(messages) && messages.length) {
-    if (waMessageCache.size >= WA_CACHE_SIZE) {
-      waMessageCache.delete(waMessageCache.keys().next().value);
-    }
-    waMessageCache.set(chatId, { messages, timestamp: Date.now() });
-    return messages;
-  }
-  return cached?.messages || [];
+  return Array.isArray(messages) ? messages : [];
 });
 
 // NOTE: deliberately no background pre-fetch of other chats. After the QR scan the
@@ -405,7 +387,7 @@ ipcMain.handle('wa:get-messages', async (e, chatId, opts = {}) => {
 ipcMain.handle('wa:send-message', async (e, id, text, quotedMessageId)  => whatsappBridge.sendMessage(id, text, quotedMessageId));
 ipcMain.handle('wa:send-file',    async (e, id, path)  => whatsappBridge.sendFile(id, path));
 ipcMain.handle('wa:send-sticker', async (e, id, path)  => whatsappBridge.sendSticker(id, path));
-ipcMain.handle('wa:send-voice',   async (e, id, base64, mime) => whatsappBridge.sendVoice(id, base64, mime));
+ipcMain.handle('wa:send-voice',   async (e, id, base64, mime, waveform) => whatsappBridge.sendVoice(id, base64, mime, waveform));
 ipcMain.handle('wa:set-archive',  async (e, id, archive) => whatsappBridge.setArchive(id, archive));
 ipcMain.handle('wa:edit-message', async (e, chatId, messageId, newText) => whatsappBridge.editMessage(chatId, messageId, newText));
 ipcMain.handle('wa:delete-message', async (e, chatId, messageId, forEveryone) => whatsappBridge.deleteMessage(chatId, messageId, forEveryone));
@@ -415,6 +397,8 @@ ipcMain.handle('wa:get-my-profile', async ()           => whatsappBridge.getMyPr
 ipcMain.handle('wa:get-avatar',   async (e, id)        => whatsappBridge.getContactAvatar(id));
 ipcMain.handle('wa:get-participants', async (e, id)     => whatsappBridge.getParticipants(id));
 ipcMain.handle('wa:logout',       async ()             => whatsappBridge.logout());
+ipcMain.handle('wa:get-sync',     async ()             => whatsappBridge.getSyncState?.() || false);
+ipcMain.handle('wa:pair-new-device', async ()          => whatsappBridge.pairAsNewDevice?.());
 
 // ── IPC: Telegram ─────────────────────────────────────────────
 ipcMain.handle('tg:request-code',   async (e, phone)            => telegramBridge.requestCode(phone));
@@ -426,7 +410,7 @@ ipcMain.handle('tg:get-messages',   async (e, chatId, opts)     => telegramBridg
 ipcMain.handle('tg:send-message',   async (e, chatId, text, quotedMessageId)     => telegramBridge.sendMessage(chatId, text, quotedMessageId));
 ipcMain.handle('tg:send-file',      async (e, chatId, path)     => telegramBridge.sendFile(chatId, path));
 ipcMain.handle('tg:send-sticker',   async (e, chatId, path)     => telegramBridge.sendSticker(chatId, path));
-ipcMain.handle('tg:send-voice',     async (e, chatId, base64, mime) => telegramBridge.sendVoice(chatId, base64, mime));
+ipcMain.handle('tg:send-voice',     async (e, chatId, base64, mime, waveform) => telegramBridge.sendVoice(chatId, base64, mime, waveform));
 ipcMain.handle('tg:set-archive',   async (e, chatId, archive) => telegramBridge.setArchive(chatId, archive));
 
 ipcMain.handle('tg:get-participants', async (e, chatId) => telegramBridge.getParticipants(chatId));
@@ -529,7 +513,8 @@ ipcMain.handle('open-file-dialog', async () => {
 
 // ── IPC: Save clipboard image to temp file ─────────────────
 ipcMain.handle('app:save-temp-image', async (e, base64, ext) => {
-  const fname = `clipboard_${Date.now()}.${ext || 'png'}`;
+  const safeExt = /^[a-z0-9]{1,5}$/i.test(String(ext || '')) ? ext : 'png';
+  const fname = `clipboard_${Date.now()}.${safeExt}`;
   const fpath = path.join(os.tmpdir(), fname);
   fs.writeFileSync(fpath, Buffer.from(base64, 'base64'));
   return fpath;
@@ -591,7 +576,7 @@ ipcMain.handle('set-stored-avatar', async (e, id, dataUrl) => {
       const userData = appDataDir || app.getPath('userData');
       const dir = path.join(userData, 'avatars');
       fs.mkdirSync(dir, { recursive: true });
-      const fname = path.join(dir, `${key}.img`);
+      const fname = path.join(dir, avatarFileName(key));
       fs.writeFileSync(fname, buf);
     } catch (e) { console.error('[set-stored-avatar write]', e); }
     return true;
@@ -629,11 +614,11 @@ function wireExternalLinks(win) {
     const local = devUrl();
     if (!url.startsWith(local)) {
       e.preventDefault();
-      shell.openExternal(url);
+      openExternalSafe(url);
     }
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafe(url);
     return { action: 'deny' };
   });
 
@@ -642,7 +627,7 @@ function wireExternalLinks(win) {
     const menu = new Menu();
     if (params.linkURL) {
       menu.append(new MenuItem({ label: 'Link kopieren', click: () => clipboard.writeText(params.linkURL) }));
-      menu.append(new MenuItem({ label: 'Link öffnen', click: () => shell.openExternal(params.linkURL) }));
+      menu.append(new MenuItem({ label: 'Link öffnen', click: () => openExternalSafe(params.linkURL) }));
       menu.append(new MenuItem({ type: 'separator' }));
     }
     if (params.isEditable) {

@@ -13,16 +13,31 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
   const typingTimer = React.useRef(null);
   const latestTgMsgIdRef = React.useRef(0);
   const lastReadAtRef = React.useRef(0);
+  const readTimerRef = React.useRef(null);
+  // Deleted here — a refresh that still carries them must not bring them back.
+  const deletedIdsRef = React.useRef(new Set());
 
   const markChatReadNow = React.useCallback(() => {
     if (!api || !chatId || !service) return;
+    // Read means seen: a window behind others does not send blue ticks. The focus
+    // handler below marks the chat read once the user actually looks at it.
+    if (typeof document !== 'undefined' && document.hasFocus && !document.hasFocus()) return;
     const now = Date.now();
-    if (now - lastReadAtRef.current < 600) return;
+    const wait = 600 - (now - lastReadAtRef.current);
+    if (wait > 0) {
+      // Throttled — but the second of two quick messages must still get read.
+      if (!readTimerRef.current) {
+        readTimerRef.current = setTimeout(() => { readTimerRef.current = null; markChatReadNow(); }, wait);
+      }
+      return;
+    }
     lastReadAtRef.current = now;
     if (service === 'whatsapp') api.wa.markRead?.(chatId).catch(() => {});
     else api.tg.markRead?.(chatId).catch(() => {});
     api.notifyRead?.({ chatId: String(chatId), service, timestamp: Math.floor(now / 1000) });
   }, [chatId, service]);
+
+  useEffect(() => () => clearTimeout(readTimerRef.current), []);
 
   const mergeById = React.useCallback((base, incoming) => {
     const merged = [...base];
@@ -33,12 +48,16 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     }
     for (const msg of incoming || []) {
       const id = msg?.id;
+      if (id && deletedIdsRef.current.has(String(id))) continue;
       if (id && indexById.has(String(id))) {
         const idx = indexById.get(String(id));
         const prev = merged[idx] || {};
         const next = { ...prev, ...msg };
         // Background refreshes may return mediaData=null; keep already loaded media.
         if (prev.mediaData && (msg?.mediaData == null)) next.mediaData = prev.mediaData;
+        // Ticks only move forward: a refresh taken before the last receipt must not
+        // turn blue ticks grey again.
+        if (typeof prev.ack === 'number' && typeof msg?.ack === 'number') next.ack = Math.max(prev.ack, msg.ack);
         merged[idx] = next;
       } else {
         if (id) indexById.set(String(id), merged.length);
@@ -287,6 +306,34 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     } catch (e) { console.error('[ChatApp sendFile]', e); }
   };
 
+  // Voice note from the mic button. Sent exactly once — on failure the user is told
+  // (it used to fail silently) and can simply record again.
+  const sendVoice = async (base64, mime, waveform) => {
+    if (!base64 || !api) return;
+    const ts = Math.floor(Date.now() / 1000);
+    try {
+      if (service === 'whatsapp') {
+        // The message itself arrives through the bridge's echo (with its media).
+        await api.wa.sendVoice(chatId, base64, mime, waveform);
+      } else {
+        const sent = await api.tg.sendVoice(chatId, base64, mime, waveform);
+        setMessages(prev => [...prev, {
+          id: sent?.id || Date.now().toString(),
+          body: '',
+          fromMe: true,
+          timestamp: sent?.timestamp || ts,
+          type: 'ptt',
+          // The recording plays fine locally as it was recorded.
+          mediaData: `data:${mime || 'audio/webm'};base64,${base64}`,
+        }]);
+      }
+      api.notifySent?.({ chatId, body: '🎤 Sprachnachricht', timestamp: ts, service });
+    } catch (e) {
+      console.error('[ChatApp sendVoice]', e);
+      window.alert(`Sprachnachricht konnte nicht gesendet werden.\n${e?.message || e}`);
+    }
+  };
+
   const sendSticker = async (filePath) => {
     if (!filePath || !api) return;
     try {
@@ -331,6 +378,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
     try {
       if (service === 'whatsapp') await api.wa.deleteMessage(chatId, message.id, forEveryone);
       else await api.tg.deleteMessage(chatId, message.id, forEveryone);
+      deletedIdsRef.current.add(String(message.id));
       setMessages(prev => prev.filter(m => String(m.id) !== String(message.id)));
     } catch (e) {
       console.error('[ChatApp delete]', e);
@@ -359,6 +407,7 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
         messages={messages}
         onSend={sendMessage}
         onSendFile={sendFile}
+        onSendVoice={sendVoice}
         onSendSticker={sendSticker}
         onEditMessage={editMessage}
         onDeleteMessage={deleteMessage}

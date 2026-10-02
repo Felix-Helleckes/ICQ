@@ -17,8 +17,13 @@ test('maps a whatsapp-web.js Chat instance (fast path)', () => {
     unreadCount: 3,
     isGroup: false,
     archived: false,
+    pinned: false,
     avatar: null,
   });
+});
+
+test('a pinned chat stays marked as pinned', () => {
+  expect(mapChatEntry({ id: 'x@s.whatsapp.net', pinned: 1700000000 }).pinned).toBe(true);
 });
 
 test('maps a raw serialized model (defensive path) with .t / archive / formattedTitle', () => {
