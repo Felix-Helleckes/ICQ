@@ -41,4 +41,43 @@ function isBacklogMessage(msgTs, readyAtSec, slackSec = 60) {
   return t < ready - slackSec;
 }
 
-module.exports = { mapMessageEntry, isBacklogMessage };
+// Containers whose `.message` holds the actual content.
+const WRAPPERS = [
+  'ephemeralMessage', 'viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension',
+  'documentWithCaptionMessage', 'editedMessage', 'deviceSentMessage', 'botInvokeMessage',
+  'associatedChildMessage', 'groupStatusMessage', 'groupStatusMessageV2', 'lottieStickerMessage',
+];
+// Keys that ride along with content but are no content of their own.
+const NOT_CONTENT = new Set([
+  'messageContextInfo', 'senderKeyDistributionMessage', 'protocolMessage', 'reactionMessage',
+  'encReactionMessage', 'pollUpdateMessage', 'keepInChatMessage', 'pinInChatMessage',
+  'encEventResponseMessage',
+]);
+
+function unwrapContent(message) {
+  let m = message;
+  for (let i = 0; i < 5 && m && typeof m === 'object'; i += 1) {
+    const wrapper = WRAPPERS.find(k => m[k] && m[k].message);
+    if (!wrapper) break;
+    m = m[wrapper].message;
+  }
+  return m;
+}
+
+/**
+ * Does this WAMessage carry something a person wrote or sent? Mirrors Baileys'
+ * isRealMessage: system stubs ("messages are end-to-end encrypted"), reactions,
+ * edits/revokes and key distribution are not.
+ *
+ * This is what keeps phantom chats out of the contact list. WhatsApp creates a
+ * conversation with a lone E2E notice for every new encryption session — the history
+ * sync delivered ~140 of them, each showing up as a bare number above the real chats.
+ */
+function isRealMessage(m) {
+  const c = unwrapContent(m?.message);
+  if (!c || typeof c !== 'object') return false;
+  if (c.protocolMessage || c.reactionMessage || c.pollUpdateMessage) return false;
+  return Object.keys(c).some(k => !NOT_CONTENT.has(k) && c[k] != null);
+}
+
+module.exports = { mapMessageEntry, isBacklogMessage, isRealMessage, unwrapContent };

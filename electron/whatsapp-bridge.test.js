@@ -12,7 +12,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createFakeBaileys, makeChat, makeContact, makeMessage } = require('./lib/fake-baileys');
+const { createFakeBaileys, makeChat, makeContact, makeMessage, makeStub } = require('./lib/fake-baileys');
 
 // Capture everything the bridge broadcasts to the renderer.
 global.__waBroadcasts = [];
@@ -384,4 +384,240 @@ test('a QR code is published while waiting for the scan', async () => {
   expect(bridge.getStatus()).toBe('qr');
   expect(await bridge.getQR()).toBe('QR-PAYLOAD');
   expect(broadcastsOn('wa:qr')).toContain('QR-PAYLOAD');
+});
+
+// ── One entry per person, names from every source ─────────────────────────
+// Regression guards for "the list shows only numbers" and "people appear twice
+// once I write with them" (WhatsApp addressing a person by LID and by number).
+
+const SELF_LID = '99900000009@lid';
+const now = () => Math.floor(Date.now() / 1000);
+
+test('a reply arriving under the LID joins the phone-number chat — no duplicate entry', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(BOB_PN)],
+      contacts: [makeContact(BOB_PN, 'Bob Builder')],
+      messages: [makeMessage(BOB_PN, 'OUT1', 'hi bob', { fromMe: true })],
+      isLatest: true,
+    },
+  });
+
+  // Baileys v7 delivers the reply under the LID and names the number as the alt id.
+  await sock.ev.emit('messages.upsert', {
+    type: 'notify',
+    messages: [makeMessage(BOB_LID, 'IN1', 'hi back', { ts: now(), alt: BOB_PN })],
+  });
+
+  const chats = await bridge.getChats();
+  expect(chats.map(c => c.id)).toEqual([BOB_PN]);
+  expect(chats[0].name).toBe('Bob Builder');
+  expect(chats[0].lastMessage).toBe('hi back');
+
+  const msg = broadcastsOn('wa:message').find(m => m.id === 'IN1');
+  expect(msg.from).toBe(BOB_PN); // the list patches the row it already has
+  expect(msg.chatAliases).toEqual(expect.arrayContaining([BOB_PN, BOB_LID]));
+
+  // A chat window opened under either id sees the whole conversation.
+  for (const id of [BOB_PN, BOB_LID]) {
+    const msgs = await bridge.getMessages(id, { skipMedia: true });
+    expect(msgs.map(m => m.id)).toEqual(['OUT1', 'IN1']);
+  }
+});
+
+test('a LID twin learned later is folded into the existing chat', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(BOB_PN), makeChat(BOB_LID, { conversationTimestamp: 1700000500 })],
+      contacts: [makeContact(BOB_PN, 'Bob Builder')],
+      messages: [makeMessage(BOB_LID, 'L1', 'from the lid side', { ts: 1700000500 })],
+      isLatest: true,
+    },
+  });
+  expect((await bridge.getChats()).length).toBe(2); // mapping not known yet
+
+  await sock.ev.emit('lid-mapping.update', { lid: BOB_LID, pn: BOB_PN });
+
+  const chats = await bridge.getChats();
+  expect(chats.map(c => c.id)).toEqual([BOB_PN]);
+  expect(chats[0].name).toBe('Bob Builder');
+  expect(chats[0].lastMessage).toBe('from the lid side');
+});
+
+test('history phantoms (a lone encryption notice) never reach the contact list', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const PHANTOM = '55500000077@lid';
+  await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(ALICE), { id: PHANTOM, accountLid: PHANTOM, participant: [] }],
+      contacts: [],
+      messages: [makeMessage(ALICE, 'M1', 'real'), makeStub(PHANTOM, 'E2E1')],
+      isLatest: true,
+    },
+  });
+  expect((await bridge.getChats()).map(c => c.id)).toEqual([ALICE]);
+});
+
+test("the sender's pushname names a contact that is not in the address book", async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  expect((await bridge.getChats())[0].name).toBe('+491700000001');
+
+  await sock.ev.emit('messages.upsert', {
+    type: 'notify',
+    messages: [makeMessage(ALICE, 'P1', 'hey', { ts: now(), pushName: 'Alice from Ads' })],
+  });
+  expect((await bridge.getChats())[0].name).toBe('Alice from Ads');
+});
+
+test("our own pushname on outgoing messages is not taken as the contact's name", async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  await sock.ev.emit('messages.upsert', {
+    type: 'notify',
+    messages: [makeMessage(ALICE, 'O1', 'yo', { ts: now(), fromMe: true, pushName: 'Me Myself' })],
+  });
+  expect((await bridge.getChats())[0].name).toBe('+491700000001');
+});
+
+test('reactions and protocol traffic are not forwarded as empty messages', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: { chats: [makeChat(ALICE)], contacts: [], messages: [], isLatest: true },
+  });
+  await sock.ev.emit('messages.upsert', {
+    type: 'notify',
+    messages: [
+      { key: { remoteJid: ALICE, id: 'R1', fromMe: false }, messageTimestamp: now(), message: { reactionMessage: { text: 'x' } } },
+      { key: { remoteJid: ALICE, id: 'P1', fromMe: true }, messageTimestamp: now(), message: { protocolMessage: { type: 0 } } },
+    ],
+  });
+  expect(broadcastsOn('wa:message')).toHaveLength(0);
+  expect(await bridge.getMessages(ALICE, { skipMedia: true })).toHaveLength(0);
+});
+
+test('RESTART with an old store: duplicates are merged and phantoms dropped on load', async () => {
+  const PHANTOM = '55500000077@lid';
+  // A version-1 store.json as earlier builds wrote it.
+  fs.writeFileSync(path.join(dataDir, 'whatsapp', 'store.json'), JSON.stringify({
+    version: 1,
+    chats: [
+      { id: BOB_PN, conversationTimestamp: 1700000100, archived: false },
+      { id: BOB_LID, conversationTimestamp: 1700000200 },
+      { id: SELF_LID, conversationTimestamp: 1700000300 },
+      { id: PHANTOM, accountLid: PHANTOM, participant: [], messages: [{ message: makeStub(PHANTOM, 'E2E1') }] },
+    ],
+    messages: {
+      [BOB_PN]: [makeMessage(BOB_PN, 'A', 'first', { ts: 1700000100 })],
+      [BOB_LID]: [makeMessage(BOB_LID, 'B', 'second', { ts: 1700000200 })],
+      [SELF_LID]: [{ key: { remoteJid: SELF_LID, id: 'H', fromMe: true }, messageTimestamp: 1700000300, message: { protocolMessage: {} } }],
+    },
+    contactDirectory: { contacts: [[BOB_PN, 'Bob Builder', null, null]], mappings: [[BOB_LID, BOB_PN]] },
+  }));
+
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  await fake.socket.ev.emit('connection.update', { connection: 'open' });
+
+  expect(bridge.getStatus()).toBe('ready'); // names are there at once, no waiting
+  const chats = await bridge.getChats();
+  expect(chats.map(c => c.id)).toEqual([BOB_PN]);
+  expect(chats[0]).toMatchObject({ name: 'Bob Builder', lastMessage: 'second' });
+  const msgs = await bridge.getMessages(BOB_PN, { skipMedia: true });
+  expect(msgs.map(m => m.id)).toEqual(['A', 'B']);
+});
+
+test("an unmapped LID chat is resolved through Baileys' own LID table on connect", async () => {
+  const first = loadBridge();
+  const fake1 = createFakeBaileys();
+  await connect(first, fake1, {
+    history: {
+      chats: [makeChat(BOB_LID)],
+      contacts: [makeContact(BOB_PN, 'Bob Builder')],
+      messages: [makeMessage(BOB_LID, 'L1', 'hello')],
+      isLatest: true,
+    },
+  });
+  expect((await first.getChats())[0].name).toBe('55500000002'); // nothing better known
+  await first.shutdown();
+
+  const second = loadBridge();
+  const fake2 = createFakeBaileys({ lidMap: { [BOB_LID]: BOB_PN } });
+  second.__setBaileysForTests(fake2.namespace);
+  await second.init(null, dataDir);
+  await fake2.socket.ev.emit('connection.update', { connection: 'open' });
+  await new Promise(r => setImmediate(r));
+
+  expect(fake2.calls.lidLookups).toEqual([[BOB_LID]]);
+  const chats = await second.getChats();
+  expect(chats.map(c => c.id)).toEqual([BOB_PN]);
+  expect(chats[0].name).toBe('Bob Builder');
+});
+
+test('after a QR scan the history is awaited even though the creds already look linked', async () => {
+  // Real pairing: QR → scan → WhatsApp restarts the socket (515) → the new socket
+  // opens with registered creds, and only then does the history stream in.
+  const bridge = loadBridge();
+  const fake = createFakeBaileys(); // registered: the post-515 state
+  bridge.__setBaileysForTests(fake.namespace);
+  await bridge.init(null, dataDir);
+  await fake.socket.ev.emit('connection.update', { qr: 'QR' });
+  await fake.socket.ev.emit('connection.update', { isNewLogin: true });
+  await fake.socket.ev.emit('connection.update', { connection: 'open' });
+  await new Promise(r => setImmediate(r));
+
+  expect(bridge.getStatus()).not.toBe('ready');
+  expect(fake.calls.resyncAppState).toHaveLength(0); // no competing recovery sync
+
+  await fake.socket.ev.emit('messaging-history.set', {
+    chats: [makeChat(ALICE)], contacts: [makeContact(ALICE, 'Alice Example')], messages: [], isLatest: true,
+  });
+  expect(bridge.getStatus()).toBe('ready');
+  expect((await bridge.getChats())[0].name).toBe('Alice Example');
+});
+
+test("archiving addresses the chat the way WhatsApp keys it (newest message's id)", async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  const sock = await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(BOB_PN)],
+      contacts: [makeContact(BOB_PN, 'Bob', { lid: BOB_LID })],
+      messages: [makeMessage(BOB_PN, 'A', 'old', { ts: 1700000100 })],
+      isLatest: true,
+    },
+  });
+  await sock.ev.emit('messages.upsert', {
+    type: 'notify', messages: [makeMessage(BOB_LID, 'B', 'new', { ts: now() })],
+  });
+  await bridge.setArchive(BOB_PN, true);
+  expect(fake.calls.chatModify[0].jid).toBe(BOB_LID);
+  expect((await bridge.getChats())[0].archived).toBe(true);
+});
+
+test('sending still goes exactly once to the id the window was opened with', async () => {
+  const bridge = loadBridge();
+  const fake = createFakeBaileys();
+  await connect(bridge, fake, {
+    history: {
+      chats: [makeChat(BOB_PN)], contacts: [makeContact(BOB_PN, 'Bob', { lid: BOB_LID })], messages: [], isLatest: true,
+    },
+  });
+  await bridge.sendMessage(BOB_LID, 'via the old window');
+  expect(fake.sent).toHaveLength(1);
+  expect(fake.sent[0].jid).toBe(BOB_LID);
 });

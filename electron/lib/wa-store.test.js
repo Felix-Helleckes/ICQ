@@ -119,3 +119,156 @@ describe('file persistence', () => {
     expect(fs.files.has('/store.json.tmp')).toBe(false);
   });
 });
+
+// ── One chat per person, real chats only ──────────────────────────────────
+
+const { createContactDirectory } = require('./contact-names');
+
+const LID = '55500000002@lid';
+const PN = '491700000002@s.whatsapp.net';
+
+function storeWithDirectory(options) {
+  const contacts = createContactDirectory();
+  const s = createWaStore({ ...options, canonical: (j) => contacts.canonicalFor(j) });
+  return { s, contacts };
+}
+
+const stub = (jid, id, ts) => ({ key: { remoteJid: jid, id, fromMe: true }, messageTimestamp: ts, messageStubType: 75 });
+
+describe('canonical filing', () => {
+  test('a reply under the LID lands in the phone-number chat', () => {
+    const { s, contacts } = storeWithDirectory();
+    contacts.rememberMapping({ lid: LID, pn: PN });
+    s.upsertChat({ id: PN, conversationTimestamp: 100 });
+    s.putMessages([msg(LID, 'R1', 200, 'reply')]);
+    expect([...s.chats.keys()]).toEqual([PN]);
+    expect(s.messagesFor(LID).get('R1').message.conversation).toBe('reply');
+    expect(s.messagesFor(PN).size).toBe(1);
+  });
+
+  test('rekey() folds twins together once the mapping is learned', () => {
+    const { s, contacts } = storeWithDirectory();
+    s.upsertChat({ id: PN, conversationTimestamp: 100, archived: false, unreadCount: 0 });
+    s.upsertChat({ id: LID, conversationTimestamp: 300, unreadCount: 2 });
+    s.putMessages([msg(PN, 'A', 100), msg(LID, 'B', 300)]);
+    expect(s.chatCount).toBe(2);
+
+    contacts.rememberMapping({ lid: LID, pn: PN });
+    expect(s.rekey()).toBeGreaterThan(0);
+
+    expect([...s.chats.keys()]).toEqual([PN]);
+    const chat = s.chats.get(PN);
+    expect(chat.conversationTimestamp).toBe(300);
+    expect(chat.unreadCount).toBe(2);
+    expect([...s.messagesFor(PN).keys()].sort()).toEqual(['A', 'B']);
+    expect(s.rekey()).toBe(0); // idempotent
+  });
+
+  test('an update under one alias never drags the activity time backwards', () => {
+    const { s, contacts } = storeWithDirectory();
+    contacts.rememberMapping({ lid: LID, pn: PN });
+    s.upsertChat({ id: PN, conversationTimestamp: 500 });
+    s.upsertChat({ id: LID, conversationTimestamp: 100, archived: true });
+    expect(s.chats.get(PN)).toMatchObject({ conversationTimestamp: 500, archived: true });
+  });
+});
+
+describe('isListed — phantom chats stay out of the contact list', () => {
+  test('a lone encryption notice creates no chat at all', () => {
+    const s = createWaStore();
+    s.putMessages([stub(LID, 'E2E', 100)]);
+    expect(s.chatCount).toBe(0);
+    expect(s.isListed(LID)).toBe(false);
+  });
+
+  test('a history conversation holding only a notice and no timestamp is hidden', () => {
+    const s = createWaStore();
+    s.upsertChat({ id: LID, accountLid: LID });
+    s.putMessages([stub(LID, 'E2E', 100)]);
+    expect(s.isListed(LID)).toBe(false);
+  });
+
+  test('real content lists a chat; groups are always listed', () => {
+    const s = createWaStore();
+    s.putMessages([msg(A, 'M1', 100)]);
+    s.upsertChat({ id: '1203630001@g.us' });
+    expect(s.isListed(A)).toBe(true);
+    expect(s.isListed('1203630001@g.us')).toBe(true);
+  });
+
+  test('WhatsApp\'s own dated record stays even if its newest event is a notice', () => {
+    const s = createWaStore();
+    s.upsertChat({ id: A, conversationTimestamp: 100, archived: false });
+    s.putMessages([stub(A, 'SEC', 100)]);
+    expect(s.isListed(A)).toBe(true);
+  });
+
+  test('app-state recovery records (nothing stored) are trusted', () => {
+    const s = createWaStore();
+    s.upsertChat({ id: A, archived: true });
+    s.upsertChat({ id: B, conversationTimestamp: 100 });
+    expect(s.isListed(A)).toBe(true);
+    expect(s.isListed(B)).toBe(true);
+  });
+
+  test('status, broadcast and channel ids are never listed', () => {
+    const s = createWaStore();
+    s.putMessages([msg('status@broadcast', 'S', 1), msg('12036@newsletter', 'N', 1)]);
+    expect(s.isListed('status@broadcast')).toBe(false);
+    expect(s.isListed('12036@newsletter')).toBe(false);
+  });
+});
+
+describe('what goes on disk', () => {
+  test('protocol traffic (history-sync payloads, key shares) is not stored', () => {
+    const s = createWaStore();
+    s.putMessages([{
+      key: { remoteJid: A, id: 'P1', fromMe: true },
+      messageTimestamp: 100,
+      message: { protocolMessage: { historySyncNotification: { initialHistBootstrapInlinePayload: 'x'.repeat(1000) } } },
+    }]);
+    expect(s.messagesFor(A)).toBeNull();
+    expect(s.chatCount).toBe(0);
+  });
+
+  test('chat records keep only the fields the app reads', () => {
+    const s = createWaStore();
+    s.upsertChat({ id: A, conversationTimestamp: 1, messages: [{ message: {} }], participant: [{ id: 'x' }], tcToken: 'abc' });
+    expect(Object.keys(s.chats.get(A)).sort()).toEqual(['conversationTimestamp', 'id']);
+  });
+
+  test('unlisted chats are not persisted; older chats keep their newest message for the preview', () => {
+    const s = createWaStore({ maxMessageChats: 1, maxMessagesPerChat: 5 });
+    s.putMessages([msg(A, 'A1', 100, 'old'), msg(A, 'A2', 110, 'newest of A')]);
+    s.putMessages([msg(B, 'B1', 500)]);
+    s.upsertChat({ id: LID });
+    s.putMessages([stub(LID, 'E2E', 900)]);
+
+    const snap = s.snapshot();
+    expect(snap.chats.map(c => c.id)).toEqual([B, A]);
+    expect(snap.messages[A].map(m => m.message.conversation)).toEqual(['newest of A']);
+  });
+
+  test('loading a version-1 file drops its phantoms and keeps the real chats', () => {
+    const SELF_LID = '99900000009@lid';
+    const v1 = {
+      version: 1,
+      chats: [
+        // Our own account: v1 filed a chat for its history-sync notifications.
+        { id: SELF_LID, conversationTimestamp: 900 },
+        // History conversation with a lone notice nested inside.
+        { id: LID, accountLid: LID, participant: [], messages: [{ message: stub(LID, 'E2E', 800) }] },
+        // A real chat whose only copy of its newest message is the nested one.
+        { id: A, conversationTimestamp: 700, archived: false, messages: [{ message: msg(A, 'N1', 700, 'nested') }] },
+      ],
+      messages: {
+        [SELF_LID]: [{ key: { remoteJid: SELF_LID, id: 'H1', fromMe: true }, messageTimestamp: 900, message: { protocolMessage: {} } }],
+      },
+    };
+    const s = createWaStore();
+    s.hydrate(JSON.parse(JSON.stringify(v1)));
+    const listed = [...s.chats.keys()].filter(s.isListed);
+    expect(listed).toEqual([A]);
+    expect(s.lastRealMessage(A).message.conversation).toBe('nested');
+  });
+});

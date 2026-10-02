@@ -18,17 +18,19 @@ const { BrowserWindow } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { mapMessageEntry, isBacklogMessage } = require('./lib/message-entry');
+const { mapMessageEntry, isBacklogMessage, isRealMessage } = require('./lib/message-entry');
 const { mapChatEntry } = require('./lib/chat-entry');
-const { createContactDirectory } = require('./lib/contact-names');
+const { createContactDirectory, normalizeJid, isLid, isPn } = require('./lib/contact-names');
 const { ackFromStatus, statusFromReceipt, createAckTracker } = require('./lib/ack');
 const { createWaStore, loadSnapshot, saveSnapshot } = require('./lib/wa-store');
 
-// Logging helper: append to temp startup log for easier debugging across restarts
+// Logging helper: append to temp startup log for easier debugging across restarts.
+// Not under Jest — the test suite would otherwise fill the real app log.
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
+const LOG_TO_FILE = !process.env.JEST_WORKER_ID;
 function log(...args) {
   const line = `[${new Date().toISOString()}] ${args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`;
-  try { fs.appendFileSync(STARTUP_LOG, line + '\n'); } catch (e) {}
+  if (LOG_TO_FILE) { try { fs.appendFileSync(STARTUP_LOG, line + '\n'); } catch (e) {} }
   try { console.log(...args); } catch (e) {}
 }
 
@@ -71,18 +73,24 @@ let readyAtSec = 0;           // when the socket last opened — tags replayed b
 let meId = null;
 let connectionOpen = false;   // socket is up; 'ready' may still be waiting for history
 let hasCredentials = false;   // device already linked → no automatic history sync
+let pairingPending = false;   // a QR was shown / pairing succeeded: the history is on its way
 let readyTimer = null;        // fallback so an account without history still becomes ready
 let chatsChangedTimer = null; // debounces the "reload your chat list" signal
+let lidLookupTimer = null;    // debounces the LID → phone lookup in Baileys' own key store
+
+// The list shows at most this many chats (the store keeps 300 on disk).
+const MAX_LISTED_CHATS = 300;
 
 // ── Store (Baileys v7 has no built-in store) ──────────────────────────────
 // Persisted to disk, and that is not optional: WhatsApp sends the history sync ONLY
 // right after a device is linked. Every later start connects with existing
 // credentials and receives no history at all, so a memory-only store comes up empty
 // and the chat list stays blank ("Lädt Chats…" → "No chats found").
-const store = createWaStore();
-const chatStore = store.chats;             // jid → chat record
-const messageStore = store.messages;       // jid → Map<msgId, WAMessage>
 const contacts = createContactDirectory(); // names + LID↔phone mapping
+// Every chat is filed under one id per person, so the LID twin of a phone-number
+// chat folds into it instead of appearing as a second entry.
+const store = createWaStore({ canonical: (jid) => contacts.canonicalFor(jid) });
+const chatStore = store.chats;             // canonical jid → chat record
 const ackTracker = createAckTracker();     // highest delivery state seen per message
 const blockedSet = new Set();
 
@@ -93,9 +101,14 @@ function loadStore(dataDir) {
   storeFile = path.join(dataDir, 'whatsapp', 'store.json');
   const snap = loadSnapshot(storeFile, fs);
   if (!snap) { log('WA store: nothing to restore'); return false; }
-  store.hydrate(snap);
+  // Contacts first: their LID↔phone mappings decide which id each chat is filed
+  // under, so restoring them afterwards would bring back the duplicates.
   contacts.hydrate(snap.contactDirectory);
-  log('WA store restored', { chats: store.chatCount, contacts: contacts.size });
+  store.hydrate(snap);
+  const listed = [...chatStore.keys()].filter(store.isListed).length;
+  log('WA store restored', {
+    chats: store.chatCount, listed, contacts: contacts.size, mappings: contacts.mappingCount,
+  });
   return store.chatCount > 0;
 }
 
@@ -146,7 +159,7 @@ function ackOf(m) {
 function applyAck(jid, id, status, fromMe) {
   const ack = ackFromStatus(status, fromMe);
   if (ackTracker.record(id, ack) == null) return; // not a forward move — ignore
-  const bucket = jid ? messageStore.get(jid) : null;
+  const bucket = jid ? store.messagesFor(jid) : null;
   if (bucket?.has(id)) bucket.set(id, { ...bucket.get(id), status });
   broadcast('wa:ack', { id, ack });
   log('WA ack', { id, ack });
@@ -183,6 +196,8 @@ function bodyOf(m) {
 
 const MEDIA_TYPES = new Set(['image', 'video', 'sticker', 'ptt', 'audio', 'document']);
 
+const tsOf = (m) => Number(m?.messageTimestamp?.low ?? m?.messageTimestamp ?? 0);
+
 // WAMessage → the flat shape the renderer uses. mapMessageEntry normalizes the rest.
 function toMessageEntry(m) {
   const type = typeOf(m);
@@ -190,7 +205,7 @@ function toMessageEntry(m) {
     id: m?.key?.id,
     body: bodyOf(m),
     fromMe: !!m?.key?.fromMe,
-    timestamp: Number(m?.messageTimestamp?.low ?? m?.messageTimestamp ?? 0),
+    timestamp: tsOf(m),
     author: m?.key?.participant || m?.participant || m?.key?.remoteJid,
     type,
     isGif: !!m?.message?.videoMessage?.gifPlayback,
@@ -201,32 +216,130 @@ function toMessageEntry(m) {
 
 // Name lookup lives in lib/contact-names.js (LID↔phone handling is subtle enough to
 // deserve its own tests). These thin wrappers keep the call sites readable.
-const rememberLidMapping = (m) => contacts.rememberMapping(m);
 const rememberContact = (c) => contacts.rememberContact(c);
 const displayNameFor = (jid) => contacts.nameFor(jid);
 const prettyIdFor = (jid) => contacts.prettyIdFor(jid);
 
 function chatEntryFor(jid) {
   const c = chatStore.get(jid) || {};
-  const msgs = messageStore.get(jid);
-  let last = null;
-  if (msgs && msgs.size) {
-    for (const m of msgs.values()) {
-      const t = Number(m?.messageTimestamp?.low ?? m?.messageTimestamp ?? 0);
-      if (!last || t >= last.t) last = { t, body: bodyOf(m) };
-    }
-  }
+  const last = store.lastRealMessage(jid);
+  const isGroup = jid.endsWith('@g.us');
+  // Address-book name first (it is what the phone shows), then what the chat record
+  // or the contact's own pushname offers. prettyIdFor is the floor: mapChatEntry
+  // would otherwise fall back to the raw JID ("4917...@s.whatsapp.net").
+  const name = isGroup
+    ? (c.name || c.displayName || displayNameFor(jid) || prettyIdFor(jid))
+    : (displayNameFor(jid) || c.displayName || c.name || c.username || prettyIdFor(jid));
   return mapChatEntry({
     id: { _serialized: jid },
-    // prettyIdFor is the floor: mapChatEntry would otherwise fall back to the raw
-    // JID, which is what put "4917...@s.whatsapp.net" in the contact list.
-    name: c.name || displayNameFor(jid) || prettyIdFor(jid),
-    lastMessage: last ? { body: last.body, t: last.t } : null,
+    name,
+    lastMessage: last ? { body: bodyOf(last), t: tsOf(last) } : null,
     unreadCount: Math.max(0, Number(c.unreadCount) || 0),
-    isGroup: jid.endsWith('@g.us'),
+    isGroup,
     archive: !!c.archived,
-    t: Number(c.conversationTimestamp?.low ?? c.conversationTimestamp ?? 0),
+    t: store.activityOf(jid),
   });
+}
+
+/** The contact list: real conversations only, newest first. */
+function listedChatEntries() {
+  const entries = [];
+  for (const jid of chatStore.keys()) {
+    if (store.isListed(jid)) entries.push(chatEntryFor(jid));
+  }
+  entries.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  return entries.slice(0, MAX_LISTED_CHATS);
+}
+
+// ── Learning names and identities ─────────────────────────────────────────
+
+/** A chat record often says which other id its person has. */
+function mappingHintFromChat(c) {
+  const id = normalizeJid(c?.id);
+  if (isLid(id) && c.pnJid) return { lid: id, pn: c.pnJid };
+  // accountLid on a phone-number chat is that contact's LID (Baileys reads it the
+  // same way when it turns history chats into contacts).
+  if (isPn(id) && (c.lidJid || c.accountLid)) return { lid: c.lidJid || c.accountLid, pn: id };
+  return null;
+}
+
+function pairOf(a, b) {
+  const x = normalizeJid(a);
+  const y = normalizeJid(b);
+  if (isLid(x) && isPn(y)) return { lid: x, pn: y };
+  if (isPn(x) && isLid(y)) return { lid: y, pn: x };
+  return null;
+}
+
+/**
+ * Pull identity and name hints out of one message. Returns true when a name changed.
+ *
+ * Baileys v7 tags a message with the sender's other id (remoteJidAlt /
+ * participantAlt) — that is how the reply under a LID is recognised as belonging to
+ * the phone-number chat. The pushname on an incoming message is the only name there
+ * is for someone who is not in the address book.
+ */
+function learnFromMessage(m) {
+  const key = m?.key;
+  if (!key) return false;
+  const chatJid = key.remoteJid;
+  const isGroup = typeof chatJid === 'string' && chatJid.endsWith('@g.us');
+  if (!isGroup) {
+    const pair = pairOf(chatJid, key.remoteJidAlt);
+    if (pair) contacts.rememberMapping(pair);
+  }
+  const pPair = pairOf(key.participant, key.participantAlt);
+  if (pPair) contacts.rememberMapping(pPair);
+
+  if (key.fromMe || !m.pushName) return false;
+  const sender = isGroup ? key.participant : chatJid;
+  if (!sender) return false;
+  return contacts.rememberContact({
+    id: sender,
+    notify: m.pushName,
+    ...(m.verifiedBizName ? { verifiedName: m.verifiedBizName } : {}),
+  });
+}
+
+/**
+ * Fold chats together after new LID↔phone mappings. Cheap (a pass over ~300
+ * chats), so it runs once per event batch rather than being clever about which
+ * chats moved.
+ */
+function refileIfMappingsChanged(revisionBefore) {
+  if (contacts.mappingRevision === revisionBefore) return 0;
+  const moved = store.rekey();
+  if (moved) log('WA merged chats', { moved });
+  return moved;
+}
+
+/**
+ * Some LID chats arrive without any mapping in the events, but Baileys keeps its
+ * own LID↔phone table on disk (lid-mapping-*.json in the auth folder). Ask it.
+ */
+async function resolveUnmappedLids() {
+  const lookup = sock?.signalRepository?.lidMapping;
+  if (!lookup?.getPNsForLIDs) return;
+  const lids = [...chatStore.keys()].filter(j => isLid(j) && !contacts.hasMapping(j));
+  if (!lids.length) return;
+  const rev = contacts.mappingRevision;
+  try {
+    const pairs = (await lookup.getPNsForLIDs(lids)) || [];
+    for (const p of pairs) contacts.rememberMapping(p);
+    const moved = refileIfMappingsChanged(rev);
+    log('WA lid lookup', { asked: lids.length, found: pairs.length, moved });
+    if (contacts.mappingRevision !== rev) {
+      scheduleStoreSave();
+      if (status === 'ready') signalChatsChanged();
+    }
+  } catch (e) {
+    log('WA lid lookup failed', String(e?.message || e));
+  }
+}
+
+function scheduleLidLookup() {
+  clearTimeout(lidLookupTimer);
+  lidLookupTimer = setTimeout(() => { lidLookupTimer = null; resolveUnmappedLids(); }, 2000);
 }
 
 // ── Store maintenance ─────────────────────────────────────────────────────
@@ -239,14 +352,6 @@ function upsertChat(c) {
 function storeMessages(list) {
   store.putMessages(list);
   if (list?.length) scheduleStoreSave();
-}
-
-function sortedChatJids() {
-  return [...chatStore.keys()].sort((a, b) => {
-    const ta = chatEntryFor(a).timestamp || 0;
-    const tb = chatEntryFor(b).timestamp || 0;
-    return tb - ta;
-  });
 }
 
 // ── Connection ────────────────────────────────────────────────────────────
@@ -320,7 +425,7 @@ async function init(avatarCallback, dataDir) {
       generateHighQualityLinkPreview: false,
       // Needed for message retries: Baileys asks us for a message it must re-send.
       getMessage: async (key) => {
-        const bucket = messageStore.get(key?.remoteJid);
+        const bucket = store.messagesFor(key?.remoteJid);
         return bucket?.get(key?.id)?.message || undefined;
       },
     });
@@ -385,14 +490,18 @@ function wireEvents(dataDir) {
   sock.ev.on('creds.update', () => { try { saveCreds?.(); } catch (e) {} });
 
   sock.ev.on('connection.update', async (u) => {
-    const { connection, lastDisconnect, qr } = u;
+    const { connection, lastDisconnect, qr, isNewLogin } = u;
 
     if (qr) {
       currentQR = qr;
+      pairingPending = true;
       setStatus('qr');
       broadcast('wa:qr', qr);
       log('WA event', 'qr-generated');
     }
+    // The QR was scanned. WhatsApp now restarts the connection (code 515) and only
+    // then streams the history — by which time the creds already look "linked".
+    if (isNewLogin) pairingPending = true;
 
     if (connection === 'open') {
       currentQR = null;
@@ -402,30 +511,34 @@ function wireEvents(dataDir) {
       connectionOpen = true;
       log('WA event', 'connected', { pushname: sock.user?.name, id: meId });
 
-      if (store.chatCount > 0) {
-        // We restored the chat list from disk, so there is something to show right
-        // away. WhatsApp will not resend the history for an already-linked device
-        // anyway — waiting for it would just stall the UI.
-        announceReady();
-      } else if (hasCredentials) {
-        // Already linked, but nothing stored: WhatsApp replays neither the history
-        // nor the app state on a normal reconnect, so the chat list would stay empty
-        // forever. Ask for the app state explicitly — it carries the contacts and the
-        // chat records. (This is the situation after switching to this bridge, where
-        // the pairing happened before there was a store to fill.)
-        recoverFromAppState();
-      } else {
+      if (pairingPending || !hasCredentials) {
         // First run after linking: Baileys opens the socket immediately and streams
         // the history in afterwards. Announcing ready now would make the UI fetch an
         // empty chat list and cache it, so wait for the first chunk — with a timeout
         // so an account that genuinely has no history still starts.
         clearTimeout(readyTimer);
         readyTimer = setTimeout(() => {
-          if (connectionOpen && status !== 'ready') {
-            log('WA ready (history timeout)', { chats: chatStore.size });
-            announceReady();
-          }
+          readyTimer = null;
+          pairingPending = false;
+          if (!connectionOpen || status === 'ready') return;
+          log('WA ready (history timeout)', { chats: chatStore.size });
+          // Linked but no history came: the app state is the remaining source.
+          if (!chatStore.size && hasCredentials) recoverFromAppState();
+          else announceReady();
         }, 12000);
+      } else if (store.chatCount > 0) {
+        // We restored the chat list from disk, so there is something to show right
+        // away. WhatsApp will not resend the history for an already-linked device
+        // anyway — waiting for it would just stall the UI.
+        announceReady();
+        resolveUnmappedLids();
+      } else {
+        // Already linked, but nothing stored: WhatsApp replays neither the history
+        // nor the app state on a normal reconnect, so the chat list would stay empty
+        // forever. Ask for the app state explicitly — it carries the contacts and the
+        // chat records. (This is the situation after switching to this bridge, where
+        // the pairing happened before there was a store to fill.)
+        recoverFromAppState();
       }
 
       // Cache our own blocklist so the contact menu can show the right entry.
@@ -464,68 +577,102 @@ function wireEvents(dataDir) {
   // Initial history sync — seeds chats, contacts and recent messages. It arrives in
   // several chunks over a few seconds, so this both releases the initial 'ready' and
   // tells the UI to refresh when later chunks add more.
-  sock.ev.on('messaging-history.set', ({ chats, contacts, messages, isLatest, lidPnMappings }) => {
-    // Mappings first: they let a contact found under one JID form name a chat keyed
-    // by the other one.
-    for (const m of lidPnMappings || []) rememberLidMapping(m);
-    for (const c of chats || []) upsertChat(c);
-    for (const c of contacts || []) rememberContact(c);
-    storeMessages(messages);
-    log('WA history', { chats: chats?.length || 0, contacts: contacts?.length || 0, messages: messages?.length || 0, isLatest: !!isLatest });
+  sock.ev.on('messaging-history.set', ({ chats, contacts: contactList, messages, isLatest, lidPnMappings }) => {
+    // Identities first: they decide which id every chat below is filed under, so a
+    // LID chat and its phone-number twin land in the same place.
+    const rev = contacts.mappingRevision;
+    for (const m of lidPnMappings || []) contacts.rememberMapping(m);
+    for (const c of chats || []) {
+      const hint = mappingHintFromChat(c);
+      if (hint) contacts.rememberMapping(hint);
+    }
+    for (const c of contactList || []) rememberContact(c);
+    for (const m of messages || []) learnFromMessage(m);
+    refileIfMappingsChanged(rev);
 
-    const gotSomething = (chats?.length || 0) > 0 || (contacts?.length || 0) > 0;
+    for (const c of chats || []) upsertChat(c);
+    storeMessages(messages);
+    log('WA history', {
+      chats: chats?.length || 0, contacts: contactList?.length || 0, messages: messages?.length || 0,
+      mappings: lidPnMappings?.length || 0, isLatest: !!isLatest,
+    });
+
+    const gotSomething = (chats?.length || 0) > 0 || (contactList?.length || 0) > 0
+      || (lidPnMappings?.length || 0) > 0;
     if (!gotSomething) return;
+    pairingPending = false;
     scheduleStoreSave();
+    scheduleLidLookup();
     // Already ready (restored from disk, or an earlier chunk released it)? Then this
     // chunk only adds to the list, so tell the UI to reload it.
     if (status === 'ready') signalChatsChanged();
     else announceReady();
   });
 
-  sock.ev.on('chats.upsert', (list) => { for (const c of list || []) upsertChat(c); });
-  sock.ev.on('chats.update', (list) => {
+  const onChats = (list, { live }) => {
+    const rev = contacts.mappingRevision;
+    for (const c of list || []) {
+      const hint = mappingHintFromChat(c);
+      if (hint) contacts.rememberMapping(hint);
+    }
+    const moved = refileIfMappingsChanged(rev);
     for (const c of list || []) {
       if (!c?.id) continue;
       upsertChat(c);
+      if (!live) continue;
       broadcast('wa:chat-update', {
-        id: c.id,
+        id: store.keyFor(c.id),
         archived: c.archived ?? undefined,
         unreadCount: typeof c.unreadCount === 'number' ? Math.max(0, c.unreadCount) : undefined,
       });
     }
-  });
+    if (moved && status === 'ready') signalChatsChanged();
+  };
+  sock.ev.on('chats.upsert', (list) => onChats(list, { live: false }));
+  sock.ev.on('chats.update', (list) => onChats(list, { live: true }));
   sock.ev.on('chats.delete', (ids) => {
-    for (const id of ids || []) { chatStore.delete(id); messageStore.delete(id); }
+    for (const id of ids || []) store.deleteChat(id);
   });
 
-  sock.ev.on('contacts.upsert', (list) => {
-    for (const c of list || []) rememberContact(c);
+  const onContacts = (list) => {
     if (!list?.length) return;
+    const rev = contacts.mappingRevision;
+    let changed = false;
+    for (const c of list) changed = rememberContact(c) || changed;
+    refileIfMappingsChanged(rev);
+    if (!changed) return;
     scheduleStoreSave();
-    // Contact names feed the chat list — refresh it so raw JIDs turn into names.
+    // Contact names feed the chat list — refresh it so raw numbers turn into names.
     if (status === 'ready') signalChatsChanged();
-  });
-  sock.ev.on('contacts.update', (list) => {
-    for (const c of list || []) rememberContact(c);
-    if (!list?.length) return;
-    scheduleStoreSave();
-    if (status === 'ready') signalChatsChanged();
-  });
+  };
+  sock.ev.on('contacts.upsert', onContacts);
+  sock.ev.on('contacts.update', onContacts);
 
   // WhatsApp can send the LID↔phone mapping separately from the contact records.
   sock.ev.on('lid-mapping.update', (m) => {
-    rememberLidMapping(m);
+    const rev = contacts.mappingRevision;
+    for (const pair of Array.isArray(m) ? m : [m]) contacts.rememberMapping(pair);
+    if (contacts.mappingRevision === rev) return;
+    refileIfMappingsChanged(rev);
+    scheduleStoreSave();
     if (status === 'ready') signalChatsChanged();
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    const rev = contacts.mappingRevision;
+    let named = false;
+    for (const m of messages || []) named = learnFromMessage(m) || named;
+    const moved = refileIfMappingsChanged(rev);
     storeMessages(messages);
-    for (const m of messages || []) {
-      const jid = m?.key?.remoteJid;
-      if (!jid || jid === 'status@broadcast') continue;
-      // Protocol/system messages carry no renderable content.
-      if (!m.message) continue;
 
+    for (const m of messages || []) {
+      const raw = m?.key?.remoteJid;
+      if (!raw || raw === 'status@broadcast') continue;
+      // System notices, reactions and protocol traffic carry nothing to show — they
+      // used to arrive as empty bubbles and bumped the unread badge.
+      if (!m.message || !isRealMessage(m)) continue;
+
+      const jid = store.keyFor(raw);
       const entry = toMessageEntry(m);
       const ts = entry.timestamp;
       // 'append' means history/backfill; 'notify' is live. Either way, anything
@@ -535,6 +682,9 @@ function wireEvents(dataDir) {
       broadcast('wa:message', {
         from: m.key.fromMe ? (meId || jid) : jid,
         to: m.key.fromMe ? jid : (meId || jid),
+        // The chat this belongs to, and every id an open chat window may know it by.
+        chatId: jid,
+        chatAliases: contacts.aliasesFor(raw),
         body: entry.body,
         timestamp: ts,
         id: entry.id,
@@ -558,6 +708,11 @@ function wireEvents(dataDir) {
         downloadMediaFor(m).catch(() => {});
       }
     }
+    // A new name (pushname) or a merged twin changes rows the list already shows.
+    if (named || moved) {
+      scheduleStoreSave();
+      if (status === 'ready') signalChatsChanged();
+    }
   });
 
   sock.ev.on('messages.update', (updates) => {
@@ -565,7 +720,7 @@ function wireEvents(dataDir) {
       const jid = u?.key?.remoteJid;
       const id = u?.key?.id;
       if (!jid || !id) continue;
-      const bucket = messageStore.get(jid);
+      const bucket = store.messagesFor(jid);
       if (bucket?.has(id)) bucket.set(id, { ...bucket.get(id), ...(u.update || {}) });
       if (u.update?.status != null) applyAck(jid, id, u.update.status, !!u.key?.fromMe);
     }
@@ -586,9 +741,9 @@ function wireEvents(dataDir) {
 
   sock.ev.on('messages.delete', (item) => {
     if (item?.keys) {
-      for (const k of item.keys) messageStore.get(k.remoteJid)?.delete(k.id);
+      for (const k of item.keys) store.messagesFor(k.remoteJid)?.delete(k.id);
     } else if (item?.jid) {
-      messageStore.delete(item.jid);
+      store.messages.delete(store.keyFor(item.jid));
     }
   });
 
@@ -597,7 +752,7 @@ function wireEvents(dataDir) {
     const typing = Object.values(presences).some(
       p => p?.lastKnownPresence === 'composing' || p?.lastKnownPresence === 'recording',
     );
-    broadcast('wa:typing', { chatId: id, typing });
+    broadcast('wa:typing', { chatId: store.keyFor(id), aliases: contacts.aliasesFor(id), typing });
   });
 
   sock.ev.on('blocklist.set', ({ blocklist }) => {
@@ -637,18 +792,19 @@ function getStatus() { return status; }
 
 async function getChats() {
   if (status !== 'ready') return [];
-  const jids = sortedChatJids().filter(j => j && j !== 'status@broadcast' && !j.endsWith('@newsletter'));
-  return jids.slice(0, 100).map(chatEntryFor);
+  return listedChatEntries();
 }
 
 async function getMessages(chatId, opts = {}) {
   if (status !== 'ready') return [];
   const limit = opts.limit ?? 30;
-  const bucket = messageStore.get(chatId);
+  // The window may know the chat by an older alias (LID before the number was
+  // known) — messagesFor resolves it to wherever the chat is filed now.
+  const bucket = store.messagesFor(chatId);
   const all = bucket ? [...bucket.values()] : [];
 
   const entries = all
-    .filter(m => m?.message)
+    .filter(m => m?.message && isRealMessage(m))
     .map(toMessageEntry)
     .sort((a, b) => a.timestamp - b.timestamp);
   const result = entries.slice(-limit);
@@ -679,7 +835,7 @@ async function sendMessage(chatId, text, quotedMessageId = null) {
   const s = requireSock();
   const options = {};
   if (quotedMessageId) {
-    const quoted = messageStore.get(chatId)?.get(quotedMessageId);
+    const quoted = store.messagesFor(chatId)?.get(quotedMessageId);
     if (quoted) options.quoted = quoted;
   }
   try {
@@ -750,20 +906,25 @@ async function sendVoice(chatId, base64Data, mimeType) {
   }
 }
 
+/** Newest stored message of a chat, by timestamp. */
+function newestMessage(chatId) {
+  const bucket = store.messagesFor(chatId);
+  if (!bucket || !bucket.size) return null;
+  let best = null;
+  for (const m of bucket.values()) if (!best || tsOf(m) >= tsOf(best)) best = m;
+  return best;
+}
+
 async function setArchive(chatId, archive) {
   const s = requireSock();
   // chatModify needs the chat's latest message (newest first) to anchor the change.
-  const bucket = messageStore.get(chatId);
-  const newest = bucket && bucket.size
-    ? [...bucket.values()].sort(
-        (a, b) => Number(b?.messageTimestamp?.low ?? b?.messageTimestamp ?? 0)
-                - Number(a?.messageTimestamp?.low ?? a?.messageTimestamp ?? 0),
-      )[0]
-    : null;
+  const newest = newestMessage(chatId);
   const lastMessages = newest ? [{ key: newest.key, messageTimestamp: newest.messageTimestamp }] : [];
-  await s.chatModify({ archive: !!archive, lastMessages }, chatId);
+  // Address the chat the way WhatsApp currently does (LID or number) — that is the
+  // id its own record is kept under, and it is what the newest message carries.
+  await s.chatModify({ archive: !!archive, lastMessages }, newest?.key?.remoteJid || chatId);
   upsertChat({ id: chatId, archived: !!archive });
-  broadcast('wa:chat-update', { id: chatId, archived: !!archive });
+  broadcast('wa:chat-update', { id: store.keyFor(chatId), archived: !!archive });
   return true;
 }
 
@@ -775,32 +936,32 @@ async function setBlocked(contactId, blocked) {
 }
 
 async function isContactBlocked(contactId) {
-  return blockedSet.has(contactId);
+  return contacts.aliasesFor(contactId).some(j => blockedSet.has(j)) || blockedSet.has(contactId);
 }
 
 async function editMessage(chatId, messageId, newText) {
   const s = requireSock();
-  const original = messageStore.get(chatId)?.get(messageId);
+  const original = store.messagesFor(chatId)?.get(messageId);
   if (!original) throw new Error('Message not found');
   if (!original.key?.fromMe) throw new Error('Only own messages can be edited');
-  await s.sendMessage(chatId, { text: String(newText ?? ''), edit: original.key });
+  await s.sendMessage(original.key.remoteJid || chatId, { text: String(newText ?? ''), edit: original.key });
   return true;
 }
 
 async function deleteMessage(chatId, messageId) {
   const s = requireSock();
-  const original = messageStore.get(chatId)?.get(messageId);
+  const original = store.messagesFor(chatId)?.get(messageId);
   if (!original) throw new Error('Message not found');
   if (!original.key?.fromMe) throw new Error('Only own messages can be deleted');
-  await s.sendMessage(chatId, { delete: original.key });
-  messageStore.get(chatId)?.delete(messageId);
+  await s.sendMessage(original.key.remoteJid || chatId, { delete: original.key });
+  store.messagesFor(chatId)?.delete(messageId);
   return true;
 }
 
 async function markChatRead(chatId) {
   if (status !== 'ready') return;
   try {
-    const bucket = messageStore.get(chatId);
+    const bucket = store.messagesFor(chatId);
     if (!bucket || !bucket.size) return;
     const unread = [...bucket.values()].filter(m => !m.key?.fromMe).slice(-20).map(m => m.key);
     if (unread.length) await sock.readMessages(unread);
@@ -831,7 +992,14 @@ async function getParticipants(chatId) {
   if (status !== 'ready' || !chatId?.endsWith('@g.us')) return [];
   try {
     const meta = await sock.groupMetadata(chatId);
-    return (meta?.participants || []).map(p => ({
+    const list = meta?.participants || [];
+    // Group metadata pairs each member's LID with their number — learn it, so the
+    // member list (and any 1:1 chat with them) can show a name instead of a LID.
+    for (const p of list) {
+      const pair = pairOf(p.id, p.phoneNumber || p.lid);
+      if (pair) contacts.rememberMapping(pair);
+    }
+    return list.map(p => ({
       id: p.id,
       name: displayNameFor(p.id) || prettyIdFor(p.id),
       pushname: displayNameFor(p.id),
@@ -848,6 +1016,7 @@ async function closeSocket() {
   connectionOpen = false;
   clearTimeout(readyTimer); readyTimer = null;
   clearTimeout(chatsChangedTimer); chatsChangedTimer = null;
+  clearTimeout(lidLookupTimer); lidLookupTimer = null;
   const s = sock;
   sock = null;
   if (!s) return;

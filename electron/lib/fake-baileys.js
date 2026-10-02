@@ -33,7 +33,7 @@ function createFakeBaileys(opts = {}) {
   const meId = opts.meId || '4915100000000@s.whatsapp.net';
   // Everything the bridge tried to send, so tests can assert without a network.
   const sent = [];
-  const calls = { readMessages: [], chatModify: [], blockStatus: [], resyncAppState: [], logout: 0, end: 0 };
+  const calls = { readMessages: [], chatModify: [], blockStatus: [], resyncAppState: [], lidLookups: [], logout: 0, end: 0 };
   let sockets = [];
 
   function makeSocket() {
@@ -75,6 +75,22 @@ function createFakeBaileys(opts = {}) {
         throw new Error('not a group');
       },
       async updateMediaMessage(m) { return m; },
+
+      // Baileys' own LID → phone table (lid-mapping-*.json in the auth folder).
+      // `opts.lidMap` is { lid: pn }; absent means the socket has no such table.
+      ...(opts.lidMap ? {
+        signalRepository: {
+          lidMapping: {
+            async getPNsForLIDs(lids) {
+              calls.lidLookups.push(lids);
+              // Real Baileys answers with a device suffix — the bridge must cope.
+              const pairs = lids.filter(l => opts.lidMap[l])
+                .map(l => ({ lid: l, pn: opts.lidMap[l].replace('@', ':0@') }));
+              return pairs.length ? pairs : null;
+            },
+          },
+        },
+      } : {}),
     };
     sockets.push(sock);
     return sock;
@@ -137,14 +153,23 @@ function makeContact(id, name, over = {}) {
   return { id, name, ...over };
 }
 
-/** A plain text message. `ts` is seconds. */
-function makeMessage(jid, id, text, { fromMe = false, ts = 1700000000, status } = {}) {
+/**
+ * A plain text message. `ts` is seconds. `alt` is the sender's other id (Baileys v7
+ * remoteJidAlt), `pushName` the name the sender set for themselves.
+ */
+function makeMessage(jid, id, text, { fromMe = false, ts = 1700000000, status, alt, pushName } = {}) {
   return {
-    key: { remoteJid: jid, id, fromMe },
+    key: { remoteJid: jid, id, fromMe, ...(alt ? { remoteJidAlt: alt } : {}) },
     messageTimestamp: ts,
     message: { conversation: text },
     ...(status == null ? {} : { status }),
+    ...(pushName ? { pushName } : {}),
   };
 }
 
-module.exports = { createFakeBaileys, makeChat, makeContact, makeMessage };
+/** A content-less system notice, e.g. "messages are end-to-end encrypted". */
+function makeStub(jid, id, { ts = 1700000000, stubType = 75 } = {}) {
+  return { key: { remoteJid: jid, id, fromMe: true }, messageTimestamp: ts, messageStubType: stubType };
+}
+
+module.exports = { createFakeBaileys, makeChat, makeContact, makeMessage, makeStub };

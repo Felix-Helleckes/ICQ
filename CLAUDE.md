@@ -47,6 +47,12 @@ Höchststand-Marke fällt ein Haken zurück auf die Uhr. Siehe `lib/ack.js`.
 **Kontaktnamen: LID ≠ Telefon-JID.** Dieselbe Person hat zwei JIDs. Kontakte unter
 **allen** Kennungen indizieren + LID↔Telefon-Mapping. Sonst stehen rohe JIDs in der
 Liste. Siehe `lib/contact-names.js`. Es darf **nie** ein String mit `@` in die UI.
+**Ein Chat pro Person:** der Store legt alles unter `canonicalFor()` ab (Telefon-JID
+gewinnt), neues Mapping → `store.rekey()`. Sonst doppelte Einträge, sobald die
+Antwort unter der LID kommt. Mapping-Quellen: History, `remoteJidAlt`, Chat-Felder
+(`pnJid`/`accountLid`), Baileys' eigene `lid-mapping-*.json`.
+**Phantom-Chats:** die History liefert ~100+ Chats mit nur einem E2E-Hinweis — die
+erschienen als nackte Nummern. Gelistet wird nur, was `store.isListed()` sagt.
 
 **Emojis nur als Inhalt.** Bedienelemente nutzen `Icon.js`. Emoji-Picker,
 Chat-Emojis, Spiele-Einträge und die Marken-Blume `✿` bleiben. E2E-Test wacht.
@@ -56,7 +62,7 @@ Chat-Emojis, Spiele-Einträge und die Marken-Blume `✿` bleiben. E2E-Test wacht
 ```
 npm run lint          # fängt undefinierte Variablen — der Build allein tut das NICHT
 npm run check:electron
-npm run test:electron # 72 Tests, inkl. Bridge-Durchlauf gegen lib/fake-baileys.js
+npm run test:electron # 110 Tests, inkl. Bridge-Durchlauf gegen lib/fake-baileys.js
 npm run test:unit     # 24 Tests (Renderer)
 npm run build
 npx playwright test   # 5 E2E, startet echte Electron-App

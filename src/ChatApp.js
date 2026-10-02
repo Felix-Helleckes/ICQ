@@ -184,9 +184,11 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
       if (service !== 'whatsapp') return;
       // Handle both inbound and outbound messages for this open chat.
       // Outbound WA events are needed for accurate ack/media updates.
-      const sameChat = msg.fromMe
+      // chatAliases: WhatsApp addresses a person by LID or by number; this window
+      // may have been opened under either, the bridge files the chat under one.
+      const sameChat = (msg.chatAliases || []).includes(String(chatId)) || (msg.fromMe
         ? String(msg.to) === String(chatId)
-        : String(msg.from) === String(chatId);
+        : String(msg.from) === String(chatId));
       if (sameChat) {
         setMessages(prev => mergeById(prev, [msg]));
         if (!msg.fromMe) markChatReadNow();
@@ -212,8 +214,8 @@ export default function ChatApp({ chatId, chatName, service, isGroup }) {
         })
       : null;
     const removeTyping = service === 'whatsapp' && api.wa.onTyping
-      ? api.wa.onTyping(({ chatId: tid, typing }) => {
-          if (tid !== chatId) return;
+      ? api.wa.onTyping(({ chatId: tid, aliases, typing }) => {
+          if (tid !== chatId && !(aliases || []).includes(chatId)) return;
           setIsTyping(typing);
           if (typing) {
             clearTimeout(typingTimer.current);

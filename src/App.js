@@ -149,14 +149,18 @@ export default function App() {
 
     // Update lastMessage + unreadCount on incoming messages
     // Debounced reload for unknown chats
-    let reloadTimer = null;
+    // One timer per service — a shared one let a pending Telegram reload swallow
+    // the WhatsApp one (and vice versa).
+    const reloadTimers = {};
     const scheduleReload = (service) => {
-      if (reloadTimer) return;
-      reloadTimer = setTimeout(async () => {
-        reloadTimer = null;
+      if (reloadTimers[service]) return;
+      reloadTimers[service] = setTimeout(async () => {
+        reloadTimers[service] = null;
         if (service === 'whatsapp') {
           const result = await api.wa.getChats().catch(() => null);
-          if (result) setCacheAndChats('whatsapp', result);
+          // An empty answer is a transient state (reconnecting), never a reason to
+          // wipe a list that is already on screen.
+          if (Array.isArray(result) && result.length) setCacheAndChats('whatsapp', result);
         } else {
           const result = await api.tg.getDialogs().catch(() => null);
           if (result) setCacheAndChats('telegram', result);
@@ -185,11 +189,12 @@ export default function App() {
       patchChat('whatsapp', msg.from, { lastMessage: msg.body, timestamp: now, unreadCount: (cache.find(c=>c.id===msg.from)?.unreadCount || 0) + 1 });
     });
     // WhatsApp streams its chat history in chunks for a few seconds after connecting,
-    // so the first list we fetched can be incomplete (or just raw IDs, before the
-    // contacts arrive). The bridge tells us when more landed — drop the cache and
-    // reload instead of showing a stale first chunk forever.
+    // so the first list we fetched can be incomplete (or just numbers, before the
+    // contacts arrive). The bridge tells us when more landed. With a list on screen,
+    // swap it in the background — dropping the cache would flash "loading" and blank
+    // the list every time a name or a chunk arrives.
     const removeWaChatsUpdated = api.wa.onChatsUpdated?.(() => {
-      waCacheRef.current = null;
+      if (waCacheRef.current) { scheduleReload('whatsapp'); return; }
       setWaReloadTick(t => t + 1);
     });
     // Avatare nachträglich einspielen (werden im Hintergrund geladen)
@@ -221,7 +226,7 @@ export default function App() {
       if (!msg?.chatId) return;
       patchChat(service, String(msg.chatId), { unreadCount: 0 });
     });
-    return () => { removeWaMsg?.(); removeWaChatsUpdated?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); if (reloadTimer) clearTimeout(reloadTimer); };
+    return () => { removeWaMsg?.(); removeWaChatsUpdated?.(); removeWaAvatar?.(); removeTgAvatar?.(); removeTgMsg?.(); removeSent?.(); removeRead?.(); Object.values(reloadTimers).forEach(t => t && clearTimeout(t)); };
   }, []);
 
   // Load chats when service / status changes — use cache if available

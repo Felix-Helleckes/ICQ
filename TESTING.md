@@ -48,6 +48,12 @@ Nur die Punkte, die die Automation nicht erreicht. Pro Plattform der Reihe nach.
 - Die Liste soll **zügig** kommen und Namen **inkl. Last-Message-Vorschau** zeigen (nicht nur Namen).
 - Chat öffnen → zeigt Nachrichten (nicht leer), **auch bei Gruppen**.
 - Senden zeigt Haken (nicht dauerhaft die Uhr) und kommt **einmal** an, nie doppelt.
+- WhatsApp-Liste: **keine Reihe nackter Nummern** ganz oben (Phantom-Chats), und nach
+  Neustart stehen die Namen **sofort** da. Nur Kontakte, die weder im Adressbuch
+  sind noch je geschrieben haben, dürfen als `+49…` erscheinen.
+- Mit jemandem schreiben, der antwortet → der Kontakt steht **einmal** in der Liste
+  (nicht zusätzlich als zweiter Eintrag unter einer langen LID-Nummer).
+  Im Log: `WA merged chats` / `WA lid lookup` zeigen die Zusammenführung.
 
 ## Wenn etwas hakt
 - **Startup-/Bridge-Log:** `%TEMP%\icq-startup.log` (Win) bzw. `$TMPDIR/icq-startup.log` — zeigt gewähltes Datenverzeichnis, den History-Sync und jedes WA-Event (`qr-generated`, `ready`, `disconnected`).

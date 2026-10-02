@@ -56,3 +56,26 @@ describe('mapMessageEntry', () => {
     expect(out.ack).toBe(-1); // not fromMe, no ack → default
   });
 });
+
+const { isRealMessage } = require('./message-entry');
+
+describe('isRealMessage — what counts as a conversation', () => {
+  const key = { remoteJid: '4917@s.whatsapp.net', id: 'X' };
+  test('text, media and wrapped content are real', () => {
+    expect(isRealMessage({ key, message: { conversation: 'hi' } })).toBe(true);
+    expect(isRealMessage({ key, message: { imageMessage: { url: 'u' }, messageContextInfo: {} } })).toBe(true);
+    expect(isRealMessage({ key, message: { ephemeralMessage: { message: { extendedTextMessage: { text: 'x' } } } } })).toBe(true);
+    expect(isRealMessage({ key, message: { senderKeyDistributionMessage: {}, conversation: 'hi' } })).toBe(true);
+  });
+  test('the "end-to-end encrypted" notice and other stubs are not', () => {
+    expect(isRealMessage({ key, messageStubType: 75 })).toBe(false);
+    expect(isRealMessage({ key, message: null })).toBe(false);
+  });
+  test('protocol traffic, reactions and bare context are not', () => {
+    expect(isRealMessage({ key, message: { protocolMessage: { type: 5 } } })).toBe(false);
+    expect(isRealMessage({ key, message: { messageContextInfo: {}, protocolMessage: {} } })).toBe(false);
+    expect(isRealMessage({ key, message: { reactionMessage: { text: 'x' } } })).toBe(false);
+    expect(isRealMessage({ key, message: { messageContextInfo: {} } })).toBe(false);
+    expect(isRealMessage({ key, message: { editedMessage: { message: { protocolMessage: {} } } } })).toBe(false);
+  });
+});
