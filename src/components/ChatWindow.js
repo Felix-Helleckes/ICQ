@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import './ChatWindow.css';
 import Icon from './Icon';
 import { waveformFromRecording } from '../voiceWaveform';
+import { GAMES_LABEL } from '../brand';
 
 function formatTime(ts) {
   const d = new Date(ts * 1000);
@@ -788,7 +789,7 @@ export default function ChatWindow({ chat, messages, onSend, onSendFile, onSendV
 
           {showGameMenu && (
             <div className="game-menu" ref={gameMenuRef}>
-              <div className="game-menu-title"><Icon name="gamepad" /> ICQ Spiele</div>
+              <div className="game-menu-title"><Icon name="gamepad" /> {GAMES_LABEL}</div>
               {GAMES.map(g => (
                 <button
                   key={g.id}

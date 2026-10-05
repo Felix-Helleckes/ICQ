@@ -37,11 +37,6 @@ jobs:
         run: npm run lint && npm run test:electron && npm run test:unit
         env:
           CI: "true"
-      - name: Build renderer
-        run: npm run build
-        env:
-          CI: "false"
-
       - name: Import signing certificates into a temporary keychain
         env:
           APP_P12: ${{ secrets.MAS_APP_CERT_P12 }}
@@ -64,16 +59,13 @@ jobs:
           echo "$PROFILE" | base64 --decode > store/mas/embedded.provisionprofile
           rm -f "$RUNNER_TEMP/app.p12" "$RUNNER_TEMP/installer.p12"
 
-      # The Windows/DMG builds keep appId com.icqmessenger.app (changing it would
-      # break in-place updates of the installed Windows app). Only the store build
-      # uses the bundle id registered at Apple and the store name.
+      # store/builder.store.js sets the bundle id registered at Apple, the name Retrogram
+      # and the neutral artwork. The Windows/DMG releases keep their own settings.
       - name: Build sandboxed .pkg (universal)
-        run: >
-          npx electron-builder --mac mas --universal --publish never
-          -c.appId=de.helleckes.retrogram
-          -c.productName=Retrogram
-          -c.buildVersion=${{ github.run_number }}
-          -c.mas.identity="Felix Helleckes (${{ secrets.MAS_TEAM_ID }})"
+        run: node scripts/build-store.js mas
+        env:
+          MAS_BUILD_VERSION: ${{ github.run_number }}
+          MAS_IDENTITY: Felix Helleckes (${{ secrets.MAS_TEAM_ID }})
 
       - name: List result
         run: ls -la dist/mas* dist/*.pkg 2>/dev/null || true

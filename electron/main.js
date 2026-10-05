@@ -8,6 +8,9 @@ const { resolveDataDir, findLegacyDataDir, migrateLegacyData } = require('./lib/
 // and skip messenger bridge init so the app boots deterministically with
 // no network / Puppeteer dependency.
 const isE2E = process.env.ICQ_E2E === '1';
+// Store builds (scripts/build-store.js, store/builder.store.js) set storeBuild in the packaged
+// package.json and ship as "Retrogram" without the ICQ trademark in window titles.
+const STORE_BUILD = (() => { try { return require('../package.json').storeBuild === true; } catch (e) { return false; } })();
 
 const STARTUP_LOG = path.join(os.tmpdir(), 'icq-startup.log');
 function logStartup(msg, err) {
@@ -167,7 +170,7 @@ function createContactListWindow() {
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
     },
-    title: 'ICQ Kontaktliste',
+    title: STORE_BUILD ? 'Retrogram' : 'ICQ Kontaktliste',
   });
   contactListWindow.loadURL(devUrl());
   wireWindowDiagnostics(contactListWindow, 'contact-list');
@@ -292,7 +295,7 @@ ipcMain.handle('open-game', async (e, url, title) => {
     minHeight: 600,
     frame: true,
     resizable: true,
-    title: title || 'ICQ Spiele',
+    title: title || (STORE_BUILD ? 'Spiele' : 'ICQ Spiele'),
     icon: getWindowIconPath(),
     webPreferences: {
       nodeIntegration: false,

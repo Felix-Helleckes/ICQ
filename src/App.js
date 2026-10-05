@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import TitleBar from './components/TitleBar';
 import Sidebar from './components/Sidebar';
 import LoginPanel from './components/LoginPanel';
+import { APP_TITLE } from './brand';
 import './App.css';
 
 const api = window.api;
@@ -394,7 +395,7 @@ export default function App() {
 
   return (
     <div className="app-root">
-      <TitleBar title="ICQ Messenger" showVersion />
+      <TitleBar title={APP_TITLE} showVersion />
       <div className="main-layout">
         <Sidebar
           activeService={activeService}

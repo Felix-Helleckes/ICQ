@@ -3,6 +3,7 @@ import './Sidebar.css';
 import { SKINS, setSkin, getSavedSkinId } from '../skins';
 import { splitChats } from '../chatOrder';
 import Icon from './Icon';
+import { GAMES_LABEL, STORE_BUILD, skinLabel } from '../brand';
 
 const GAMES = [
   { id: '8ball', name: '8 Ball Pool',  icon: '🎱', url: 'https://bloob.io/de/8ballpool' },
@@ -261,7 +262,7 @@ export default function Sidebar({
           ><Icon name="gamepad" /></button>
           {showGameMenu && (
             <div className="sidebar-game-menu" ref={gameMenuRef}>
-              <div className="sidebar-game-menu-title"><Icon name="gamepad" /> ICQ Spiele</div>
+              <div className="sidebar-game-menu-title"><Icon name="gamepad" /> {GAMES_LABEL}</div>
               {GAMES.map(g => (
                 <button
                   key={g.id}
@@ -292,7 +293,7 @@ export default function Sidebar({
                   onClick={() => chooseSkin(s.id)}
                 >
                   <span className="skin-swatch" style={{ background: s.swatch }} />
-                  <span>{s.name}</span>
+                  <span>{skinLabel(s.name)}</span>
                   {s.id === skinId && <Icon name="check" className="skin-check" />}
                 </button>
               ))}
@@ -398,15 +399,18 @@ export default function Sidebar({
         </>
       )}
 
-      {/* Support / donate footer — opens the donation page in the browser */}
-      <button
-        className="donate-footer"
-        onClick={() => window.api?.openExternal?.(DONATE_URL)}
-        title="Projekt unterstützen"
-      >
-        <Icon name="heart" size={13} className="donate-heart" />
-        <span>Projekt unterstützen</span>
-      </button>
+      {/* Support / donate footer — opens the donation page in the browser.
+          Not in store builds: the Mac App Store and Microsoft Store reject donation solicitations. */}
+      {!STORE_BUILD && (
+        <button
+          className="donate-footer"
+          onClick={() => window.api?.openExternal?.(DONATE_URL)}
+          title="Projekt unterstützen"
+        >
+          <Icon name="heart" size={13} className="donate-heart" />
+          <span>Projekt unterstützen</span>
+        </button>
+      )}
     </div>
   );
 }

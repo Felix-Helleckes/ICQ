@@ -28,7 +28,7 @@
     "dist:win": "npm run dist:portable",
     "dist:portable": "npm run build && electron-builder --win portable --publish never",
     "dist:nsis": "npm run build && electron-builder --win nsis --publish never",
-    "dist:store": "npm run build && electron-builder --win appx --publish never",
+    "dist:store": "node scripts/build-store.js win",
     "make-icon": "node scripts/make-icon.js",
     "site:build": "node scripts/build-site-de.js"
   },

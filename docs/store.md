@@ -3,6 +3,25 @@
 Stand 2026-10-05. Beide Store-Builds sind **zusätzlich** zu Portable/Setup/DMG, nicht
 ersetzend. Store-Name überall: **Retrogram - Multi Messenger** (ohne „ICQ" — Marke).
 
+## Die Store-Variante (ohne ICQ- und Fremdlogos)
+
+Beide Store-Builds laufen als **Retrogram** mit eigenem Icon; WhatsApp, Telegram und ICQ
+erscheinen nur als Text. Die normalen Builds (Portable, Setup, DMG, Linux) bleiben unverändert.
+
+- `scripts/build-store.js renderer|win|mas` baut die Oberfläche mit `REACT_APP_STORE=1`
+  (`src/brand.js`: Titel „Retrogram", „Spiele" statt „ICQ Spiele", Skinnamen ohne „ICQ",
+  **kein Spenden-Link** — Apple/Microsoft lehnen Spendenaufrufe ab), legt `store/brand/public/*`
+  über die Logos in `build/` und startet danach electron-builder mit `store/builder.store.js`.
+- Eigenes Icon und Kacheln: `store/brand/*.svg` → `node scripts/make-store-assets.js`
+  → `store/brand/public/` (App-Icon, Flaggen-Ersatz für die Dienst-Reiter) und
+  `store/res/appx/` (MSIX-Kacheln). Die erzeugten Dateien sind eingecheckt.
+- Das gepackte `package.json` trägt `storeBuild: true`; `electron/main.js` setzt damit die
+  Fenstertitel.
+- Screenshots: `node scripts/build-store.js renderer && node scripts/store-screenshots.js`
+  → `store/screenshots/` (erfundene Demo-Daten, keine echten Kontakte). Texte: `store/listing.md`.
+- **Achtung:** Ein Store-Build überschreibt `build/`. Vor Portable/Setup/E2E einmal
+  `npm run build` laufen lassen (die `dist:*`-Skripte tun das ohnehin).
+
 ## Microsoft Store (MSIX)
 
 - Partner Center: Produkt `9NP6VGRMZ19V`, Typ MSIX/PWA, Identität
@@ -11,7 +30,7 @@ ersetzend. Store-Name überall: **Retrogram - Multi Messenger** (ohne „ICQ" �
 - Der erste Anlauf als EXE/MSI-App war eine Sackgasse: dafür muss der Installer
   code-signiert sein. MSIX signiert der Store selbst — kein Zertifikat nötig.
 - Bauen (lokal, laufende App vorher schließen): `npm run dist:store`
-  → `dist/Retrogram-<version>.appx` (unsigniert, das ist richtig).
+  → `dist/Retrogram-<version>.appx` (unsigniert, das ist richtig; ruft `build-store.js win` auf).
 - Hochladen: Partner Center → Produkt → Übermittlung → Pakete. Die Datei ist >100 MB und
   geht nur per Hand (Drag & Drop), nicht per Browser-Automatisierung.
 - MSIX-Version ist immer `x.y.z.0`; für jede Einreichung `package.json` erhöhen.
@@ -19,7 +38,7 @@ ersetzend. Store-Name überall: **Retrogram - Multi Messenger** (ohne „ICQ" �
 ## Mac App Store (MAS)
 
 - Apple-Konto Team `5Y4L8J23FQ`, Bundle-ID `de.helleckes.retrogram`
-  (nur im MAS-Build, `build-mas.yml` setzt sie per `-c.appId`; die globale `appId`
+  (nur im Store-Build, gesetzt in `store/builder.store.js`; die globale `appId`
   bleibt, sonst erkennt das Windows-Setup alte Installationen nicht mehr).
 - Sandbox-Rechte: `store/mas/entitlements.mas*.plist` (Netz ausgehend, Mikrofon,
   Dateien nach Auswahl). Mikrofon-Text steht in `build.mas.extendInfo`.

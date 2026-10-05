@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-200 -200 400 400" width="256" height="256">
+  <!-- Flower mark without the bubble, for dark title bars (replaces the logo image in store builds). -->
+  <g fill="#E8FFFD">
+    <ellipse cx="0" cy="-104" rx="52" ry="96"/>
+    <ellipse cx="0" cy="-104" rx="52" ry="96" transform="rotate(120)"/>
+    <ellipse cx="0" cy="-104" rx="52" ry="96" transform="rotate(240)"/>
+  </g>
+  <g fill="#7FE0D8">
+    <ellipse cx="0" cy="-104" rx="52" ry="96" transform="rotate(60)"/>
+    <ellipse cx="0" cy="-104" rx="52" ry="96" transform="rotate(180)"/>
+    <ellipse cx="0" cy="-104" rx="52" ry="96" transform="rotate(300)"/>
+  </g>
+  <circle r="44" fill="#FF7A59"/>
+</svg>

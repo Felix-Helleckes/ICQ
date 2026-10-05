@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+  <!-- Neutral glyph for the second service tab. -->
+  <rect width="48" height="48" rx="11" fill="#2C6E8E"/>
+  <circle cx="24" cy="24" r="12" fill="none" stroke="#F4FFFE" stroke-width="2.6"/>
+  <path d="M18 24h12M25.5 19l5 5-5 5" fill="none" stroke="#F4FFFE" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
