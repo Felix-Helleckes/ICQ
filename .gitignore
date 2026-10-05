@@ -36,3 +36,10 @@ electron-builder-cache/
 # Playwright / test artifacts
 test-results/
 playwright-report/
+
+# Mac App Store: Provisioning Profile and certificates come from CI secrets, never from git
+store/mas/embedded.provisionprofile
+store/**/*.p12
+store/**/*.p8
+store/**/*.key
+store/**/*.csr
