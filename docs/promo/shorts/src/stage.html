@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Retrogram promo stage</title>
+<style>
+  html, body { margin:0; padding:0; width:1080px; height:1920px; overflow:hidden; background:#07090b; }
+  body { font-family:"Segoe UI Black","Segoe UI",Arial,sans-serif; position:relative; color:#fff; }
+  #bg { position:absolute; inset:0;
+        background: radial-gradient(85% 55% at 50% 42%, #203138 0%, #121b21 48%, #06080a 100%); }
+  #grain { position:absolute; inset:0; opacity:.07; mix-blend-mode:overlay; pointer-events:none; }
+  #world { position:absolute; left:0; top:0; width:0; height:0; }
+  .win { position:absolute; left:0; top:0; transform-origin:0 0; will-change:transform, opacity;
+         box-shadow: 0 34px 90px rgba(0,0,0,.62), 0 3px 10px rgba(0,0,0,.45); background:#1F2530; }
+  .win iframe { border:0; display:block; background:transparent; }
+  .win.site { background:#0b1114; }
+  /* OS chrome for the framed game window (Electron frame:true) */
+  .win.game { background:#202020; border:1px solid #3a3a3a; }
+  .win.game .chrome { height:32px; display:flex; align-items:center; gap:8px; padding:0 0 0 10px;
+      font-family:"Segoe UI",Arial,sans-serif; font-weight:400; font-size:12px; color:#e8e8e8; background:#202020; }
+  .win.game .chrome img { width:16px; height:16px; }
+  .win.game .chrome .ttl { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .win.game .chrome .btns { display:flex; height:32px; }
+  .win.game .chrome .btns span { width:46px; display:flex; align-items:center; justify-content:center; font-size:11px; color:#ddd; }
+  .win.game .body { background:#0f1012; position:relative; overflow:hidden; }
+  .win.game .body img { display:block; width:100%; height:100%; object-fit:cover; }
+  #cursor { position:absolute; left:0; top:0; width:46px; height:46px; pointer-events:none; opacity:0;
+            will-change:transform, opacity; filter: drop-shadow(0 3px 5px rgba(0,0,0,.6)); transform-origin:6px 4px; }
+  #caps { position:absolute; inset:0; pointer-events:none; }
+  /* 800 px wide, centred: x 140…940, so no glyph lands in the right safe zone (x > 930). */
+  .cap { position:absolute; left:50%; width:800px; margin-left:-400px; text-align:center; color:#fff; font-weight:900;
+    line-height:1.02; letter-spacing:-.025em; opacity:0; will-change:transform,opacity;
+    text-shadow: 0 2px 2px rgba(0,0,0,.6), 0 10px 40px rgba(0,0,0,.65); }
+  .cap em { font-style:normal; color:#7fe0d6; }
+  .cap.boxed span { display:inline-block; padding:.18em .42em .22em; border-radius:.32em; background:rgba(8,12,14,.86);
+    box-shadow:0 14px 50px rgba(0,0,0,.45); }
+  .cap.soft { font-weight:700; letter-spacing:-.01em; }
+  .cap.code { font-family: Consolas, "Cascadia Mono", "Courier New", monospace; font-weight:700; letter-spacing:0; }
+  .cap s { text-decoration:line-through; text-decoration-color:#ff6b6b; text-decoration-thickness:.1em; color:#e6ebf2; }
+  .cap .pill { display:inline-block; padding:.3em .62em .34em; border-radius:.5em; background:#f2f5f3; color:#0f1a1c;
+    text-shadow:none; box-shadow:0 18px 60px rgba(0,0,0,.55), inset 0 -3px 0 rgba(0,0,0,.08); letter-spacing:-.02em; }
+  .cap .tag { display:inline-block; padding:.22em .5em .26em; border-radius:.4em; background:rgba(127,224,214,.16);
+    border:2px solid rgba(127,224,214,.55); color:#bff3ee; }
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<svg id="grain" xmlns="http://www.w3.org/2000/svg" width="1080" height="1920">
+  <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter>
+  <rect width="100%" height="100%" filter="url(#n)"/>
+</svg>
+<div id="world"></div>
+<svg id="cursor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5.5 3.2 L5.5 19.6 L9.6 15.9 L12.4 22.1 L15.1 20.9 L12.4 14.8 L18 14.6 Z" fill="#fff" stroke="#111" stroke-width="1.3" stroke-linejoin="round"/>
+</svg>
+<div id="caps"></div>
+<script src="engine.js"></script>
+<script src="common.js"></script>
+<script>
+  (function () {
+    var name = (new URLSearchParams(location.search).get("scene") || "day1").replace(/[^a-z0-9_-]/gi, "");
+    document.write('<script src="scenes/' + name + '.js"><\/script>');
+  })();
+</script>
+<script src="timeline.js"></script>
+</body>
+</html>
