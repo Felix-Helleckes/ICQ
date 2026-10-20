@@ -24,6 +24,9 @@ module.exports = {
   // CFBundleVersion must grow with every upload to App Store Connect (CI passes the run number).
   ...(process.env.MAS_BUILD_VERSION ? { buildVersion: process.env.MAS_BUILD_VERSION } : {}),
   win: { ...base.win, icon: 'store/brand/public/icon.ico' },
+  // The MAS packager takes the app icon from the mac block, not from mas — without
+  // this the App Store package shipped the ICQ icon (caught on the first upload).
+  mac: { ...base.mac, icon: 'store/brand/public/icon.icns' },
   mas: {
     ...base.mas,
     icon: 'store/brand/public/icon.icns',
