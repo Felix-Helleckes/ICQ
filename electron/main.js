@@ -175,7 +175,10 @@ function toggleContactListFromTray() {
 }
 
 function trayIcon() {
-  const src = nativeImage.createFromPath(resolveAssetPath('public', 'icq-logo.png'));
+  // build/ first: the store build overlays a neutral flower there and does not
+  // package public/icq-logo.png at all (scripts/build-store.js).
+  const logo = [resolveAssetPath('build', 'icq-logo.png'), resolveAssetPath('public', 'icq-logo.png')].find(p => fs.existsSync(p));
+  const src = nativeImage.createFromPath(logo || '');
   const img = nativeImage.createEmpty();
   img.addRepresentation({ scaleFactor: 1, buffer: src.resize({ width: 18, height: 18, quality: 'best' }).toPNG() });
   img.addRepresentation({ scaleFactor: 2, buffer: src.resize({ width: 36, height: 36, quality: 'best' }).toPNG() });
