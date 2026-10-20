@@ -21,7 +21,8 @@ im Text, mit Hinweis auf fehlende Verbindung zu den Anbietern.
 
 Retrogram holt das Gefühl der frühen Instant Messenger auf deinen Desktop. Die Kontaktliste
 bleibt schmal und übersichtlich, jedes Gespräch öffnet in einem eigenen Fenster – so, wie man
-es damals kannte.
+es damals kannte. Ein liebevoller Look-alike des klassischen ICQ-5-Messengers – inklusive
+freistehender Chatfenster und Skins.
 
 • Kontaktliste mit Gruppen, Ungelesen-Zähler und Suche
 • Jedes Gespräch in einem eigenen Fenster
@@ -32,7 +33,7 @@ es damals kannte.
 
 Retrogram verbindet sich mit deinen bestehenden Konten bei WhatsApp und Telegram. Du meldest dich
 wie bei einem weiteren Gerät an (QR-Code bzw. Telefonnummer). Retrogram ist ein unabhängiges
-Projekt und steht in keiner Verbindung zu WhatsApp LLC oder Telegram FZ-LLC. Alle genannten
+Projekt und steht in keiner Verbindung zu ICQ, WhatsApp LLC oder Telegram FZ-LLC. Alle genannten
 Namen sind Marken ihrer jeweiligen Inhaber.
 
 **Neu in dieser Version:** Erste Version im Store.
@@ -48,7 +49,8 @@ Namen sind Marken ihrer jeweiligen Inhaber.
 **Description**
 
 Retrogram brings the feel of the early instant messengers to your desktop. A slim contact list,
-and every conversation in its own window, just like back then.
+and every conversation in its own window, just like back then. A lovingly made look-alike of the classic ICQ 5 messenger, with
+floating chat windows and skins.
 
 • Contact list with groups, unread counters and search
 • Every conversation in its own window
@@ -59,7 +61,7 @@ and every conversation in its own window, just like back then.
 
 Retrogram connects to your existing WhatsApp and Telegram accounts. You sign in the way you
 add another device (QR code or phone number). Retrogram is an independent project and is not
-affiliated with WhatsApp LLC or Telegram FZ-LLC. All names mentioned are trademarks of their
+affiliated with ICQ, WhatsApp LLC or Telegram FZ-LLC. All names mentioned are trademarks of their
 respective owners.
 
 **What's new:** First store release.

@@ -36,8 +36,10 @@ Nur die Punkte, die die Automation nicht erreicht. Pro Plattform der Reihe nach.
 4. `icq-startup.log` zeigt `Data dir active (portable-env)`.
 
 ### macOS (dmg, arm64)
-1. Nicht notarisiert → einmalig `xattr -cr "/Applications/ICQ Messenger.app"`.
-2. WhatsApp-Login, Chatliste, Neustart → Session hält.
+1. DMG über die Landingpage laden (Quarantäne!), installieren, starten → **kein**
+   „beschädigt"/„nicht verifiziert". `spctl -a -vvv -t exec` meldet „Notarized Developer ID".
+2. Sprachnachricht aufnehmen → Mikrofon-Abfrage erscheint (Hardened Runtime).
+3. WhatsApp-Login, Chatliste, Neustart → Session hält.
 
 ### Linux (AppImage + deb)
 1. Login, Chatliste, Neustart → Session hält. (Kein Chrome/Chromium mehr nötig — WhatsApp läuft über das Protokoll.)

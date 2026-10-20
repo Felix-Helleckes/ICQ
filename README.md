@@ -50,9 +50,7 @@
 
 **Windows — SmartScreen:** Click **"More info"** → **"Run anyway"**
 
-**macOS — Gatekeeper:** Right-click the `.app` → **"Open"** → **"Open"**  
-
-Or in Terminal:  `xattr -cr /Applications/ICQ\ Messenger.app`
+**macOS:** no warning — the app is signed with a Developer ID and notarized by Apple.
 ---
 
 # Quick Start
@@ -166,8 +164,8 @@ thing the money goes to first:
 
 **A code-signing certificate — around €220 a year (OV; EV runs about €280).**
 
-Right now every Windows download triggers a SmartScreen warning, and every macOS
-launch needs a right-click, because the builds are unsigned. That warning is the
+Right now every Windows download triggers a SmartScreen warning, because the
+Windows builds are unsigned (macOS is already signed and notarized). That warning is the
 single biggest reason people close the page instead of trying the app.
 
 Being precise about what it buys: signing makes the publisher verifiable, which

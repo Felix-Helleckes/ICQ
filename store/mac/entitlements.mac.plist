@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- DMG (Developer ID, notarized). Hardened Runtime is required for
+         notarization; without these, Electron does not start. -->
+    <!-- V8 JIT -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Native .node modules (asarUnpack) are loaded from outside the main binary. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Voice messages (getUserMedia). Under Hardened Runtime the mic is blocked
+         without this, even with NSMicrophoneUsageDescription. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>
