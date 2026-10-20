@@ -70,10 +70,12 @@ Chat-Emojis, Spiele-Einträge und die Marken-Blume `✿` bleiben. E2E-Test wacht
 ```
 npm run lint          # fängt undefinierte Variablen — der Build allein tut das NICHT
 npm run check:electron
-npm run test:electron # 167 Tests, inkl. beider Bridges gegen Fakes (fake-baileys, Fake-gramjs)
+npm run test:electron # 179 Tests, inkl. beider Bridges gegen Fakes (fake-baileys, Fake-gramjs)
 npm run test:unit     # 30 Tests (Renderer)
 npm run build
-npx playwright test   # 6 E2E, echte Electron-App, inkl. Sprachnachricht mit Fake-Mikrofon
+npx playwright test   # 10 E2E, echte Electron-App, inkl. Sprachnachricht mit Fake-Mikrofon
+                      # (menubar.spec nur auf macOS; voice.spec scheitert lokal auf macOS
+                      #  am fehlenden Mikrofonrecht des Dev-Electron — in CI/Linux grün)
 ```
 
 **Bridge testen ohne echtes Konto:** `electron/whatsapp-bridge.test.js` fährt die

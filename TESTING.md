@@ -40,6 +40,9 @@ Nur die Punkte, die die Automation nicht erreicht. Pro Plattform der Reihe nach.
    „beschädigt"/„nicht verifiziert". `spctl -a -vvv -t exec` meldet „Notarized Developer ID".
 2. Sprachnachricht aufnehmen → Mikrofon-Abfrage erscheint (Hardened Runtime).
 3. WhatsApp-Login, Chatliste, Neustart → Session hält.
+4. Menüleisten-Modus: App-Menü → „Nur in der Menüleiste anzeigen" → Blume oben rechts,
+   kein Dock-Symbol. Chat öffnen → Dock-Symbol erscheint, Rechtsklick listet den Chat.
+   Letzten Chat schließen → Dock-Symbol weg. Kontaktliste schließen → Blume holt sie zurück.
 
 ### Linux (AppImage + deb)
 1. Login, Chatliste, Neustart → Session hält. (Kein Chrome/Chromium mehr nötig — WhatsApp läuft über das Protokoll.)
