@@ -42,6 +42,13 @@ Namen sind Marken ihrer jeweiligen Inhaber.
 
 ## English
 
+**Name (Apple, en-US):** Retrogram – Retro Messenger  ·  Deutsch bleibt „Retrogram - Multi Messenger".
+Apple lehnt einen Namen ab, der in einer *anderen* Sprache derselben App schon gespeichert
+war — auch nach dem Löschen dieser Sprache bleibt er reserviert („App-Name bereits verwendet").
+Darum Gedankenstrich statt Doppelpunkt. Kein Wettbewerber: das einzige „Retrogram" im Store ist
+ein Wortspiel von „in Color" (iOS, 2022). Weitere englische Sprachen (UK, CA, AU) nur mit eigenem,
+abweichendem Namen anlegen — oder weglassen (Stand 2026-10-20: nur en-US).
+
 **Subtitle (Apple, ≤ 30):** Chats, retro style
 
 **Short description (Microsoft, ≤ 200):** All your chats in one window, with the contact list and chat windows of the early instant messenger days.
