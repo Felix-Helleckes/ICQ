@@ -2,7 +2,7 @@
 
 Für Microsoft Store und App Store Connect. Name im Store: **Retrogram - Multi Messenger**
 (Apple: Namen ≤ 30 Zeichen, ggf. „Retrogram" allein; Eindeutigkeit prüft Apple beim Anlegen).
-Keine Marken im Namen; WhatsApp und Telegram stehen nur als sachliche Kompatibilitätsangabe
+Keine Marken im Namen und **kein „ICQ" im Store-Text** (Apple 2.3.7/5.2.1 — Entscheidung 2026-10-20: im Store heißt die App nur Retrogram); WhatsApp und Telegram stehen nur als sachliche Kompatibilitätsangabe
 im Text, mit Hinweis auf fehlende Verbindung zu den Anbietern.
 
 **Datenschutz-URL:** https://icq-retrogram.pages.dev/privacy.html
@@ -21,7 +21,7 @@ im Text, mit Hinweis auf fehlende Verbindung zu den Anbietern.
 
 Retrogram holt das Gefühl der frühen Instant Messenger auf deinen Desktop. Die Kontaktliste
 bleibt schmal und übersichtlich, jedes Gespräch öffnet in einem eigenen Fenster – so, wie man
-es damals kannte. Ein liebevoller Look-alike des klassischen ICQ-5-Messengers – inklusive
+es damals kannte. Ein liebevoller Nachbau der Messenger der frühen 2000er – inklusive
 freistehender Chatfenster und Skins.
 
 • Kontaktliste mit Gruppen, Ungelesen-Zähler und Suche
@@ -33,7 +33,7 @@ freistehender Chatfenster und Skins.
 
 Retrogram verbindet sich mit deinen bestehenden Konten bei WhatsApp und Telegram. Du meldest dich
 wie bei einem weiteren Gerät an (QR-Code bzw. Telefonnummer). Retrogram ist ein unabhängiges
-Projekt und steht in keiner Verbindung zu ICQ, WhatsApp LLC oder Telegram FZ-LLC. Alle genannten
+Projekt und steht in keiner Verbindung zu WhatsApp LLC oder Telegram FZ-LLC. Alle genannten
 Namen sind Marken ihrer jeweiligen Inhaber.
 
 **Neu in dieser Version:** Erste Version im Store.
@@ -49,7 +49,7 @@ Namen sind Marken ihrer jeweiligen Inhaber.
 **Description**
 
 Retrogram brings the feel of the early instant messengers to your desktop. A slim contact list,
-and every conversation in its own window, just like back then. A lovingly made look-alike of the classic ICQ 5 messenger, with
+and every conversation in its own window, just like back then. A lovingly made look-alike of the early-2000s messengers, with
 floating chat windows and skins.
 
 • Contact list with groups, unread counters and search
@@ -61,7 +61,7 @@ floating chat windows and skins.
 
 Retrogram connects to your existing WhatsApp and Telegram accounts. You sign in the way you
 add another device (QR code or phone number). Retrogram is an independent project and is not
-affiliated with ICQ, WhatsApp LLC or Telegram FZ-LLC. All names mentioned are trademarks of their
+affiliated with WhatsApp LLC or Telegram FZ-LLC. All names mentioned are trademarks of their
 respective owners.
 
 **What's new:** First store release.

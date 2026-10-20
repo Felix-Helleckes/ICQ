@@ -55,7 +55,9 @@ der Mac-Job bewusst ab):
 `MAC_DEVID_CERT_P12` (base64 der aus dem Schlüsselbund exportierten
 „Developer ID Application"-.p12), `MAC_DEVID_CERT_PASSWORD`,
 `APPLE_API_KEY_P8` (base64 der `AuthKey_3UPD3SJ67A.p8`), `APPLE_API_KEY_ID`,
-`APPLE_API_ISSUER`.
+`APPLE_API_ISSUER`. Setzen in einem Rutsch (selbst ausführen, Anleitung im Kopf des Skripts):
+`scripts/set-mac-secrets.sh <exportierte Developer-ID.p12>` — setzt auch die
+`MAS_API_*`-Secrets für den App-Store-Upload.
 
 ## Windows-Update rettet den Login
 
