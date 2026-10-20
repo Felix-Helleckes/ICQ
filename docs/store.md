@@ -47,7 +47,22 @@ erscheinen nur als Text. Die normalen Builds (Portable, Setup, DMG, Linux) bleib
 - Secrets (Repo): `MAS_APP_CERT_P12`, `MAS_INSTALLER_CERT_P12`, `MAS_CERT_PASSWORD`,
   `MAS_PROVISIONING_PROFILE`, `MAS_TEAM_ID`; für den Upload `MAS_API_KEY_P8`
   (base64 der `AuthKey_*.p8`), `MAS_API_KEY_ID`, `MAS_API_ISSUER_ID`.
-- Zertifikate laufen am **2027-10-05** ab, das Provisioning Profile am 2027-10-05.
+- **Seit 2026-10-20 lokal gebaut und hochgeladen** (Mac mit Schlüsselbund):
+  Profil „Retrogram MAS" hängt jetzt am Zertifikat **Apple Distribution**
+  (läuft bis **2027-07-02**), dessen Schlüssel im Schlüsselbund liegt. Vorher hing es an
+  „3rd Party Mac Developer Application" — dessen Schlüssel gab es nur im Secret, und
+  `MAS_CERT_PASSWORD` passte nicht mehr zu `MAS_APP_CERT_P12` (CI-Import schlug fehl).
+  **`build-mas.yml` ist damit bis auf Weiteres kaputt**: Secrets `MAS_APP_CERT_P12` (Apple
+  Distribution als .p12), `MAS_CERT_PASSWORD` und `MAS_PROVISIONING_PROFILE` müssten neu.
+  Lokal:
+  ```
+  # Profil: developer.apple.com → Profiles → Retrogram MAS → Download → store/mas/embedded.provisionprofile
+  MAS_BUILD_VERSION=<+1> MAS_IDENTITY="Felix Helleckes (5Y4L8J23FQ)" node scripts/build-store.js mas
+  xcrun altool --upload-app -f dist/mas-universal/Retrogram-<v>-universal.pkg -t macos \
+    --apiKey 3UPD3SJ67A --apiIssuer 7ec7cedf-030a-4f7a-a715-76355c7ed6b0
+  ```
+  `MAS_BUILD_VERSION` (CFBundleVersion) muss bei jedem Upload steigen.
+- Zertifikate „3rd Party Mac Developer Application/Installer" laufen am **2027-10-05** ab.
   Danach neu anlegen (Apple-Portal → Certificates/Profiles) und die Secrets ersetzen.
 - Der private Schlüssel liegt nur in den Secrets (als .p12). Geht er verloren:
   neues CSR, neue Zertifikate.
