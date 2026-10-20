@@ -15,7 +15,7 @@ on:
         description: 'Release tag the files are attached to, e.g. v1.1.0'
         required: true
       platforms:
-        description: 'Which builds: mac, linux or mac,linux'
+        description: 'Which builds: any of mac, linux, win (comma-separated)'
         required: true
         default: 'mac,linux'
 
@@ -114,3 +114,37 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ inputs.tag }}" dist/*.AppImage dist/*.deb --clobber
+
+  # Normally Windows is built locally (docs/release.md); this is for releases made
+  # from a Mac, where electron-builder cannot produce the .exe files.
+  win:
+    if: contains(inputs.platforms, 'win')
+    name: Windows (Setup + Portable)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Version matches the tag
+        shell: bash
+        run: |
+          V="v$(node -p "require('./package.json').version")"
+          [ "$V" = "${{ inputs.tag }}" ] || { echo "::error::package.json is $V, tag is ${{ inputs.tag }}"; exit 1; }
+      - run: npm ci
+      - name: Tests (gate)
+        run: npm run lint && npm run test:electron && npm run test:unit
+        env:
+          CI: "true"
+      - name: Build renderer
+        run: npm run build
+        env:
+          CI: "false"
+      - name: Build Setup + Portable
+        run: npx electron-builder --win nsis portable --x64 --publish never
+      - name: Attach to release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.tag }}" dist/*Setup*.exe dist/*Portable*.exe --clobber

@@ -20,7 +20,8 @@ Nur `softwareVersion` im JSON-LD von `site/index.html` mitziehen und danach
    `npm run build && npx electron-builder --win nsis portable --publish never`
 4. Draft-Release mit den Windows-Dateien:
    `gh release create v<version> --draft --target main --title "ICQ Messenger v<version>" --notes-file <notes> dist/ICQ-Messenger-Setup-<version>.exe dist/ICQ-Messenger-<version>-Portable.exe`
-5. macOS + Linux in CI bauen und anhängen lassen (Tests laufen dort als Gate):
+5. macOS + Linux in CI bauen und anhängen lassen (Tests laufen dort als Gate;
+   Release vom Mac aus: `-f platforms=win,linux`, DMGs lokal signiert hochladen):
    `gh workflow run build-platforms.yml -f tag=v<version>`
 6. Wenn alle sechs Dateien dran sind: veröffentlichen
    `gh release edit v<version> --draft=false --latest`
