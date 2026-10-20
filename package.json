@@ -1,6 +1,6 @@
 {
   "name": "icq-messenger",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "A retro ICQ-style multi-messenger (WhatsApp + Telegram)",
   "author": {
     "name": "Felix Helleckes",
@@ -134,8 +134,12 @@
       ],
       "icon": "public/icon.icns",
       "category": "public.app-category.social-networking",
-      "hardenedRuntime": false,
+      "identity": "Felix Helleckes (5Y4L8J23FQ)",
+      "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "entitlements": "store/mac/entitlements.mac.plist",
+      "entitlementsInherit": "store/mac/entitlements.mac.plist",
+      "notarize": true,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Retrogram braucht das Mikrofon, um Sprachnachrichten aufzunehmen."
       }

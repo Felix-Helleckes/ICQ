@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, clipboard, Menu, MenuItem, net, Tray, nativeImage, screen } = require('electron');
 const path = require('path');
 const os   = require('os');
 const fs   = require('fs');
 const isDev = require('electron-is-dev');
 const { resolveDataDir, findLegacyDataDir, migrateLegacyData } = require('./lib/data-dir');
+const menubarMode = require('./lib/menubar-mode');
 // E2E smoke mode (set by the Playwright CI test): load the built renderer
 // and skip messenger bridge init so the app boots deterministically with
 // no network / Puppeteer dependency.
@@ -111,6 +112,164 @@ const avatarStore  = new Map(); // chatId → avatar data URL
 const participantsStore = new Map(); // chatId → participants array
 // appDataDir declared early at top of file (before portable blocks)
 
+// ── macOS menu bar mode ──────────────────────────────────────
+// Optional: contact list behind a menu bar icon instead of the Dock; the Dock icon
+// then only appears while chat windows are open, and its menu lists them. Logic and
+// the reason for this shape (one Dock icon per app): electron/lib/menubar-mode.js.
+const IS_MAC = process.platform === 'darwin';
+let prefs = { menuBarMode: false };
+let tray = null;
+let isQuitting = false;
+
+const chatLabels = new WeakMap(); // BrowserWindow → name shown in the Dock/tray menu
+
+function chatTitle(win) {
+  const label = chatLabels.get(win);
+  // Never a raw JID in the UI (CLAUDE.md): fall back to a neutral label.
+  return label && !label.includes('@') ? label : 'Chat';
+}
+
+function focusWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function openChatWindows() {
+  return [...chatWindows.values()].filter(w => !w.isDestroyed());
+}
+
+function chatMenuItems() {
+  return openChatWindows().map(w => ({ label: chatTitle(w), click: () => focusWindow(w) }));
+}
+
+function menuBarToggleItem() {
+  return {
+    label: 'Nur in der Menüleiste anzeigen',
+    type: 'checkbox',
+    checked: prefs.menuBarMode,
+    click: (item) => setMenuBarMode(item.checked),
+  };
+}
+
+function showContactList({ underTray = false } = {}) {
+  const win = createContactListWindow();
+  if (underTray && tray) {
+    try {
+      const trayBounds = tray.getBounds();
+      const { workArea } = screen.getDisplayMatching(trayBounds);
+      const [width, height] = win.getSize();
+      const { x, y } = menubarMode.windowPositionUnderTray(trayBounds, { width, height }, workArea);
+      win.setPosition(x, y);
+    } catch (e) { logStartup('menu bar: positioning failed', e); }
+  }
+  focusWindow(win);
+  if (IS_MAC) app.focus({ steal: true });
+}
+
+function toggleContactListFromTray() {
+  const win = contactListWindow;
+  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) win.hide();
+  else showContactList({ underTray: true });
+}
+
+function trayIcon() {
+  const src = nativeImage.createFromPath(resolveAssetPath('public', 'icq-logo.png'));
+  const img = nativeImage.createEmpty();
+  img.addRepresentation({ scaleFactor: 1, buffer: src.resize({ width: 18, height: 18, quality: 'best' }).toPNG() });
+  img.addRepresentation({ scaleFactor: 2, buffer: src.resize({ width: 36, height: 36, quality: 'best' }).toPNG() });
+  return img;
+}
+
+function refreshMenus() {
+  if (!IS_MAC) return;
+  const chats = chatMenuItems();
+  app.dock.setMenu(Menu.buildFromTemplate([
+    ...chats,
+    ...(chats.length ? [{ type: 'separator' }] : []),
+    { label: 'Kontaktliste', click: () => showContactList() },
+    menuBarToggleItem(),
+  ]));
+  if (tray) {
+    tray.setContextMenu(null); // left click toggles the list; the menu comes on right click
+    tray.removeAllListeners('right-click');
+    tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate([
+      { label: 'Kontaktliste', click: () => showContactList({ underTray: true }) },
+      ...(chats.length ? [{ type: 'separator' }, ...chats] : []),
+      { type: 'separator' },
+      menuBarToggleItem(),
+      { type: 'separator' },
+      { label: 'Beenden', role: 'quit' },
+    ])));
+  }
+  const appMenu = Menu.getApplicationMenu();
+  const sub = appMenu && appMenu.items[0] && appMenu.items[0].submenu;
+  if (sub) {
+    const existing = sub.getMenuItemById('menubar-mode');
+    if (existing) existing.checked = prefs.menuBarMode;
+    else {
+      sub.insert(1, new MenuItem({ ...menuBarToggleItem(), id: 'menubar-mode' }));
+      sub.insert(1, new MenuItem({ type: 'separator' }));
+      Menu.setApplicationMenu(appMenu);
+    }
+  }
+}
+
+function dockWanted() {
+  return menubarMode.dockShouldShow({ menuBarMode: prefs.menuBarMode, chatCount: openChatWindows().length });
+}
+
+function refreshDock() {
+  if (!IS_MAC) return;
+  if (dockWanted() && !app.dock.isVisible()) {
+    // Showing the Dock icon switches the app back to a regular one; macOS can drop
+    // focus on the way, so hand it back to the newest chat window. show() is async:
+    // if the last chat closed meanwhile, hide again instead of leaving the icon stuck.
+    app.dock.show().then(() => {
+      if (!dockWanted()) { hideDock(); return; }
+      const chats = openChatWindows();
+      focusWindow(chats[chats.length - 1]);
+    }).catch(() => {});
+  } else if (!dockWanted() && app.dock.isVisible()) {
+    hideDock();
+  }
+  refreshMenus();
+}
+
+// macOS silently ignores hide() while it is still switching the app to a regular
+// one (chat closed right after it opened). Measured: a later hide() always works,
+// so check again a little later.
+function hideDock() {
+  app.dock.hide();
+  for (const ms of [400, 1200]) {
+    setTimeout(() => { if (!dockWanted() && app.dock.isVisible()) app.dock.hide(); }, ms);
+  }
+}
+
+function setMenuBarMode(on) {
+  prefs = { ...prefs, menuBarMode: !!on };
+  menubarMode.savePrefs(app.getPath('userData'), prefs, fs);
+  logStartup(`menu bar mode ${prefs.menuBarMode ? 'on' : 'off'}`);
+  if (prefs.menuBarMode && !tray) {
+    tray = new Tray(trayIcon());
+    tray.setToolTip(STORE_BUILD ? 'Retrogram' : 'ICQ Messenger');
+    tray.on('click', toggleContactListFromTray);
+  } else if (!prefs.menuBarMode && tray) {
+    tray.destroy();
+    tray = null;
+    showContactList();
+  }
+  refreshDock();
+}
+
+function initMenuBarMode() {
+  if (!IS_MAC) return;
+  prefs = menubarMode.loadPrefs(app.getPath('userData'), fs);
+  if (prefs.menuBarMode) setMenuBarMode(true);
+  else refreshMenus();
+}
+
 // WhatsApp & Telegram bridge (wrapped in try-catch so a missing dep won't crash the whole app)
 let whatsappBridge, telegramBridge;
 try { whatsappBridge = require('./whatsapp-bridge'); } catch (e) {
@@ -176,6 +335,12 @@ function createContactListWindow() {
   wireWindowDiagnostics(contactListWindow, 'contact-list');
   wireExternalLinks(contactListWindow);
 
+  // Menu bar mode: the close button only hides the list — the app keeps running
+  // behind the menu bar icon, and open chats stay open.
+  contactListWindow.on('close', (e) => {
+    if (prefs.menuBarMode && !isQuitting) { e.preventDefault(); contactListWindow.hide(); }
+  });
+
   contactListWindow.on('closed', () => {
     // Close all open chat windows when contact list is closed
     chatWindows.forEach(win => { if (!win.isDestroyed()) win.close(); });
@@ -209,13 +374,16 @@ function createChatWindow(chatId, chatName, service, avatar, isGroup) {
   wireWindowDiagnostics(chatWin, `chat-${chatId}`);
   wireExternalLinks(chatWin);
   chatWindows.set(chatId, chatWin);
-  chatWin.on('closed', () => chatWindows.delete(chatId));
+  chatWin.on('closed', () => { chatWindows.delete(chatId); refreshDock(); });
+  chatLabels.set(chatWin, chatName || '');
+  refreshDock();
   return chatWin;
 }
 
 app.on('ready', async () => {
   const win = createContactListWindow();
   win.show();
+  try { initMenuBarMode(); } catch (e) { logStartup('menu bar mode init failed', e); }
   // E2E smoke: the window + renderer are all we assert on. Skip bridge init
   // so the test is deterministic and needs no WhatsApp/Telegram session.
   if (isE2E) { logStartup('E2E mode — skipping messenger bridge init'); return; }
@@ -245,6 +413,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (e) => {
+  isQuitting = true;
   e.preventDefault();
   // WhatsApp's session credentials live in Chrome's IndexedDB/LevelDB, which needs a
   // moment to flush on close. Killing it too early corrupts that store and WhatsApp
@@ -263,6 +432,10 @@ app.on('before-quit', (e) => {
 
 app.on('activate', () => {
   if (contactListWindow === null) createContactListWindow();
+  // Dock click in menu bar mode (icon only exists with open chats): bring the chats up.
+  else if (prefs.menuBarMode && !BrowserWindow.getAllWindows().some(w => w.isVisible())) {
+    openChatWindows().forEach(focusWindow);
+  }
 });
 
 app.on('second-instance', () => {
