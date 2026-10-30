@@ -67,6 +67,20 @@ erscheinen nur als Text. Die normalen Builds (Portable, Setup, DMG, Linux) bleib
 - Der private Schlüssel liegt nur in den Secrets (als .p12). Geht er verloren:
   neues CSR, neue Zertifikate.
 
+
+### App Review: Demo-Modus (seit Build 4, 2026-10-30)
+
+Apple lehnte 1.1.2 (3) am 28.10. ab: 2.1(a) „Demo-Konto nötig“ und 2.4.5(i)
+`files.downloads.read-write` ohne Funktion. WhatsApp hat **keine Testkonten**
+(Koppeln braucht immer das Handy des Kontoinhabers); Telegram hätte Test-Server
+(Nummern `99966XYYYY`, Code = X fünfmal), das deckt WhatsApp aber nicht ab.
+Darum `electron/lib/demo-mode.js`: Telegram-Login per Telefon mit
+**+1 555 555 0123**, Code **24680** ersetzt beide Bridges durch erfundene Chats
+(Senden, Haken, Antworten, Archivieren, Bearbeiten, Löschen). Flag-Datei
+`demo-mode` im Datenverzeichnis hält ihn über Neustarts, Abmelden beendet ihn
+(App startet neu). E2E: `e2e/demo.spec.js`. Die Downloads-Berechtigung ist raus.
+In ASC stehen Nummer und Code als Demo-Konto in der Prüfer-Info.
+
 ## Offene Risiken (vor der ersten Einreichung klären)
 
 - **Marke/Logos:** App-Oberfläche zeigt ICQ-, WhatsApp- und Telegram-Logos. Apple 5.2 und

@@ -284,6 +284,36 @@ try { telegramBridge = require('./telegram-bridge'); } catch (e) {
   telegramBridge = { init(){}, requestCode(){}, signIn(){}, startQRLogin(){}, submit2FA(){}, getStatus:()=>'error', getDialogs:()=>[], getMessages:()=>[], sendMessage(){} };
 }
 
+// ── Demo mode (App Review) ────────────────────────────────────
+// Telegram sign-in with the demo number swaps both bridges for invented chats; see
+// lib/demo-mode.js. A flag file keeps it across restarts, logging out ends it.
+const demoMode = require('./lib/demo-mode');
+const demoFlagFile = () => path.join(appDataDir || app.getPath('userData'), 'demo-mode');
+
+function broadcastAll(channel, data) {
+  BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.webContents.send(channel, data); });
+}
+
+async function enterDemoMode() {
+  if (whatsappBridge.demo) return;
+  try { fs.writeFileSync(demoFlagFile(), '1'); } catch (e) { console.error('[demo flag]', e.message); }
+  const real = [whatsappBridge, telegramBridge];
+  const demo = demoMode.createDemo({ broadcast: broadcastAll, onLogout: leaveDemoMode });
+  whatsappBridge = demo.wa;
+  telegramBridge = demo.tg;
+  // The real bridges stay quiet while the demo runs: no QR codes, no reconnects.
+  for (const b of real) { try { await b.shutdown?.(); } catch (e) { /* not connected */ } }
+  broadcastAll('wa:ready', { name: 'App Review (Demo)' });
+  broadcastAll('tg:ready', { name: 'App Review (Demo)', avatar: null });
+}
+
+async function leaveDemoMode() {
+  try { fs.rmSync(demoFlagFile(), { force: true }); } catch (e) { /* already gone */ }
+  // The real bridges were shut down; a fresh start is the clean way back.
+  app.relaunch();
+  app.exit(0);
+}
+
 // ── Dev URL helper ────────────────────────────────────────────
 function devUrl(params = '') {
   return (isDev && !isE2E)
@@ -407,6 +437,7 @@ app.on('ready', async () => {
     }
   } catch (e) { logStartup('Legacy wa-messages cleanup failed', e); }
   const cacheAvatar = (id, avatar) => { if (id && avatar) avatarStore.set(String(id), avatar); };
+  if (fs.existsSync(demoFlagFile())) { await enterDemoMode(); return; }
   try { await whatsappBridge.init(cacheAvatar, dataDir); } catch (e) { console.error('[WA init]', e.message); }
   try { await telegramBridge.init(null, cacheAvatar, dataDir); } catch (e) { console.error('[TG init]', e.message); }
 });
@@ -580,8 +611,17 @@ ipcMain.handle('wa:get-sync',     async ()             => whatsappBridge.getSync
 ipcMain.handle('wa:pair-new-device', async ()          => whatsappBridge.pairAsNewDevice?.());
 
 // ── IPC: Telegram ─────────────────────────────────────────────
-ipcMain.handle('tg:request-code',   async (e, phone)            => telegramBridge.requestCode(phone));
-ipcMain.handle('tg:sign-in',        async (e, phone, code, hash)=> telegramBridge.signIn(phone, code, hash));
+ipcMain.handle('tg:request-code',   async (e, phone)            => (
+  demoMode.isDemoPhone(phone) ? demoMode.DEMO_HASH : telegramBridge.requestCode(phone)
+));
+ipcMain.handle('tg:sign-in',        async (e, phone, code, hash)=> {
+  if (hash === demoMode.DEMO_HASH) {
+    if (!demoMode.isDemoCode(code)) throw new Error('Wrong code.');
+    await enterDemoMode();
+    return { success: true };
+  }
+  return telegramBridge.signIn(phone, code, hash);
+});
 ipcMain.handle('tg:start-qr-login', async ()                    => telegramBridge.startQRLogin());
 ipcMain.handle('tg:2fa-password',   async (e, password)         => telegramBridge.submit2FA(password));
 ipcMain.handle('tg:get-dialogs',    async ()                    => telegramBridge.getDialogs());
