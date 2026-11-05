@@ -67,7 +67,7 @@
         "name": "Warum warnt mich Windows beim Start?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Die Windows-Builds sind nicht signiert — ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf „Weitere Informationen“ klicken, dann „Trotzdem ausführen“. Die macOS-Version ist von Apple signiert und notarisiert und startet ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen."
+          "text": "Die Windows-Builds sind nicht signiert — ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf „Weitere Informationen“ klicken, dann „Trotzdem ausführen“. Auf dem Mac geht es am einfachsten über den Mac App Store; der Direkt-Download ist von Apple signiert und notarisiert und startet ebenfalls ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen."
         }
       },
       {
@@ -320,6 +320,10 @@
               macOS <span class="caret">▾</span>
             </button>
             <div class="menu" role="menu">
+              <a id="dl-mac-store" role="menuitem" href="https://apps.apple.com/app/id6824973968">
+                <b data-i18n="hero.macStore">Mac App Store</b>
+                <small data-i18n="hero.macStoreSub">Empfohlen · aktualisiert sich selbst</small>
+              </a>
               <a id="dl-mac-arm" role="menuitem" href="https://github.com/Felix-Helleckes/ICQ/releases/latest">
                 <b data-i18n="hero.macArm">Apple Silicon</b>
                 <small data-i18n="hero.macArmSub">M1, M2, M3, M4 …</small>
@@ -409,7 +413,7 @@
         </details>
         <details>
           <summary data-i18n="faq.q3">Warum warnt mich Windows beim Start?</summary>
-          <p data-i18n="faq.a3">Die Windows-Builds sind nicht signiert — ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf „Weitere Informationen“ klicken, dann „Trotzdem ausführen“. Die macOS-Version ist von Apple signiert und notarisiert und startet ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen.</p>
+          <p data-i18n="faq.a3">Die Windows-Builds sind nicht signiert — ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf „Weitere Informationen“ klicken, dann „Trotzdem ausführen“. Auf dem Mac geht es am einfachsten über den Mac App Store; der Direkt-Download ist von Apple signiert und notarisiert und startet ebenfalls ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen.</p>
         </details>
         <details>
           <summary data-i18n="faq.q4">Kommt hier das echte ICQ zurück?</summary>
@@ -455,6 +459,7 @@
         'nav.support':'Support',
         'hero.h1':'ICQ for your WhatsApp. <span class="hl">Like it’s 2003.</span>',
         'hero.sub':'WhatsApp and Telegram in a faithful ICQ 5 look-alike. Separate chat windows, the classic <b>uh-oh!</b> sound and switchable skins.',
+        'hero.macStore':'Mac App Store','hero.macStoreSub':'Recommended · updates automatically',
         'hero.note':'Free & open source · Windows · macOS · Linux · no sign-up needed',
         'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installs like a normal app',
         'hero.winPortable':'Portable','hero.winPortableSub':'Single .exe · login stays in its folder',
@@ -483,7 +488,7 @@
         'faq.q2':'Who can read my messages?',
         'faq.a2':'There is no server of mine involved. The app connects from your machine straight to WhatsApp and Telegram, so nothing is routed through a third party. Your logins and chat cache stay in the local ICQ-Data folder. The whole source is on GitHub under MIT \u2014 you do not have to take my word for it, you can read it.',
         'faq.q3':'Why does Windows warn me when I start it?',
-        'faq.a3':'The Windows builds are not code-signed \u2014 a certificate costs money a hobby project does not have. SmartScreen therefore flags every unknown publisher. Click "More info", then "Run anyway". The macOS version is signed and notarized by Apple and opens without a warning. If that is not good enough for you, clone the repo and build it yourself.',
+        'faq.a3':'The Windows builds are not code-signed \u2014 a certificate costs money a hobby project does not have. SmartScreen therefore flags every unknown publisher. Click "More info", then "Run anyway". On a Mac the easiest way is the Mac App Store; the direct download is signed and notarized by Apple and also opens without a warning. If that is not good enough for you, clone the repo and build it yourself.',
         'faq.q4':'Is this the real ICQ coming back?',
         'faq.a4':"No. This is an independent project with no connection to ICQ or AOL, and it does not revive ICQ's network. It rebuilds ICQ 5's interface and puts it on top of the messengers you already use \u2014 so there is no empty network, your contacts are simply already there.",
         'faq.q5':'ICQ was shut down in 2024 \u2014 is this an alternative?',
@@ -502,6 +507,7 @@
         'nav.support':'Unterstützen',
         'hero.h1':'ICQ für dein WhatsApp. <span class="hl">Als wäre es 2003.</span>',
         'hero.sub':'WhatsApp und Telegram in einem originalgetreuen ICQ-5-Look-alike. Eigene Chat-Fenster, der klassische <b>uh-oh!</b>-Sound und umschaltbare Skins.',
+        'hero.macStore':'Mac App Store','hero.macStoreSub':'Empfohlen · aktualisiert sich selbst',
         'hero.note':'Kostenlos & Open Source · Windows · macOS · Linux · keine Anmeldung nötig',
         'hero.winSetup':'Setup (Installer)','hero.winSetupSub':'Installiert sich wie eine normale App',
         'hero.winPortable':'Portable','hero.winPortableSub':'Eine .exe · Login bleibt im Ordner daneben',
@@ -530,7 +536,7 @@
         'faq.q2':'Wer kann meine Nachrichten mitlesen?',
         'faq.a2':'Kein Server von mir ist beteiligt. Die App verbindet sich von deinem Rechner direkt zu WhatsApp und Telegram, es sitzt kein Dritter dazwischen. Logins und Chat-Cache bleiben lokal im Ordner ICQ-Data. Der komplette Quellcode liegt unter MIT auf GitHub \u2014 du musst mir nicht glauben, du kannst nachlesen.',
         'faq.q3':'Warum warnt mich Windows beim Start?',
-        'faq.a3':'Die Windows-Builds sind nicht signiert \u2014 ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf \u201eWeitere Informationen\u201c klicken, dann \u201eTrotzdem ausf\u00fchren\u201c. Die macOS-Version ist von Apple signiert und notarisiert und startet ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen.',
+        'faq.a3':'Die Windows-Builds sind nicht signiert \u2014 ein Zertifikat kostet Geld, das ein Hobby-Projekt nicht hat. SmartScreen meldet deshalb jeden unbekannten Herausgeber. Auf \u201eWeitere Informationen\u201c klicken, dann \u201eTrotzdem ausf\u00fchren\u201c. Auf dem Mac geht es am einfachsten über den Mac App Store; der Direkt-Download ist von Apple signiert und notarisiert und startet ebenfalls ohne Warnung. Wem das nicht reicht: Repo klonen und selbst bauen.',
         'faq.q4':'Kommt hier das echte ICQ zur\u00fcck?',
         'faq.a4':'Nein. Das ist ein unabh\u00e4ngiges Projekt ohne Verbindung zu ICQ oder AOL, und es belebt ICQs Netzwerk nicht wieder. Es baut die Oberfl\u00e4che von ICQ 5 nach und legt sie \u00fcber die Messenger, die du ohnehin nutzt \u2014 es gibt also kein leeres Netzwerk, deine Kontakte sind einfach schon da.',
         'faq.q5':'ICQ wurde 2024 eingestellt — ist das eine Alternative?',
@@ -573,20 +579,6 @@
 
     document.getElementById('yr').textContent = new Date().getFullYear();
 
-    // Which Mac is this? Browsers do not say it in the user agent (Safari claims
-    // "Intel" on every Mac), so ask the GPU: Apple Silicon reports an "Apple" GPU.
-    // Unsure → the releases page, never a build that will not start.
-    function macForThisMachine(arm, intel, fallback) {
-      try {
-        var gl = document.createElement('canvas').getContext('webgl');
-        var ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
-        var gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) : '';
-        if (/Apple (M\d|GPU)/i.test(gpu)) return arm;
-        if (/Intel|AMD|Radeon|NVIDIA/i.test(gpu)) return intel;
-      } catch (e) { /* no WebGL */ }
-      return fallback;
-    }
-
     // Wire download buttons to the latest release asset per platform.
     (function () {
       var repo = 'Felix-Helleckes/ICQ';
@@ -613,7 +605,7 @@
           set('dl-win-setup', winSetup); set('dl-win-portable', winPortable);
           set('dl-mac-arm', macArm); set('dl-mac-intel', macIntel); set('dl-linux', linux);
           var ua = navigator.userAgent;
-          set('dl-cta', /Win/.test(ua) ? winSetup : /Mac/.test(ua) ? macForThisMachine(macArm, macIntel, page) : /Linux/.test(ua) ? linux : page);
+          set('dl-cta', /Win/.test(ua) ? winSetup : /Mac/.test(ua) ? 'https://apps.apple.com/app/id6824973968' : /Linux/.test(ua) ? linux : page);
         })
         .catch(function () { /* keep the releases-page fallback hrefs */ });
     })();
