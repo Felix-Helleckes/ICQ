@@ -1,7 +1,7 @@
 const { createContactDirectory } = require('./contact-names');
 
 const LID = '5312908161069@lid';
-const PN = '491758316710@s.whatsapp.net';
+const PN = '491701234567@s.whatsapp.net';
 
 test('finds the name when the chat is keyed by LID but the contact came in by phone', () => {
   const d = createContactDirectory();
@@ -54,12 +54,12 @@ test('unknown contact → no name', () => {
 describe('prettyIdFor — a raw JID must never reach the UI', () => {
   test('phone JID becomes a readable number', () => {
     const d = createContactDirectory();
-    expect(d.prettyIdFor(PN)).toBe('+491758316710');
+    expect(d.prettyIdFor(PN)).toBe('+491701234567');
   });
   test('a LID resolves to its mapped number when known', () => {
     const d = createContactDirectory();
     d.rememberMapping({ lid: LID, pn: PN });
-    expect(d.prettyIdFor(LID)).toBe('+491758316710');
+    expect(d.prettyIdFor(LID)).toBe('+491701234567');
   });
   test('an unmapped LID at least loses the @lid suffix', () => {
     const d = createContactDirectory();
@@ -75,7 +75,7 @@ describe('prettyIdFor — a raw JID must never reach the UI', () => {
 
 test('displayFor prefers the name and falls back to the pretty id', () => {
   const d = createContactDirectory();
-  expect(d.displayFor(PN)).toBe('+491758316710');
+  expect(d.displayFor(PN)).toBe('+491701234567');
   d.rememberContact({ id: PN, name: 'Anna' });
   expect(d.displayFor(PN)).toBe('Anna');
 });
@@ -105,9 +105,9 @@ describe('canonicalFor — which id a person\'s chat is filed under', () => {
   });
   test('device suffixes are dropped — "4917…:12@…" is the same person', () => {
     const d = createContactDirectory();
-    d.rememberMapping({ lid: '5312908161069:3@lid', pn: '491758316710:0@s.whatsapp.net' });
+    d.rememberMapping({ lid: '5312908161069:3@lid', pn: '491701234567:0@s.whatsapp.net' });
     expect(d.canonicalFor(LID)).toBe(PN);
-    expect(d.canonicalFor('491758316710:7@s.whatsapp.net')).toBe(PN);
+    expect(d.canonicalFor('491701234567:7@s.whatsapp.net')).toBe(PN);
   });
   test('aliasesFor lists every id the chat may arrive under, canonical first', () => {
     const d = createContactDirectory();
