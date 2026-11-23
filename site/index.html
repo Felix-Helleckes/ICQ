@@ -435,7 +435,7 @@
     </section>
 
     <footer>
-      <div>© <span id="yr"></span> <a href="https://felix-helleckes.github.io/" rel="author">Felix Helleckes</a> · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · <span data-i18n="footer.license">MIT license</span> · <a href="privacy.html" data-i18n="footer.privacy">Privacy</a> · <a href="#" id="consent-reopen" data-i18n="footer.cookies">Cookie settings</a> · <a class="support" href="https://paypal.me/sparky512" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.7 4.3 13a4.9 4.9 0 0 1 6.9-6.9l.8.8.8-.8A4.9 4.9 0 0 1 19.7 13z"/></svg> <span data-i18n="footer.paypal">Support via PayPal</span></a></div>
+      <div>© <span id="yr"></span> <a href="https://felix-helleckes.github.io/" rel="author">Felix Helleckes</a> · <a href="https://github.com/Felix-Helleckes/ICQ">GitHub</a> · <span data-i18n="footer.license">MIT license</span> · <a href="privacy.html" data-i18n="footer.privacy">Privacy</a> · <a href="https://mein.online-impressum.de/reallifemitfelix/" rel="noopener" data-i18n="footer.imprint">Impressum</a> · <a href="#" id="consent-reopen" data-i18n="footer.cookies">Cookie settings</a> · <a class="support" href="https://paypal.me/sparky512" target="_blank" rel="noopener"><svg class="ico" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 20.7 4.3 13a4.9 4.9 0 0 1 6.9-6.9l.8.8.8-.8A4.9 4.9 0 0 1 19.7 13z"/></svg> <span data-i18n="footer.paypal">Support via PayPal</span></a></div>
       <div class="disc" data-i18n="footer.disc">Note: ICQ Retrogram is an independent hobby project and is not affiliated with ICQ, AOL, WhatsApp/Meta or Telegram. The WhatsApp connection uses an unofficial interface, which may violate WhatsApp's Terms of Service. Use at your own risk.</div>
     <p class="more-apps" style="margin:.75rem 0 0;font-size:.88em;opacity:.85"><a href="https://felix-helleckes.github.io/apps/">More apps by Felix Helleckes</a>: <a href="https://worldclocklive.pages.dev/">World Clock Live</a> (desktop world clock &amp; live wallpaper) · <a href="https://clickwheel-app.pages.dev/">Clickwheel</a> (iPod-style music player) · <a href="https://dash-and-slash.pages.dev/">Dash &amp; Slash</a> (one-thumb neon roguelite) · <a href="https://motologbuch.netlify.app/">Moto-Log</a> (motorcycle maintenance log)</p>
     </footer>
@@ -493,7 +493,7 @@
         'faq.a4':"No. This is an independent project with no connection to ICQ or AOL, and it does not revive ICQ's network. It rebuilds ICQ 5's interface and puts it on top of the messengers you already use \u2014 so there is no empty network, your contacts are simply already there.",
         'faq.q5':'ICQ was shut down in 2024 \u2014 is this an alternative?',
         'faq.a5':"ICQ's own servers went offline for good on 26 June 2024, and every ICQ contact list with them. ICQ Retrogram brings back the part people miss \u2014 the ICQ 5 look, the floating chat windows, the uh-oh \u2014 and runs it on WhatsApp and Telegram, where your contacts are today.",
-        'footer.privacy':'Privacy','footer.cookies':'Cookie settings',
+        'footer.privacy':'Privacy','footer.imprint':'Legal notice (Impressum)','footer.cookies':'Cookie settings',
         'footer.license':'MIT license','footer.paypal':'Support via PayPal',
         'shots.alt':'ICQ Retrogram contact list: WhatsApp and Telegram tabs, collapsible groups, unread badges, avatars',
         'consent.text':'This site would like to measure visits with Google Analytics, which sets cookies. It is entirely optional \u2014 the downloads work either way. Details in the <a href="privacy.html">privacy policy</a>.',
@@ -541,7 +541,7 @@
         'faq.a4':'Nein. Das ist ein unabh\u00e4ngiges Projekt ohne Verbindung zu ICQ oder AOL, und es belebt ICQs Netzwerk nicht wieder. Es baut die Oberfl\u00e4che von ICQ 5 nach und legt sie \u00fcber die Messenger, die du ohnehin nutzt \u2014 es gibt also kein leeres Netzwerk, deine Kontakte sind einfach schon da.',
         'faq.q5':'ICQ wurde 2024 eingestellt — ist das eine Alternative?',
         'faq.a5':'ICQs eigene Server sind am 26. Juni 2024 endgültig abgeschaltet worden, und mit ihnen alle ICQ-Kontaktlisten. ICQ Retrogram bringt zurück, was man vermisst — den ICQ-5-Look, die schwebenden Chatfenster, das uh-oh — und lässt es auf WhatsApp und Telegram laufen, wo deine Kontakte heute sind.',
-        'footer.privacy':'Datenschutz','footer.cookies':'Cookie-Einstellungen',
+        'footer.privacy':'Datenschutz','footer.imprint':'Impressum','footer.cookies':'Cookie-Einstellungen',
         'footer.license':'MIT-Lizenz','footer.paypal':'Per PayPal unterstützen',
         'shots.alt':'ICQ-Retrogram-Kontaktliste: Tabs für WhatsApp und Telegram, einklappbare Gruppen, Ungelesen-Zähler, Avatare',
         'consent.text':'Diese Seite m\u00f6chte Besuche mit Google Analytics messen, daf\u00fcr werden Cookies gesetzt. Das ist v\u00f6llig freiwillig \u2014 die Downloads funktionieren so oder so. Einzelheiten in der <a href="privacy.html">Datenschutzerkl\u00e4rung</a>.',
@@ -658,7 +658,28 @@
       function show() { if (box) box.classList.add('show'); }
       function hide() { if (box) box.classList.remove('show'); }
 
-      function decide(v) { remember(v); hide(); if (v === 'granted') loadGA(); }
+      function clearGA() {
+        // Widerruf: Google sofort auf "denied" setzen und die bereits
+        // gesetzten _ga*-Cookies auf allen passenden Domains entfernen.
+        gtag('consent', 'update', { analytics_storage: 'denied' });
+        var host = location.hostname, parts = host.split('.'), doms = ['', host];
+        for (var i = 1; i < parts.length - 1; i++) doms.push('.' + parts.slice(i).join('.'));
+        doms.push('.' + host);
+        document.cookie.split(';').forEach(function (c) {
+          var name = c.split('=')[0].trim();
+          if (!/^_ga/.test(name)) return;
+          doms.forEach(function (d) {
+            document.cookie = name + '=; Max-Age=0; path=/' + (d ? '; domain=' + d : '');
+          });
+        });
+      }
+
+      function decide(v) {
+        var before = stored();
+        remember(v); hide();
+        if (v === 'granted') loadGA();
+        else if (loaded || before === 'granted') { clearGA(); if (loaded) location.reload(); }
+      }
 
       var prev = stored();
       if (prev === 'granted') loadGA();
